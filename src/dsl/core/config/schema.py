@@ -1,0 +1,161 @@
+"""Step 2 of the pipeline: validate the raw dict into a typed ScenarioConfig.
+
+Validation is two-tier:
+
+- **Hard errors** (impossible or certainly-wrong scenarios) raise during
+  ``parse_config`` with a message naming the offending field, and the run
+  stops before anything is generated. Most checks come free from Pydantic
+  (types, ranges, unknown fields); two cross-section checks (referential
+  integrity, lag sanity) live in a model validator below.
+- **Warnings** (suspicious but legal scenarios) come from the separate
+  ``validate_scenario`` function, which returns human-readable strings and
+  never raises. The CLI prints them and proceeds.
+
+This is the ONLY core file that may be edited after the initial build, and
+only to add a genuinely new top-level concept. Generator-specific parameters
+are deliberately NOT modelled here: the schema validates each variable's
+envelope (name / generate / params) and each generator validates its own
+params, so this file does not grow when generators are added.
+"""
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from dsl.core.pipeline.periods import periods_per_year
+
+
+class VariableSpec(BaseModel):
+    """One entry under ``variables:`` — a variable the scenario generates.
+
+    ``name`` becomes the output column name, so CHAP-compatible scenarios
+    name their variables ``rainfall`` and ``mean_temperature``. ``generate``
+    is looked up in the generator registry; ``params`` is passed straight to
+    that generator, which validates it itself.
+    """
+
+    # extra="forbid" makes Pydantic reject unknown keys (e.g. a typo like
+    # "generete:") instead of silently ignoring them.
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    generate: str
+    params: dict = Field(default_factory=dict)
+
+
+class DependencySpec(BaseModel):
+    """One entry under ``depends_on:`` — a driver of the disease signal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    variable: str
+    # ge=0: a negative lag would mean disease precedes its cause.
+    lag: int = Field(default=0, ge=0)
+    weight: float = 1.0
+
+
+class DiseaseSpec(BaseModel):
+    """The ``disease_cases:`` section — how the dependent signal is built."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    depends_on: list[DependencySpec]
+    population: int = Field(ge=1)
+    autoregressive: bool = False
+    missing_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Incidence-model knobs; defaults match the reference implementation.
+    max_rate: float = Field(default=0.3, gt=0.0, le=1.0)
+    median_rate: float = Field(default=0.1, gt=0.0, le=1.0)
+
+
+class ScenarioConfig(BaseModel):
+    """The whole scenario file, validated and typed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Literal[...] restricts the value to exactly these strings; anything
+    # else ("fortnightly") is a field-level validation error.
+    period: Literal["daily", "weekly", "monthly", "yearly"]
+    n_total: int = Field(ge=1)
+    seed: int = 0
+    # None means "write only the single full CSV"; a value in (0, 1) also
+    # writes train.csv/test.csv as a row split.
+    train_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
+    variables: list[VariableSpec]
+    disease_cases: DiseaseSpec
+
+    # mode="after" runs once the individual fields are already validated, so
+    # cross-field relationships can be checked safely here.
+    @model_validator(mode="after")
+    def _check_cross_section(self) -> "ScenarioConfig":
+        """Hard errors that span multiple fields.
+
+        1. Referential integrity: every ``depends_on.variable`` must name a
+           declared variable.
+        2. Lag sanity: a lag >= n_total can never appear in the data.
+        """
+        defined = [v.name for v in self.variables]
+        for dep in self.disease_cases.depends_on:
+            if dep.variable not in defined:
+                raise ValueError(
+                    f"disease_cases depends on '{dep.variable}', which is not "
+                    f"a defined variable. Defined variables: {defined}."
+                )
+            if dep.lag >= self.n_total:
+                raise ValueError(
+                    f"depends_on '{dep.variable}' has lag {dep.lag}, but "
+                    f"n_total is {self.n_total}; the lag must be smaller than "
+                    f"the series length for the relationship to appear."
+                )
+        return self
+
+
+def parse_config(data: dict) -> ScenarioConfig:
+    """Validate a raw scenario dict (from ``load_yaml``) into a ScenarioConfig.
+
+    Raises ``pydantic.ValidationError`` (with field-specific messages) on any
+    hard error; see the module docstring for what counts as one.
+    """
+    # ScenarioConfig(**data) unpacks the dict's keys as keyword arguments;
+    # Pydantic does all validation in the constructor.
+    return ScenarioConfig(**data)
+
+
+def validate_scenario(config: ScenarioConfig) -> list[str]:
+    """Return warnings for suspicious-but-legal scenarios. Never raises.
+
+    The CLI prints these to stderr and proceeds — they flag likely mistakes
+    (or unusual-but-intentional choices like decoy variables) without
+    blocking the run.
+    """
+    warnings: list[str] = []
+
+    # Orphan variables: declared but not used by any dependency. May be an
+    # intentional decoy/confounder, so this is a warning, never an error.
+    used = {dep.variable for dep in config.disease_cases.depends_on}
+    for var in config.variables:
+        if var.name not in used:
+            warnings.append(
+                f"variable '{var.name}' is declared but no disease_cases "
+                f"dependency uses it (decoy/confounder, or a mistake?)"
+            )
+
+    if config.disease_cases.missing_rate >= 0.5:
+        warnings.append(
+            f"missing_rate is {config.disease_cases.missing_rate}; half or "
+            f"more of disease_cases will be NaN."
+        )
+
+    if config.train_fraction is not None and config.train_fraction >= 0.95:
+        warnings.append(
+            f"train_fraction is {config.train_fraction}; the test split will "
+            f"contain very few rows."
+        )
+
+    cycle = periods_per_year(config.period)
+    if config.n_total < cycle:
+        warnings.append(
+            f"n_total ({config.n_total}) is shorter than one seasonal cycle "
+            f"({cycle} {config.period} periods); seasonality will not be visible."
+        )
+
+    return warnings
