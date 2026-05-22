@@ -56,3 +56,21 @@ def test_get_unknown_raises_and_lists_available():
     message = str(excinfo.value)
     assert "nope" in message
     assert "alpha" in message and "beta" in message
+
+
+def test_generator_registry_knows_builtin_generators():
+    # Importing dsl.generators triggers auto-discovery, which registers
+    # every generator file — that is the plugin mechanism under test.
+    import dsl.generators  # noqa: F401
+    from dsl.core.extension.generator_base import get_generator
+
+    assert get_generator("seasonal_spike") is not None
+    assert get_generator("seasonal_smooth") is not None
+
+
+def test_get_unknown_generator_lists_names():
+    import dsl.generators  # noqa: F401
+    from dsl.core.extension.generator_base import get_generator
+
+    with pytest.raises(KeyError, match="seasonal_spike"):
+        get_generator("nope")
