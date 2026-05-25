@@ -102,6 +102,15 @@ def test_dangling_depends_on_reference_raises_and_lists_valid_names():
     assert "mean_temperature" in message
 
 
+def test_median_rate_must_be_below_max_rate():
+    # The sigmoid shift is logit(median_rate / max_rate), undefined at >= 1.
+    data = make_config_dict()
+    data["disease_cases"]["max_rate"] = 0.1
+    data["disease_cases"]["median_rate"] = 0.1
+    with pytest.raises(ValidationError, match="median_rate"):
+        parse_config(data)
+
+
 def test_lag_at_least_n_total_raises():
     data = make_config_dict(n_total=10)
     data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 10}]

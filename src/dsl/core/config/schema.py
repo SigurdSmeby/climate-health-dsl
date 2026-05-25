@@ -66,6 +66,20 @@ class DiseaseSpec(BaseModel):
     max_rate: float = Field(default=0.3, gt=0.0, le=1.0)
     median_rate: float = Field(default=0.1, gt=0.0, le=1.0)
 
+    @model_validator(mode="after")
+    def _check_rates(self) -> "DiseaseSpec":
+        """median_rate must stay below max_rate.
+
+        The model shifts its sigmoid by logit(median_rate / max_rate), which
+        is only defined for a ratio strictly between 0 and 1.
+        """
+        if self.median_rate >= self.max_rate:
+            raise ValueError(
+                f"median_rate ({self.median_rate}) must be smaller than "
+                f"max_rate ({self.max_rate})."
+            )
+        return self
+
 
 class ScenarioConfig(BaseModel):
     """The whole scenario file, validated and typed."""

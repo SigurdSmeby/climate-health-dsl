@@ -8,10 +8,11 @@ A YAML-based DSL for generating synthetic climate-health datasets with known
 ground truth, formatted for [CHAP](https://chap.dhis2.org/). Built test-driven,
 phase by phase, one Conventional Commit per phase.
 
-**Status:** Phases 0–4 done. The tool can validate a scenario file, generate
-seasonal climate series through the plugin registry, and modify series with
-transforms (causal lag, missing values). It cannot yet build the disease
-signal, assemble a dataset, or write CSVs (Phases 5–9 pending).
+**Status:** Phases 0–5 done. The tool can validate a scenario file, generate
+seasonal climate series through the plugin registry, modify series with
+transforms (causal lag, missing values), and build the dependent
+`disease_cases` signal with the population-relative Poisson incidence model.
+It cannot yet assemble the full dataset or write CSVs (Phases 6–9 pending).
 
 ---
 
@@ -142,11 +143,51 @@ signal, assemble a dataset, or write CSVs (Phases 5–9 pending).
 - `missing` blanks each entry independently with probability `rate`, so the
   realized NaN fraction is approximately (not exactly) `rate`.
 
+## Phase 5 — Disease model
+
+**Features**
+- `core/pipeline/disease.py` — `build_disease_cases(drivers, spec, rng,
+  n_periods, period)`: the population-relative Poisson incidence model,
+  ported from the reference code (not a plain linear sum):
+  1. seasonal baseline `eta` — one sine cycle per year;
+  2. each dependency's driver is lagged (causally), z-score standardized,
+     multiplied by its `weight`, and added to `eta`;
+  3. optional autoregressive random walk (`cumsum` of white noise, σ=0.2);
+  4. sigmoid shifted by `logit(median_rate / max_rate)` so a typical period
+     maps near `median_rate`, then `rate × population × max_rate`;
+  5. Poisson counts drawn from the seeded rng, capped at `population`;
+  6. first `max_lag` rows blanked to NaN (the lag warm-up has no valid
+     signal);
+  7. `missing_rate` applied last via the `missing` transform.
+- All randomness flows from the passed seeded rng — fixes the reference
+  code's unseeded global `np.random`.
+
+**Considerations**
+- **New hard error in the schema:** `median_rate >= max_rate` is rejected.
+  Discovered via TDD: the sigmoid shift is `logit(median/max)`, which is
+  undefined (division by zero) at a ratio of 1. The plan didn't list this
+  constraint; without it a legal-looking YAML would crash mid-run.
+- Standardization uses `nanmean`/`nanstd` (the lagged series carries a NaN
+  warm-up) and guards zero variance: a constant driver becomes zeros instead
+  of NaN-ing the whole signal (tested).
+- The warm-up rows are temporarily zero-filled before the Poisson draw (the
+  sampler can't take NaN rates) and blanked afterwards.
+- **Seasonal confounding, found while testing:** with a *seasonal* driver,
+  cross-correlation recovers the lag one period off — the disease's own
+  seasonal baseline correlates with the driver and biases the estimate. This
+  is real epidemiology (seasonality confounds lag estimation), not a bug.
+  The lag-mechanism test therefore uses an aperiodic (random) driver, which
+  recovers the exact lag across every seed tried. Worth remembering when
+  designing the Phase 9 ground-truth scenario.
+- The old code int-cast `sigmoid × population` *before* multiplying by
+  `max_rate`; that truncation quirk was not ported (float all the way to the
+  Poisson draw).
+
 ---
 
 ## Test suite
 
-63 tests, all green (`uv run pytest`): import smoke test, loader errors, both
+74 tests, all green (`uv run pytest`): import smoke test, loader errors, both
 validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation), and
