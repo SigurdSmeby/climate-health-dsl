@@ -8,11 +8,11 @@ A YAML-based DSL for generating synthetic climate-health datasets with known
 ground truth, formatted for [CHAP](https://chap.dhis2.org/). Built test-driven,
 phase by phase, one Conventional Commit per phase.
 
-**Status:** Phases 0–5 done. The tool can validate a scenario file, generate
-seasonal climate series through the plugin registry, modify series with
-transforms (causal lag, missing values), and build the dependent
-`disease_cases` signal with the population-relative Poisson incidence model.
-It cannot yet assemble the full dataset or write CSVs (Phases 6–9 pending).
+**Status:** Phases 0–6 done. The tool can take a validated scenario all the
+way to a finished, reproducible pandas DataFrame: generators run through the
+plugin registry, the disease signal is built from the lagged/weighted drivers,
+and everything is assembled with CHAP period labels. Still pending: CSV
+output, the CLI, and the ground-truth recovery test (Phases 7–9).
 
 ---
 
@@ -183,11 +183,38 @@ It cannot yet assemble the full dataset or write CSVs (Phases 6–9 pending).
   `max_rate`; that truncation quirk was not ported (float all the way to the
   Poisson draw).
 
+## Phase 6 — Engine
+
+**Features**
+- `core/pipeline/engine.py` — `run(config: ScenarioConfig) -> pd.DataFrame`,
+  the "translate config into executable code" step:
+  1. creates the single `np.random.default_rng(config.seed)` and threads it
+     through everything;
+  2. for each YAML variable, looks the `generate:` string up in the registry
+     and runs the generator with its `params:`;
+  3. builds `disease_cases` from the generated drivers;
+  4. assembles the tidy DataFrame: `time_period` (CHAP labels), one column
+     per variable in YAML declaration order, `disease_cases`, and a constant
+     `population` column.
+- The engine hard-codes no variable names: columns come from the YAML, so a
+  CHAP-ready scenario just names its variables `rainfall` and
+  `mean_temperature` (verified by a test using a `wind` variable instead).
+
+**Considerations**
+- Importing `dsl.generators` / `dsl.transforms` inside `engine.py` is what
+  triggers plugin auto-discovery — without those imports the registries
+  would be empty at runtime. Tests import the engine, so they exercise this.
+- Integration tests pin the full contract: exact CHAP column order, row
+  count, period labels with year rollover, constant population, blanked
+  warm-up rows, params pass-through (a `noise: 0` generator is identical
+  across seeds), bit-identical reruns, and a helpful KeyError (listing real
+  generators) for an unknown `generate:` name.
+
 ---
 
 ## Test suite
 
-74 tests, all green (`uv run pytest`): import smoke test, loader errors, both
+85 tests, all green (`uv run pytest`): import smoke test, loader errors, both
 validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation), and
