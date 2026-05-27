@@ -8,10 +8,10 @@ A YAML-based DSL for generating synthetic climate-health datasets with known
 ground truth, formatted for [CHAP](https://chap.dhis2.org/). Built test-driven,
 phase by phase, one Conventional Commit per phase.
 
-**Status:** Phases 0–7 done. The full pipeline works from Python: scenario →
-validation → generators → disease signal → DataFrame → CHAP-format CSVs on
-disk (with the optional train/test split). Still pending: the `dsl run` CLI
-and the ground-truth recovery test (Phases 8–9).
+**Status:** Phases 0–8 done. The tool is fully usable from the command line:
+`dsl run examples/basic_scenario.yaml -o out/` writes `simulated_data.csv`
+(plus `train.csv`/`test.csv` when `train_fraction` is set). Remaining: the
+ground-truth recovery test (Phase 9).
 
 ---
 
@@ -233,11 +233,36 @@ and the ground-truth recovery test (Phases 8–9).
 - The no-index requirement is tested against the raw header line of the
   file, not through pandas — that's what CHAP's reader actually sees.
 
+## Phase 8 — CLI
+
+**Features**
+- `cli.py` — `dsl run <scenario.yaml> -o <out_dir>`, wiring loader →
+  `parse_config` → `validate_scenario` → engine → output. Registered as the
+  `dsl` console script in `pyproject.toml` (Phase 0 already set that up).
+- Two-tier behaviour, as specified: hard errors (missing/malformed file,
+  schema violations, dangling references) print `error: ...` to stderr and
+  exit non-zero **before anything is generated** — verified by a test that
+  asserts the output directory is never even created. Warnings print
+  `warning: ...` to stderr and the run proceeds (exit 0).
+- `examples/basic_scenario.yaml` — the §7 example scenario, used by the
+  CLI tests and ready for `dsl run`.
+
+**Considerations**
+- `main(argv) -> int` takes its arguments as a parameter and returns the
+  exit code instead of calling `sys.exit` internally — that makes the CLI
+  testable in-process (no subprocess needed) while the console entry point
+  behaves identically.
+- Built with a `run` subcommand (rather than flat args) to leave room for
+  future verbs like `dsl validate` without breaking the interface.
+- A CLI-level reproducibility test confirms two runs of the example produce
+  byte-identical CSV files.
+- `-o` defaults to `out/` if not given.
+
 ---
 
 ## Test suite
 
-91 tests, all green (`uv run pytest`): import smoke test, loader errors, both
+96 tests, all green (`uv run pytest`): import smoke test, loader errors, both
 validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation), and
