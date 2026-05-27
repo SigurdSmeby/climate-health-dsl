@@ -8,11 +8,10 @@ A YAML-based DSL for generating synthetic climate-health datasets with known
 ground truth, formatted for [CHAP](https://chap.dhis2.org/). Built test-driven,
 phase by phase, one Conventional Commit per phase.
 
-**Status:** Phases 0–6 done. The tool can take a validated scenario all the
-way to a finished, reproducible pandas DataFrame: generators run through the
-plugin registry, the disease signal is built from the lagged/weighted drivers,
-and everything is assembled with CHAP period labels. Still pending: CSV
-output, the CLI, and the ground-truth recovery test (Phases 7–9).
+**Status:** Phases 0–7 done. The full pipeline works from Python: scenario →
+validation → generators → disease signal → DataFrame → CHAP-format CSVs on
+disk (with the optional train/test split). Still pending: the `dsl run` CLI
+and the ground-truth recovery test (Phases 8–9).
 
 ---
 
@@ -210,11 +209,35 @@ output, the CLI, and the ground-truth recovery test (Phases 7–9).
   across seeds), bit-identical reruns, and a helpful KeyError (listing real
   generators) for an unknown `generate:` name.
 
+## Phase 7 — Output (CHAP formatting)
+
+**Features**
+- `core/pipeline/output.py` — `write_output(df, config, out_dir)`:
+  - always writes `simulated_data.csv` via `to_csv(index=False)` (no
+    leading unnamed index column), columns in CHAP order;
+  - `disease_cases` is present for the whole series apart from the blanked
+    lag warm-up — CHAP needs the true values and does its own train/test
+    hiding during evaluation;
+  - if `train_fraction` is set, ALSO writes `train.csv` (first
+    `floor(n_total × train_fraction)` rows) and `test.csv` (the rest), a
+    plain row split with all columns intact, for evaluation outside CHAP.
+- All CHAP-specific naming/format decisions are isolated in this one module
+  (filenames are module constants).
+
+**Considerations**
+- The output directory is created if missing (`mkdir(parents=True,
+  exist_ok=True)`), so `dsl run scenario.yaml -o out/some/new/dir` will just
+  work; rerunning overwrites existing files.
+- A test verifies the split is a true row slice: `train.csv` + `test.csv`
+  concatenated equals `simulated_data.csv` exactly.
+- The no-index requirement is tested against the raw header line of the
+  file, not through pandas — that's what CHAP's reader actually sees.
+
 ---
 
 ## Test suite
 
-85 tests, all green (`uv run pytest`): import smoke test, loader errors, both
+91 tests, all green (`uv run pytest`): import smoke test, loader errors, both
 validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation), and
