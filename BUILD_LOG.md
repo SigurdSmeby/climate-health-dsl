@@ -8,10 +8,11 @@ A YAML-based DSL for generating synthetic climate-health datasets with known
 ground truth, formatted for [CHAP](https://chap.dhis2.org/). Built test-driven,
 phase by phase, one Conventional Commit per phase.
 
-**Status:** Phases 0–8 done. The tool is fully usable from the command line:
-`dsl run examples/basic_scenario.yaml -o out/` writes `simulated_data.csv`
-(plus `train.csv`/`test.csv` when `train_fraction` is set). Remaining: the
-ground-truth recovery test (Phase 9).
+**Status:** all phases (0–9) done. The tool is fully usable from the command
+line — `dsl run examples/basic_scenario.yaml -o out/` writes
+`simulated_data.csv` (plus `train.csv`/`test.csv` when `train_fraction` is
+set) — and the ground-truth recovery test proves the embedded driver→disease
+lag is genuinely recoverable from the output.
 
 ---
 
@@ -258,11 +259,31 @@ ground-truth recovery test (Phase 9).
   byte-identical CSV files.
 - `-o` defaults to `out/` if not given.
 
+## Phase 9 — Ground-truth recovery
+
+**Features**
+- `tests/test_ground_truth.py` — the validity check for the whole project:
+  a scenario declares "disease follows rainfall by 5 weeks", and a
+  cross-correlation scan over candidate shifts must recover exactly that
+  lag from the generated output. Recovery is asserted across multiple seeds,
+  so the embedded relationship doesn't depend on a lucky draw.
+
+**Considerations**
+- The exact-recovery scenario uses an **aperiodic** driver
+  (`seasonal_smooth` with `amplitude: 0` + noise — no new generator needed),
+  applying the Phase 5 finding: with a seasonal driver, the disease's own
+  seasonal baseline correlates with the driver and can bias the recovered
+  lag by one period.
+- The realistic seasonal case (`seasonal_spike` driver) is tested too, with
+  a documented ±1-period tolerance — the confound is real epidemiology
+  (seasonality masks lag structure), and the test records it rather than
+  hiding it.
+
 ---
 
 ## Test suite
 
-96 tests, all green (`uv run pytest`): import smoke test, loader errors, both
+99 tests, all green (`uv run pytest`): import smoke test, loader errors, both
 validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation), and
