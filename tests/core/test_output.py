@@ -43,7 +43,9 @@ def test_full_csv_has_chap_columns_and_no_index(tmp_path):
     # Read the raw header line: an index column would show up as a leading
     # empty name, which CHAP would choke on.
     header = (tmp_path / "simulated_data.csv").read_text().splitlines()[0]
-    assert header == "time_period,rainfall,mean_temperature,disease_cases,population"
+    assert header == (
+        "time_period,location,rainfall,mean_temperature,disease_cases,population"
+    )
 
 
 def test_full_csv_round_trips(tmp_path):
@@ -89,3 +91,33 @@ def test_output_dir_is_created_if_missing(tmp_path):
     out = tmp_path / "does" / "not" / "exist"
     write_output(run(config), config, out)
     assert (out / "simulated_data.csv").is_file()
+
+
+def test_multi_location_split_is_per_location(tmp_path):
+    # With several locations, a plain row split would put whole locations in
+    # train and others in test. The split must instead take the first
+    # floor(n_total * fraction) periods of EACH location.
+    config = parse_config(
+        {
+            "period": "monthly",
+            "n_total": 24,
+            "seed": 1,
+            "train_fraction": 0.75,
+            "locations": ["oslo", "bergen"],
+            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
+            "disease_cases": {
+                "population": 10_000,
+                "depends_on": [{"variable": "rainfall", "lag": 2}],
+            },
+        }
+    )
+    write_output(run(config), config, tmp_path)
+    train = pd.read_csv(tmp_path / "train.csv")
+    test = pd.read_csv(tmp_path / "test.csv")
+    # floor(24 * 0.75) = 18 periods per location.
+    for loc in ("oslo", "bergen"):
+        assert len(train[train["location"] == loc]) == 18
+        assert len(test[test["location"] == loc]) == 6
+    # Test rows continue where train rows stopped, for every location.
+    assert (train[train["location"] == "oslo"]["time_period"].iloc[-1]) == "2001-06"
+    assert (test[test["location"] == "oslo"]["time_period"].iloc[0]) == "2001-07"

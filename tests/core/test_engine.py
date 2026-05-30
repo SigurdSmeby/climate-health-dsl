@@ -37,6 +37,7 @@ def test_chap_columns_in_order(example_config):
     df = run(example_config)
     assert list(df.columns) == [
         "time_period",
+        "location",
         "rainfall",
         "mean_temperature",
         "disease_cases",
@@ -97,6 +98,7 @@ def test_column_names_come_from_yaml_not_hardcoded():
     df = run(config)
     assert list(df.columns) == [
         "time_period",
+        "location",
         "wind",
         "disease_cases",
         "population",
@@ -150,3 +152,51 @@ def test_unknown_generator_name_raises_with_available():
 
 def test_returns_dataframe(example_config):
     assert isinstance(run(example_config), pd.DataFrame)
+
+
+def test_location_column_present_and_constant(example_config):
+    # Default scenario: one location named "loc", right after time_period.
+    df = run(example_config)
+    assert list(df.columns)[:2] == ["time_period", "location"]
+    assert (df["location"] == "loc").all()
+
+
+def multi_location_config():
+    return parse_config(
+        {
+            "period": "monthly",
+            "n_total": 24,
+            "seed": 1,
+            "locations": ["oslo", "bergen"],
+            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
+            "disease_cases": {
+                "population": 10_000,
+                "depends_on": [{"variable": "rainfall", "lag": 2}],
+            },
+        }
+    )
+
+
+def test_multi_location_row_count_and_stacking():
+    df = run(multi_location_config())
+    # Long format: n_total rows per location, location-major order.
+    assert len(df) == 48
+    assert list(df["location"].unique()) == ["oslo", "bergen"]
+    oslo = df[df["location"] == "oslo"]
+    assert len(oslo) == 24
+    assert oslo["time_period"].iloc[0] == "2000-01"  # each location starts at t0
+
+
+def test_locations_get_different_draws():
+    # Same generative process per location, but independent randomness:
+    # the locations must not be copies of each other.
+    df = run(multi_location_config())
+    oslo = df[df["location"] == "oslo"]["rainfall"].to_numpy()
+    bergen = df[df["location"] == "bergen"]["rainfall"].to_numpy()
+    assert not np.array_equal(oslo, bergen)
+
+
+def test_multi_location_is_reproducible():
+    a = run(multi_location_config())
+    b = run(multi_location_config())
+    assert a.equals(b)

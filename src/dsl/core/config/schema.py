@@ -94,6 +94,9 @@ class ScenarioConfig(BaseModel):
     # None means "write only the single full CSV"; a value in (0, 1) also
     # writes train.csv/test.csv as a row split.
     train_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
+    # CHAP datasets carry a location column; each named location gets its own
+    # independently drawn series. min_length=1: at least one location.
+    locations: list[str] = Field(default=["loc"], min_length=1)
     variables: list[VariableSpec]
     disease_cases: DiseaseSpec
 
@@ -106,7 +109,13 @@ class ScenarioConfig(BaseModel):
         1. Referential integrity: every ``depends_on.variable`` must name a
            declared variable.
         2. Lag sanity: a lag >= n_total can never appear in the data.
+        3. Location names must be unique (duplicates would silently double
+           rows in the output).
         """
+        if len(set(self.locations)) != len(self.locations):
+            raise ValueError(
+                f"locations contains duplicate names: {self.locations}."
+            )
         defined = [v.name for v in self.variables]
         for dep in self.disease_cases.depends_on:
             if dep.variable not in defined:

@@ -13,7 +13,7 @@ until the complete feature and its tests are present.
 
 | # | Status | What already exists |
 |---|---|---|
-| 1 | Not implemented | Output has no `location` column or multi-location model. |
+| 1 | Implemented | `locations:` config field (default `["loc"]`); every output row carries a `location` column; multi-location data is stacked long-format with independent draws per location; train/test split is per location. Verified end-to-end against the minimalist CHAP example model. |
 | 2 | Partial | Pydantic validates scenarios and tests check the current CSV header, but there is no complete CHAP dataset validator. |
 | 3 | Not implemented | Both current generators create fresh synthetic covariates. |
 | 4 | Not implemented | The loader reads scenario YAML, not covariate CSV files. |
@@ -33,7 +33,7 @@ until the complete feature and its tests are present.
 
 ## Prioritized Features
 
-- [ ] **1. Add CHAP location support**
+- [x] **1. Add CHAP location support**
 
   Add a `location` column and support generating data for one or more locations.
   This is needed for current CHAP datasets and spatial evaluation.

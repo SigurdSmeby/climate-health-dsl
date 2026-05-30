@@ -118,6 +118,26 @@ def test_lag_at_least_n_total_raises():
         parse_config(data)
 
 
+def test_locations_default_is_single_loc():
+    config = parse_config(make_config_dict())
+    assert config.locations == ["loc"]
+
+
+def test_locations_accepts_multiple_names():
+    config = parse_config(make_config_dict(locations=["oslo", "bergen"]))
+    assert config.locations == ["oslo", "bergen"]
+
+
+def test_empty_locations_rejected():
+    with pytest.raises(ValidationError, match="locations"):
+        parse_config(make_config_dict(locations=[]))
+
+
+def test_duplicate_locations_rejected():
+    with pytest.raises(ValidationError, match="duplicate"):
+        parse_config(make_config_dict(locations=["oslo", "oslo"]))
+
+
 # ------------------------------------------------------------------ warnings
 
 

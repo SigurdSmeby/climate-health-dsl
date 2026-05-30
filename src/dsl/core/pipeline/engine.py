@@ -23,15 +23,28 @@ from dsl.core.pipeline.periods import format_period
 def run(config: ScenarioConfig) -> pd.DataFrame:
     """Run the whole simulation described by ``config``.
 
-    Returns a tidy DataFrame with one row per period and columns:
-    ``time_period``, one column per YAML variable (in declaration order),
-    ``disease_cases``, and a constant ``population``.
+    Returns a tidy, long-format DataFrame with ``n_total`` rows per location
+    and columns: ``time_period``, ``location``, one column per YAML variable
+    (in declaration order), ``disease_cases``, and a constant ``population``.
     """
     # The single seeded random generator. Every random draw in the run flows
     # from this one object, which is what makes output bit-for-bit
-    # reproducible for a given seed.
+    # reproducible for a given seed. Locations draw from it in turn, so each
+    # location gets its own independent (but reproducible) series.
     rng = np.random.default_rng(config.seed)
 
+    location_frames = [
+        _run_one_location(config, location, rng) for location in config.locations
+    ]
+    # Stack location blocks on top of each other (long format, the CHAP
+    # convention); ignore_index renumbers the rows 0..N-1.
+    return pd.concat(location_frames, ignore_index=True)
+
+
+def _run_one_location(
+    config: ScenarioConfig, location: str, rng: np.random.Generator
+) -> pd.DataFrame:
+    """Generate the full series for a single named location."""
     # Generate each declared variable through the registry. get_generator
     # returns the CLASS registered under that name; calling it with the
     # YAML params builds an instance, whose .generate() makes the series.
@@ -45,16 +58,16 @@ def run(config: ScenarioConfig) -> pd.DataFrame:
         drivers, config.disease_cases, rng, config.n_total, config.period
     )
 
-    # Assemble the tidy frame: CHAP-style label column first, then the
-    # variables in YAML declaration order, then disease and population.
+    # Assemble the tidy frame: CHAP-style label column first, the location,
+    # then the variables in YAML declaration order, disease, and population.
     columns: dict[str, object] = {
         "time_period": [
             format_period(i, config.period) for i in range(config.n_total)
-        ]
+        ],
+        # A scalar here is broadcast by pandas to a constant column.
+        "location": location,
     }
     columns.update(drivers)
     columns["disease_cases"] = disease
-    # Population is a scalar in the config; pandas broadcasts it to a
-    # constant column of length n_total.
     columns["population"] = config.disease_cases.population
     return pd.DataFrame(columns)

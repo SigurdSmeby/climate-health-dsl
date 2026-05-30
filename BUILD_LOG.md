@@ -281,10 +281,43 @@ lag is genuinely recoverable from the output.
 
 ---
 
+# Post-build features (FEATURE_ROADMAP.md)
+
+## Roadmap #1 — CHAP location support
+
+**Features**
+- New top-level `locations` config field (list of names, default `["loc"]`,
+  matching the minimalist CHAP example's sample data). Empty lists and
+  duplicate names are hard errors.
+- Every output row carries a `location` column, placed right after
+  `time_period`. With several locations, each gets its own independently
+  drawn series of `n_total` periods, stacked in long format (CHAP's
+  convention) — all draws still flow from the one seeded rng, so
+  multi-location output stays bit-for-bit reproducible.
+- The train/test split changed from a plain row split to a **split in time,
+  per location**: each location contributes its first
+  `floor(n_total × train_fraction)` periods to `train.csv` and the rest to
+  `test.csv` (a row split would have put whole locations in one side).
+
+**Considerations**
+- Motivated by a smoke test against the real minimalist CHAP example model
+  (`~/Documents/Master/minimalist_example_uv`): training worked on raw DSL
+  output, but `predict.py` failed on the missing `location` column — the
+  only format gap. After this feature, the full train → predict cycle runs
+  on raw output with no patching.
+- The smoke test also validated the concept: a same-month linear model
+  scored 0.80 correlation against truth on data with embedded 1–2 month
+  lags — good but imperfect, as it should be.
+- `schema.py` was edited (the one sanctioned core edit) since locations are
+  a genuinely new top-level concept.
+
+---
+
 ## Test suite
 
-99 tests, all green (`uv run pytest`): import smoke test, loader errors, both
-validation tiers, period formats and rollover, registry behaviour,
+108 tests, all green (`uv run pytest`): import smoke test, loader errors,
+both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
-(causal shift, NaN warm-up, reproducible masks, no input mutation), and
-determinism.
+(causal shift, NaN warm-up, reproducible masks, no input mutation),
+location support (defaults, multi-location stacking, independent draws,
+per-location split), and determinism.

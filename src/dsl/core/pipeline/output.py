@@ -27,9 +27,9 @@ def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) 
     does its own train/test hiding during evaluation.
 
     If ``config.train_fraction`` is set, ALSO writes ``train.csv`` (the
-    first ``floor(n_total * train_fraction)`` rows) and ``test.csv`` (the
-    rest) — a plain row split with all columns intact, for evaluating
-    models *outside* CHAP.
+    first ``floor(n_total * train_fraction)`` periods of each location) and
+    ``test.csv`` (the rest) — a split in time with all columns intact, for
+    evaluating models *outside* CHAP.
     """
     out_dir = Path(out_dir)
     # parents=True creates intermediate folders; exist_ok makes rerunning
@@ -41,7 +41,13 @@ def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) 
     df.to_csv(out_dir / FULL_FILENAME, index=False)
 
     if config.train_fraction is not None:
-        n_train = math.floor(len(df) * config.train_fraction)
-        # iloc slices by row position; both halves keep every column.
-        df.iloc[:n_train].to_csv(out_dir / TRAIN_FILENAME, index=False)
-        df.iloc[n_train:].to_csv(out_dir / TEST_FILENAME, index=False)
+        n_train = math.floor(config.n_total * config.train_fraction)
+        # The split is in TIME, applied per location: a plain row split
+        # would put whole locations in train and others in test. groupby
+        # keeps each location's block together; head/tail take its first
+        # n_train periods and the remainder respectively.
+        by_location = df.groupby("location", sort=False)
+        train = by_location.head(n_train)
+        test = by_location.tail(config.n_total - n_train)
+        train.to_csv(out_dir / TRAIN_FILENAME, index=False)
+        test.to_csv(out_dir / TEST_FILENAME, index=False)

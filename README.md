@@ -29,11 +29,11 @@ dsl run examples/basic_scenario.yaml -o out/
 The result (`out/simulated_data.csv`):
 
 ```
-time_period,rainfall,mean_temperature,disease_cases,population
-2000-W01,2.152358553260388,15.312795196983668,,100
-2000-W02,1.4800080127540343,16.05069353269311,,100
-2000-W03,2.3752259025028235,17.621544261654282,,100
-2000-W04,2.4702836813159346,18.21508589989203,8.0,100
+time_period,location,rainfall,mean_temperature,disease_cases,population
+2000-W01,loc,2.152358553260388,15.312795196983668,,100
+2000-W02,loc,1.4800080127540343,16.05069353269311,,100
+2000-W03,loc,2.3752259025028235,17.621544261654282,,100
+2000-W04,loc,2.4702836813159346,18.21508589989203,8.0,100
 ...
 ```
 
@@ -45,8 +45,8 @@ lag of 3 there is no driver signal yet.
 
 | File | When | Contents |
 |---|---|---|
-| `simulated_data.csv` | always | The full dataset: `time_period`, one column per variable, `disease_cases`, `population`. This is the file to give CHAP — it does its own train/test hiding. |
-| `train.csv`, `test.csv` | only if `train_fraction` is set | A plain row split of the full dataset, all columns intact — for evaluation outside CHAP. |
+| `simulated_data.csv` | always | The full dataset: `time_period`, `location`, one column per variable, `disease_cases`, `population`. This is the file to give CHAP — it does its own train/test hiding. |
+| `train.csv`, `test.csv` | only if `train_fraction` is set | A split in time (the first `train_fraction` of each location's periods vs the rest), all columns intact — for evaluation outside CHAP. |
 
 Rerunning the same scenario produces identical files: all randomness comes
 from the `seed` in the YAML.
@@ -87,6 +87,7 @@ disease_cases:
 | `n_total` | int ≥ 1 | required | Number of time periods to generate. |
 | `seed` | int | `0` | Seed for all randomness. Same scenario + same seed → identical output. |
 | `train_fraction` | float, 0 < x < 1 | unset | If set, also write `train.csv`/`test.csv`. |
+| `locations` | list of str | `["loc"]` | Named locations. Each gets its own independently drawn series of `n_total` periods, stacked in long format with a `location` column. |
 | `variables` | list | required | The independent (climate) variables — see below. |
 | `disease_cases` | mapping | required | How the dependent disease signal is built — see below. |
 
