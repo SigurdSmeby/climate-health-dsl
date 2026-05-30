@@ -1,20 +1,20 @@
 period: weekly
 n_total: 78
 seed: 42
-train_fraction: 0.8        # OPTIONAL — omit to write only the single full CSV
+train_fraction: 0.8 # OPTIONAL — omit to write only the single full CSV
 variables:
   - name: rainfall
     generate: seasonal_spike
-  - name: mean_temperature  # CHAP's column name (not "temperature")
+  - name: mean_temperature # CHAP's column name (not "temperature")
     generate: seasonal_smooth
 disease_cases:
-  population: 100000        # constant population; scales the incidence model
+  population: 100 # constant population; scales the incidence model
   depends_on:
     - variable: rainfall
       lag: 3
-      weight: 2.0
+      weight: 1.0
     - variable: mean_temperature
       lag: 3
       weight: 1.0
-  autoregressive: false     # if true, add a random-walk component to the signal
-  missing_rate: 0.05
+  autoregressive: false # if true, add a random-walk component to the signal
+  missing_rate: 0

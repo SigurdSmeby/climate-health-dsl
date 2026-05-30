@@ -1,8 +1,8 @@
 # DSL — build log
 
-> **Note:** this is a temporary development log, written phase by phase as the
-> tool is built. It will be replaced by the real README (usage docs) once the
-> build is complete. The full specification lives in `BUILD_PLAN.md`.
+> **Note:** this is the development log, written phase by phase as the tool
+> was built. Usage documentation lives in `README.md`; the full specification
+> lives in `BUILD_PLAN.md`.
 
 A YAML-based DSL for generating synthetic climate-health datasets with known
 ground truth, formatted for [CHAP](https://chap.dhis2.org/). Built test-driven,
