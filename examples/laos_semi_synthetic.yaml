@@ -1,0 +1,30 @@
+# Semi-synthetic scenario: REAL rainfall and temperature from the bundled
+# CHAP Laos subset (Bokeo province, 2010-2012), with SYNTHETIC disease cases
+# generated on top with a controlled lag/weight relationship.
+period: monthly
+n_total: 36
+seed: 42
+variables:
+  - name: rainfall
+    generate: from_csv
+    params:
+      file: examples/data/laos_subset.csv
+      column: rainfall
+      source_location: Bokeo
+  - name: mean_temperature
+    generate: from_csv
+    params:
+      file: examples/data/laos_subset.csv
+      column: mean_temperature
+      source_location: Bokeo
+disease_cases:
+  population: 75000
+  depends_on:
+    - variable: rainfall
+      lag: 2
+      weight: 1.5
+    - variable: mean_temperature
+      lag: 1
+      weight: 1.0
+  autoregressive: false
+  missing_rate: 0

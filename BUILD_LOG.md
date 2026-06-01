@@ -338,11 +338,44 @@ lag is genuinely recoverable from the output.
 - Same never-raises contract as `validate_scenario`: the checker returns
   human-readable findings, and the CLI decides what they mean.
 
+## Roadmap #3 + #4 — real-data-backed covariates (`from_csv`)
+
+**Features**
+- `generators/from_csv.py` — a generator that reads a variable's values
+  from a CHAP-format CSV instead of synthesizing them, enabling
+  semi-synthetic experiments: real climate drivers, synthetic disease with
+  a controlled lag/weight relationship on top. Params: `file`, `column`,
+  `source_location` (required when the CSV holds several locations),
+  `start_period` (slice from a given label).
+- Bundled real sample data: `examples/data/laos_subset.csv` (three Lao
+  provinces, monthly 2010–2012, rainfall/temperature/cases/population,
+  from the chap-core repo) and `examples/laos_semi_synthetic.yaml` using
+  it — verified to pass `--strict-chap`.
+- One file, zero core edits — the registry pattern carried the whole
+  feature, which also covers roadmap #4 (generic CSV) in the same stroke.
+
+**Considerations**
+- **Real data is never invented:** fewer rows than `n_total` is a hard
+  error; no wrapping, repeating, or extrapolating. The old code's
+  `RealisticRainfallGenerator` silently wrapped into the *next region's*
+  rows when one region ran out — a data-integrity bug, deliberately not
+  reproduced.
+- No `chap_core` dependency: the old approach imported the whole package
+  for one bundled table. Any CHAP-format CSV works; auto-pulling from CHAP
+  is roadmap #18.
+- A resolution mismatch (weekly scenario on monthly data) is caught by
+  checking the CSV's `time_period` label shape.
+- Known limitation: output `time_period` labels are the scenario's own
+  synthetic ones (starting year 2000), not the source data's dates —
+  connects to roadmap #13 (configurable start period). Real population is
+  also still out of scope (population remains a config scalar).
+- Version bumped to 1.2.0.
+
 ---
 
 ## Test suite
 
-123 tests, all green (`uv run pytest`): import smoke test, loader errors,
+136 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),

@@ -15,8 +15,8 @@ until the complete feature and its tests are present.
 |---|---|---|
 | 1 | Implemented | `locations:` config field (default `["loc"]`); every output row carries a `location` column; multi-location data is stacked long-format with independent draws per location; train/test split is per location. Verified end-to-end against the minimalist CHAP example model. |
 | 2 | Implemented | `chap_check.validate_chap(df)` checks required columns, standard covariates, monthly/weekly period format, consecutive periods, identical periods per location, NaN in covariates, and disease_cases sanity. Warnings by default; `--strict-chap` refuses to write. |
-| 3 | Not implemented | Both current generators create fresh synthetic covariates. |
-| 4 | Not implemented | The loader reads scenario YAML, not covariate CSV files. |
+| 3 | Implemented | The `from_csv` generator backs a variable with real data; `examples/laos_semi_synthetic.yaml` uses bundled CHAP Laos data (rainfall, temperature) with synthetic disease on top. Real population is still out of scope (population is a config scalar). |
+| 4 | Implemented | `from_csv` reads any CHAP-format CSV (`file`, `column`, `source_location`, `start_period` params); insufficient data is a hard error, never wrapped or extrapolated. |
 | 5 | Partial | The scenario contains seed, lag, weight, and rate settings, but output does not save them as metadata. |
 | 6 | Not implemented | Drivers enter the predictor linearly; the final sigmoid does not provide configurable nonlinear driver effects. |
 | 7 | Not implemented | Each dependency supports one fixed lag, not an effect distributed across several lags. |
@@ -30,6 +30,7 @@ until the complete feature and its tests are present.
 | 15 | Not implemented | The CLI runs one scenario YAML at a time. |
 | 16 | Not implemented | Train/test CSV files exist, but no visualization is produced. |
 | 17 | Not implemented | GeoJSON is neither read nor written. |
+| 18 | Not implemented | Covariate data must be downloaded to a CSV manually; nothing pulls from chap-core datasets or a CHAP server. |
 
 ## Prioritized Features
 
@@ -47,7 +48,7 @@ until the complete feature and its tests are present.
 
   Source: [CHAP data preparation](https://chap.dhis2.org/chap-modeling-platform/external_models/prepare_data/)
 
-- [ ] **3. Add real-data-backed covariates**
+- [x] **3. Add real-data-backed covariates**
 
   Use existing CHAP rainfall, temperature, and population as covariates while
   generating fresh synthetic disease cases. This enables realistic
@@ -61,7 +62,7 @@ until the complete feature and its tests are present.
   [temperature generator](https://github.com/SigurdSmeby/climate_health_simulations/blob/9e8877637b1b7e50a4493adf4bd7a978ad1538a5/src/climate_health_simulations/simulator/temperature/RealisticTemperatureGenerator.py),
   [population generator](https://github.com/SigurdSmeby/climate_health_simulations/blob/9e8877637b1b7e50a4493adf4bd7a978ad1538a5/src/climate_health_simulations/simulator/population/RealisticPopulationGenerator.py)
 
-- [ ] **4. Add generic CSV-backed covariates**
+- [x] **4. Add generic CSV-backed covariates**
 
   Load covariates from any compatible CSV instead of depending on one bundled
   dataset. This supports more locations and studies.
@@ -170,6 +171,15 @@ until the complete feature and its tests are present.
   spatial maps and location-aware inspection.
 
   Source: [CHAP data preparation](https://chap.dhis2.org/chap-modeling-platform/external_models/prepare_data/)
+
+- [ ] **18. Auto-pull covariate data from CHAP**
+
+  Fetch real covariate data directly from a CHAP source (the chap-core
+  bundled datasets or a CHAP server API) instead of requiring a manually
+  downloaded CSV. Builds on the CSV-backed covariates (#3/#4): a fetch step
+  that produces the CSV, keeping the generator itself file-based and
+  chap-core out of the core dependencies (optional extra or separate
+  command, e.g. `dsl fetch`).
 
 ## Rules For Every Feature
 

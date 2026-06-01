@@ -154,6 +154,31 @@ A smooth sine wave, one full cycle per year at any resolution.
 | `phase` | `0.0` | Phase offset in radians (shifts where in the year the peak falls). |
 | `noise` | `0.5` | Std. dev. of added Gaussian noise; `0` disables it. |
 
+### `from_csv` — real data
+
+Reads the variable's values from a CHAP-format CSV instead of synthesizing
+them, for semi-synthetic experiments: real climate, synthetic disease with a
+controlled relationship. The data is used as-is — if the file holds fewer
+periods than `n_total`, the run fails rather than wrapping or extrapolating.
+
+| Param | Default | Meaning |
+|---|---|---|
+| `file` | required | Path to the CSV (`time_period` column plus data columns; `location` column if multi-location). |
+| `column` | required | Which column to use as this variable's values. |
+| `source_location` | unset | Which location's rows to use; required when the CSV has several. |
+| `start_period` | first row | A `time_period` label to start reading from, e.g. `"2011-01"`. |
+
+A real multi-location sample is bundled at `examples/data/laos_subset.csv`
+(three Lao provinces, monthly 2010–2012, from the CHAP project), used by
+`examples/laos_semi_synthetic.yaml`:
+
+```bash
+dsl run examples/laos_semi_synthetic.yaml -o out/
+```
+
+Note: the output's `time_period` labels are the scenario's own (starting
+year 2000), not the source data's dates.
+
 ## How `disease_cases` is generated
 
 The disease signal is a population-relative Poisson incidence model, not a
