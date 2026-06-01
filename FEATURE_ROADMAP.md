@@ -25,12 +25,15 @@ until the complete feature and its tests are present.
 | 10 | Partial | Random missing disease cases are supported, but climate gaps, consecutive gaps, and reporting delays are not. |
 | 11 | Not implemented | There are no outbreak or regime-change components. |
 | 12 | Partial | `seasonal_spike` and `seasonal_smooth` exist, but the listed sparse, uniform-range, and nonseasonal generators do not. |
-| 13 | Partial | `format_period` accepts `start_year`, but scenarios and the engine always use the default year 2000. |
+| 13 | Implemented | Top-level `start_period` config field (e.g. `"2010-07"`, `"2015-W10"`, `"20100615"`, `"2003"`) sets where the series starts on the real calendar, for all four resolutions; validated against the scenario's resolution. Default remains the first period of 2000. |
 | 14 | Partial | One scenario is reproducible from its seed, but there is no command for generating multiple replicates. |
 | 15 | Not implemented | The CLI runs one scenario YAML at a time. |
 | 16 | Not implemented | Train/test CSV files exist, but no visualization is produced. |
 | 17 | Not implemented | GeoJSON is neither read nor written. |
 | 18 | Not implemented | Covariate data must be downloaded to a CSV manually; nothing pulls from chap-core datasets or a CHAP server. |
+| 19 | Not implemented | All locations share one population and one set of generator params; real datasets differ per location (Laos: 75k–686k population, systematically different climate). |
+| 20 | Not implemented | Real seasonal temperature is asymmetric (fast rise to an April peak, slow decline); `seasonal_smooth` is a symmetric sine, so the minimum lands in the wrong season. |
+| 21 | Implemented | `clamp_min` param on both synthetic generators floors the series (e.g. 0 for rainfall, which noise could otherwise push negative). |
 
 ## Prioritized Features
 
@@ -131,7 +134,7 @@ until the complete feature and its tests are present.
   [uniform rainfall](https://github.com/SigurdSmeby/climate_health_simulations/blob/9e8877637b1b7e50a4493adf4bd7a978ad1538a5/src/climate_health_simulations/simulator/rainfall/SyntheticRainfallUniformGenerator.py),
   [random temperature](https://github.com/SigurdSmeby/climate_health_simulations/blob/9e8877637b1b7e50a4493adf4bd7a978ad1538a5/src/climate_health_simulations/simulator/temperature/SyntheticTemperatureGenerator.py)
 
-- [ ] **13. Add a configurable start period**
+- [x] **13. Add a configurable start period**
 
   Let scenarios start at a selected date instead of always starting in 2000.
   This aligns synthetic and real study periods.
@@ -180,6 +183,28 @@ until the complete feature and its tests are present.
   that produces the CSV, keeping the generator itself file-based and
   chap-core out of the core dependencies (optional extra or separate
   command, e.g. `dsl fetch`).
+
+- [ ] **19. Per-location parameters**
+
+  Let population and generator params vary per location (e.g.
+  `locations: {Bokeo: {population: 75000}, ...}`). Found while mimicking
+  the Laos subset: all synthetic locations currently share one population
+  and one climate, while the real provinces range 75k–686k people with
+  systematically different rainfall and temperature.
+
+- [ ] **20. Asymmetric seasonal generator**
+
+  A seasonal shape with a fast rise and slow decline (or vice versa). Real
+  Laos temperature climbs steeply Jan→April, then falls slowly to a
+  December minimum; the symmetric sine of `seasonal_smooth` cannot place
+  peak and trough independently.
+
+- [x] **21. Clamp generator output ranges**
+
+  A `clamp_min` param on the synthetic generators flooring the series.
+  Found while mimicking the Laos subset: rainfall noise produced negative
+  millimetres. Set `clamp_min: 0` for any quantity that cannot go below
+  zero.
 
 ## Rules For Every Feature
 

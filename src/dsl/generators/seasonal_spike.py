@@ -21,6 +21,7 @@ class SeasonalSpikeGenerator(VariableGenerator):
         spike_center: int = 26,
         spike_width: float = 4.0,
         noise: float = 0.5,
+        clamp_min: float | None = None,
     ):
         """Store and validate the YAML ``params:`` for this variable.
 
@@ -38,6 +39,9 @@ class SeasonalSpikeGenerator(VariableGenerator):
             means a broader rainy season. Must be > 0.
         noise:
             Standard deviation of additive Gaussian noise (0 disables it).
+        clamp_min:
+            If set, values are floored at this minimum — e.g. 0 for
+            rainfall, which can never be negative however large the noise.
         """
         if spike_width <= 0:
             raise ValueError(f"spike_width must be > 0, got {spike_width}")
@@ -48,6 +52,7 @@ class SeasonalSpikeGenerator(VariableGenerator):
         self.spike_center = spike_center
         self.spike_width = spike_width
         self.noise = noise
+        self.clamp_min = clamp_min
 
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
@@ -66,4 +71,7 @@ class SeasonalSpikeGenerator(VariableGenerator):
         series = self.baseline + spike
         if self.noise > 0:
             series = series + rng.normal(0.0, self.noise, size=n_periods)
+        if self.clamp_min is not None:
+            # np.maximum floors every value at clamp_min (element-wise max).
+            series = np.maximum(series, self.clamp_min)
         return series

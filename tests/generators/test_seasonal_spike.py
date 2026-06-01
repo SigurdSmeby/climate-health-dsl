@@ -56,3 +56,17 @@ def test_invalid_params_rejected():
         SeasonalSpikeGenerator(spike_width=0)
     with pytest.raises(ValueError, match="noise"):
         SeasonalSpikeGenerator(noise=-1.0)
+
+
+def test_clamp_min_prevents_negative_values(rng):
+    # Big noise on a low baseline would dip below zero (impossible for
+    # rainfall); clamp_min floors the series.
+    gen = SeasonalSpikeGenerator(baseline=2.0, noise=50.0, clamp_min=0.0)
+    series = gen.generate(520, "weekly", rng)
+    assert (series >= 0.0).all()
+
+
+def test_no_clamp_by_default(rng):
+    gen = SeasonalSpikeGenerator(baseline=2.0, noise=50.0)
+    series = gen.generate(520, "weekly", rng)
+    assert (series < 0.0).any()  # without a clamp, noise can go negative

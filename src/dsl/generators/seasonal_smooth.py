@@ -19,6 +19,7 @@ class SeasonalSmoothGenerator(VariableGenerator):
         amplitude: float = 10.0,
         phase: float = 0.0,
         noise: float = 0.5,
+        clamp_min: float | None = None,
     ):
         """Store and validate the YAML ``params:`` for this variable.
 
@@ -32,6 +33,9 @@ class SeasonalSmoothGenerator(VariableGenerator):
             Phase offset in radians — shifts where in the year the peak falls.
         noise:
             Standard deviation of additive Gaussian noise (0 disables it).
+        clamp_min:
+            If set, values are floored at this minimum (e.g. 0 for
+            quantities that cannot be negative).
         """
         if amplitude < 0:
             raise ValueError(f"amplitude must be >= 0, got {amplitude}")
@@ -41,6 +45,7 @@ class SeasonalSmoothGenerator(VariableGenerator):
         self.amplitude = amplitude
         self.phase = phase
         self.noise = noise
+        self.clamp_min = clamp_min
 
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
@@ -54,4 +59,7 @@ class SeasonalSmoothGenerator(VariableGenerator):
         )
         if self.noise > 0:
             series = series + rng.normal(0.0, self.noise, size=n_periods)
+        if self.clamp_min is not None:
+            # np.maximum floors every value at clamp_min (element-wise max).
+            series = np.maximum(series, self.clamp_min)
         return series

@@ -371,11 +371,41 @@ lag is genuinely recoverable from the output.
   also still out of scope (population remains a config scalar).
 - Version bumped to 1.2.0.
 
+## Laos-mimicry test → clamp_min + start_period (roadmap #13, #21)
+
+**Features**
+- `examples/laos_like_synthetic.yaml` — a fully synthetic scenario tuned to
+  resemble the real Laos subset using only YAML (the expressiveness test):
+  monsoon `seasonal_spike` (peak July, ~480 mm vs real 513), temperature
+  wave, dengue-scale incidence (`max_rate 0.002`, `median_rate 0.0001`),
+  three locations. Rainfall stats land within a few percent of the real
+  Bokeo column.
+- `clamp_min` param on both synthetic generators (roadmap #21): floors the
+  series, e.g. `clamp_min: 0` for rainfall. Found because the mimicry test
+  produced −14 mm of rain — noise has no physical bounds without it.
+- `start_period` top-level config field (roadmap #13): where the series
+  starts on the real calendar, in the scenario's own resolution
+  (`"2010-07"`, `"2015-W10"`, `"20100615"`, `"2003"`). Implemented via a
+  new `parse_period` (the inverse of `format_period`, round-trip tested),
+  validated in the schema against the resolution, applied in the engine.
+  Both Laos examples now start at `2010-01`, so the semi-synthetic output
+  carries the source data's actual dates.
+
+**Considerations**
+- The mimicry test exposed three modelling gaps, logged as roadmap items:
+  per-location parameters (#19 — all locations share one population and
+  climate; real provinces range 75k–686k people), an asymmetric seasonal
+  shape (#20 — real temperature rises fast to April and falls slowly; a
+  sine cannot do that), and the output clamp (#21, fixed immediately).
+- `start_period` was originally planned as a `start_year` int; changed to
+  a full period label mid-build (Sigurd's call) — strictly more flexible,
+  since real datasets start mid-year.
+
 ---
 
 ## Test suite
 
-136 tests, all green (`uv run pytest`): import smoke test, loader errors,
+149 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),

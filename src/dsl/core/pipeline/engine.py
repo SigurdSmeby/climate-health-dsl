@@ -17,7 +17,7 @@ import dsl.transforms  # noqa: F401
 from dsl.core.config.schema import ScenarioConfig
 from dsl.core.extension.generator_base import get_generator
 from dsl.core.pipeline.disease import build_disease_cases
-from dsl.core.pipeline.periods import format_period
+from dsl.core.pipeline.periods import format_period, parse_period
 
 
 def run(config: ScenarioConfig) -> pd.DataFrame:
@@ -58,11 +58,19 @@ def _run_one_location(
         drivers, config.disease_cases, rng, config.n_total, config.period
     )
 
+    # Where on the real calendar the series starts: row 0 is start_period
+    # if set (e.g. "2010-07"), else the first period of the year 2000.
+    if config.start_period is not None:
+        start_year, offset = parse_period(config.start_period, config.period)
+    else:
+        start_year, offset = 2000, 0
+
     # Assemble the tidy frame: CHAP-style label column first, the location,
     # then the variables in YAML declaration order, disease, and population.
     columns: dict[str, object] = {
         "time_period": [
-            format_period(i, config.period) for i in range(config.n_total)
+            format_period(i + offset, config.period, start_year)
+            for i in range(config.n_total)
         ],
         # A scalar here is broadcast by pandas to a constant column.
         "location": location,

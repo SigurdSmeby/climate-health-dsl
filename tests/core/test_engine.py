@@ -154,6 +154,50 @@ def test_returns_dataframe(example_config):
     assert isinstance(run(example_config), pd.DataFrame)
 
 
+def start_period_config(start_period, period="monthly"):
+    return parse_config(
+        {
+            "period": period,
+            "n_total": 24,
+            "start_period": start_period,
+            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
+            "disease_cases": {
+                "population": 1_000,
+                "depends_on": [{"variable": "rainfall"}],
+            },
+        }
+    )
+
+
+def test_start_period_sets_time_period_labels():
+    df = run(start_period_config("2010-01"))
+    assert df["time_period"].iloc[0] == "2010-01"
+    assert df["time_period"].iloc[12] == "2011-01"
+
+
+def test_start_period_can_begin_mid_year():
+    df = run(start_period_config("2010-07"))
+    assert df["time_period"].iloc[0] == "2010-07"
+    assert df["time_period"].iloc[5] == "2010-12"
+    assert df["time_period"].iloc[6] == "2011-01"  # rolls over correctly
+
+
+def test_start_period_weekly():
+    df = run(start_period_config("2015-W50", period="weekly"))
+    assert df["time_period"].iloc[0] == "2015-W50"
+    assert df["time_period"].iloc[2] == "2015-W52"
+    assert df["time_period"].iloc[3] == "2016-W01"  # rolls over correctly
+
+
+def test_start_period_daily_and_yearly():
+    df = run(start_period_config("20100615", period="daily"))
+    assert df["time_period"].iloc[0] == "20100615"
+    assert df["time_period"].iloc[1] == "20100616"
+    df = run(start_period_config("2003", period="yearly"))
+    assert df["time_period"].iloc[0] == "2003"
+    assert df["time_period"].iloc[23] == "2026"
+
+
 def test_location_column_present_and_constant(example_config):
     # Default scenario: one location named "loc", right after time_period.
     df = run(example_config)

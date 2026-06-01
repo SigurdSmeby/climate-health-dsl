@@ -47,3 +47,10 @@ def test_invalid_params_rejected():
         SeasonalSmoothGenerator(amplitude=-1.0)
     with pytest.raises(ValueError, match="noise"):
         SeasonalSmoothGenerator(noise=-0.5)
+
+
+def test_clamp_min_floors_the_series(rng):
+    gen = SeasonalSmoothGenerator(mean=2.0, amplitude=10.0, noise=0.0, clamp_min=0.0)
+    series = gen.generate(52, "weekly", rng)
+    assert (series >= 0.0).all()
+    assert (series == 0.0).any()  # the wave's trough actually hit the floor

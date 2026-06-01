@@ -4,6 +4,7 @@
 period: monthly
 n_total: 36
 seed: 42
+start_period: "2010-01" # align output labels with the source data's dates
 variables:
   - name: rainfall
     generate: from_csv

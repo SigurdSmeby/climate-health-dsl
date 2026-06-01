@@ -118,6 +118,21 @@ def test_lag_at_least_n_total_raises():
         parse_config(data)
 
 
+def test_start_period_default_is_none():
+    assert parse_config(make_config_dict()).start_period is None
+
+
+def test_start_period_configurable():
+    config = parse_config(make_config_dict(period="monthly", start_period="2010-07"))
+    assert config.start_period == "2010-07"
+
+
+def test_start_period_must_match_resolution():
+    # A monthly label on a weekly scenario is a hard error.
+    with pytest.raises(ValidationError, match="start_period"):
+        parse_config(make_config_dict(period="weekly", start_period="2010-07"))
+
+
 def test_locations_default_is_single_loc():
     config = parse_config(make_config_dict())
     assert config.locations == ["loc"]

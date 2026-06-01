@@ -5,6 +5,7 @@ Used by generators (to scale seasonality to the resolution), by the schema
 (to label rows).
 """
 import datetime
+import re
 
 # One seasonal cycle per resolution. A plain dict keeps the mapping explicit
 # and easy to extend.
@@ -85,3 +86,53 @@ def format_period(index: int, period: str, start_year: int = 2000) -> str:
     raise KeyError(
         f"Unknown period '{period}'. Expected one of {sorted(_PERIODS_PER_YEAR)}."
     )
+
+
+# What a valid label looks like for each resolution.
+_LABEL_PATTERNS = {
+    "daily": re.compile(r"^\d{4}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$"),
+    "weekly": re.compile(r"^\d{4}-W(0[1-9]|[1-4]\d|5[0-2])$"),
+    "monthly": re.compile(r"^\d{4}-(0[1-9]|1[0-2])$"),
+    "yearly": re.compile(r"^\d{4}$"),
+}
+
+
+def parse_period(label: str, period: str) -> tuple[int, int]:
+    """The inverse of ``format_period``: a label → (year, offset within year).
+
+    For example ``parse_period("2010-07", "monthly")`` is ``(2010, 6)``:
+    July 2010 is index 6 counting from the start of 2010. Together with
+    ``format_period(index + offset, period, start_year=year)`` this lets a
+    series start at any real-world period, not just the first of a year.
+
+    Raises
+    ------
+    ValueError
+        If the label does not match the resolution's format.
+    """
+    if period not in _LABEL_PATTERNS:
+        raise KeyError(
+            f"Unknown period '{period}'. Expected one of {sorted(_LABEL_PATTERNS)}."
+        )
+    if not _LABEL_PATTERNS[period].match(label):
+        examples = {
+            "daily": "20100615",
+            "weekly": "2015-W10",
+            "monthly": "2010-07",
+            "yearly": "2003",
+        }
+        raise ValueError(
+            f"'{label}' is not a valid {period} period label "
+            f"(expected something like '{examples[period]}')."
+        )
+
+    year = int(label[:4])
+    if period == "daily":
+        date = datetime.date(year, int(label[4:6]), int(label[6:8]))
+        # Day-of-year minus one: Jan 1 is offset 0.
+        return year, (date - datetime.date(year, 1, 1)).days
+    if period == "weekly":
+        return year, int(label[6:8]) - 1
+    if period == "monthly":
+        return year, int(label[5:7]) - 1
+    return year, 0  # yearly

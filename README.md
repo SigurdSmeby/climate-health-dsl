@@ -94,6 +94,7 @@ disease_cases:
 | `n_total` | int ≥ 1 | required | Number of time periods to generate. |
 | `seed` | int | `0` | Seed for all randomness. Same scenario + same seed → identical output. |
 | `train_fraction` | float, 0 < x < 1 | unset | If set, also write `train.csv`/`test.csv`. |
+| `start_period` | str | first period of 2000 | Where the series starts on the real calendar, in the scenario's resolution: `"2010-07"` (monthly), `"2015-W10"` (weekly), `"20100615"` (daily), `"2003"` (yearly). |
 | `locations` | list of str | `["loc"]` | Named locations. Each gets its own independently drawn series of `n_total` periods, stacked in long format with a `location` column. |
 | `variables` | list | required | The independent (climate) variables — see below. |
 | `disease_cases` | mapping | required | How the dependent disease signal is built — see below. |
@@ -142,6 +143,7 @@ every year (a Gaussian bump, wrapping correctly across the year boundary).
 | `spike_center` | `26` | Period offset of the peak within the year (26 ≈ mid-year for weekly data). |
 | `spike_width` | `4.0` | Width of the spike, in periods (> 0). |
 | `noise` | `0.5` | Std. dev. of added Gaussian noise; `0` makes the series fully deterministic. |
+| `clamp_min` | unset | Floor for the values — set `0` for quantities like rainfall that can never be negative. |
 
 ### `seasonal_smooth` — temperature shape
 
@@ -153,6 +155,10 @@ A smooth sine wave, one full cycle per year at any resolution.
 | `amplitude` | `10.0` | Swing above/below the mean (≥ 0). `0` gives pure noise around the mean — useful as an aperiodic driver. |
 | `phase` | `0.0` | Phase offset in radians (shifts where in the year the peak falls). |
 | `noise` | `0.5` | Std. dev. of added Gaussian noise; `0` disables it. |
+| `clamp_min` | unset | Floor for the values. |
+
+A fully synthetic scenario tuned to resemble the bundled Laos data is at
+`examples/laos_like_synthetic.yaml`.
 
 ### `from_csv` — real data
 
@@ -176,8 +182,9 @@ A real multi-location sample is bundled at `examples/data/laos_subset.csv`
 dsl run examples/laos_semi_synthetic.yaml -o out/
 ```
 
-Note: the output's `time_period` labels are the scenario's own (starting
-year 2000), not the source data's dates.
+To align the output's `time_period` labels with the source data's real
+dates, set the scenario's `start_period` to the source's first period (the
+Laos example uses `start_period: "2010-01"`).
 
 ## How `disease_cases` is generated
 

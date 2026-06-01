@@ -1,7 +1,7 @@
 """Tests for the time-axis helpers: periods-per-year and CHAP period labels."""
 import pytest
 
-from dsl.core.pipeline.periods import format_period, periods_per_year
+from dsl.core.pipeline.periods import format_period, parse_period, periods_per_year
 
 
 # ------------------------------------------------------------ periods_per_year
@@ -70,3 +70,33 @@ def test_custom_start_year():
 def test_unknown_period_raises():
     with pytest.raises(KeyError, match="fortnightly"):
         format_period(0, "fortnightly")
+
+
+# --------------------------------------------------------------- parse_period
+
+
+def test_parse_period_round_trips_all_resolutions():
+    # parse_period is format_period's inverse: parsing a label and
+    # formatting the result must give the label back, for every resolution.
+    for period, label in [
+        ("daily", "20100615"),
+        ("weekly", "2015-W10"),
+        ("monthly", "2010-07"),
+        ("yearly", "2003"),
+    ]:
+        year, offset = parse_period(label, period)
+        assert format_period(offset, period, start_year=year) == label
+
+
+def test_parse_period_values():
+    assert parse_period("2010-07", "monthly") == (2010, 6)
+    assert parse_period("2015-W10", "weekly") == (2015, 9)
+    assert parse_period("2003", "yearly") == (2003, 0)
+    assert parse_period("20100103", "daily") == (2010, 2)
+
+
+def test_parse_period_wrong_format_raises():
+    with pytest.raises(ValueError, match="2010-07"):
+        parse_period("2010-07", "weekly")  # monthly label, weekly resolution
+    with pytest.raises(ValueError, match="garbage"):
+        parse_period("garbage", "monthly")

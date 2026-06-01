@@ -21,7 +21,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from dsl.core.pipeline.periods import periods_per_year
+from dsl.core.pipeline.periods import parse_period, periods_per_year
 
 
 class VariableSpec(BaseModel):
@@ -94,6 +94,9 @@ class ScenarioConfig(BaseModel):
     # None means "write only the single full CSV"; a value in (0, 1) also
     # writes train.csv/test.csv as a row split.
     train_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
+    # The real-world period the series starts at (e.g. "2010-07" for a
+    # monthly scenario). None means the first period of the year 2000.
+    start_period: str | None = None
     # CHAP datasets carry a location column; each named location gets its own
     # independently drawn series. min_length=1: at least one location.
     locations: list[str] = Field(default=["loc"], min_length=1)
@@ -111,7 +114,13 @@ class ScenarioConfig(BaseModel):
         2. Lag sanity: a lag >= n_total can never appear in the data.
         3. Location names must be unique (duplicates would silently double
            rows in the output).
+        4. ``start_period`` must be a valid label for the chosen resolution.
         """
+        if self.start_period is not None:
+            try:
+                parse_period(self.start_period, self.period)
+            except ValueError as exc:
+                raise ValueError(f"start_period: {exc}") from exc
         if len(set(self.locations)) != len(self.locations):
             raise ValueError(
                 f"locations contains duplicate names: {self.locations}."
