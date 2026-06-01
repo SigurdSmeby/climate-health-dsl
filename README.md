@@ -51,6 +51,13 @@ lag of 3 there is no driver signal yet.
 Rerunning the same scenario produces identical files: all randomness comes
 from the `seed` in the YAML.
 
+Output is also checked against CHAP's dataset rules (required columns,
+standard covariate names, monthly/weekly period format, consecutive and
+per-location-identical periods, no NaN in covariates). Findings are printed
+as warnings; with `dsl run ... --strict-chap` they become errors and nothing
+is written. Scenarios don't have to be CHAP-compatible — other variable names
+or daily/yearly resolution are fine for use outside CHAP.
+
 ## Writing a scenario
 
 A scenario is one YAML file. The bundled example

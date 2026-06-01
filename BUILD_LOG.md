@@ -311,11 +311,38 @@ lag is genuinely recoverable from the output.
 - `schema.py` was edited (the one sanctioned core edit) since locations are
   a genuinely new top-level concept.
 
+## Roadmap #2 — CHAP output validation
+
+**Features**
+- `core/pipeline/chap_check.py` — `validate_chap(df) -> list[str]`: checks
+  the finished DataFrame against CHAP's documented dataset rules before
+  anything is written: required columns (`time_period`, `location`,
+  `disease_cases`), the covariates standard CHAP models expect
+  (`rainfall`, `mean_temperature`, `population`), period format,
+  consecutive periods, identical periods across locations, no NaN in
+  covariate columns (NaN in `disease_cases` is fine — CHAP masks those),
+  and disease_cases sanity (not all-NaN, no negatives).
+- CLI: findings print as `warning:` lines by default; the new
+  `--strict-chap` flag turns them into errors and refuses to write any
+  files. A CHAP-shaped scenario passes strict mode untouched.
+
+**Considerations**
+- Rules were re-verified against CHAP's online docs (prepare-data and
+  validate-data pages) rather than assumed. Notable find: CHAP documents
+  **only monthly (`YYYY-MM`) and weekly (`YYYY-Wnn`)** period formats, so
+  the DSL's daily/yearly resolutions are flagged as non-CHAP — still fully
+  supported for use outside CHAP.
+- Strictness is a CLI flag, not a config field: CHAP compatibility is a
+  property of how the output will be *used*, not of the scenario itself.
+  Non-CHAP datasets (a `wind` variable, daily data) stay first-class.
+- Same never-raises contract as `validate_scenario`: the checker returns
+  human-readable findings, and the CLI decides what they mean.
+
 ---
 
 ## Test suite
 
-108 tests, all green (`uv run pytest`): import smoke test, loader errors,
+123 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),

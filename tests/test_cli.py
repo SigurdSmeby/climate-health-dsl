@@ -76,6 +76,39 @@ def test_missing_file_fails_cleanly(tmp_path, capsys):
     assert "nope.yaml" in capsys.readouterr().err
 
 
+def non_chap_scenario():
+    # Legal DSL, but the variable names are not what CHAP models expect.
+    data = base_scenario()
+    data["variables"] = [{"name": "wind", "generate": "seasonal_smooth"}]
+    data["disease_cases"]["depends_on"] = [{"variable": "wind", "lag": 3}]
+    return data
+
+
+def test_non_chap_output_warns_but_succeeds(tmp_path, capsys):
+    path = write_scenario(tmp_path, non_chap_scenario())
+    out = tmp_path / "out"
+    code = main(["run", str(path), "-o", str(out)])
+    assert code == 0
+    assert (out / "simulated_data.csv").is_file()
+    assert "rainfall" in capsys.readouterr().err  # CHAP finding, as warning
+
+
+def test_strict_chap_fails_before_writing(tmp_path, capsys):
+    path = write_scenario(tmp_path, non_chap_scenario())
+    out = tmp_path / "out"
+    code = main(["run", str(path), "-o", str(out), "--strict-chap"])
+    assert code != 0
+    assert not out.exists()  # nothing written on strict failure
+    assert "rainfall" in capsys.readouterr().err
+
+
+def test_strict_chap_passes_chap_scenario(tmp_path):
+    out = tmp_path / "out"
+    code = main(["run", EXAMPLE, "-o", str(out), "--strict-chap"])
+    assert code == 0
+    assert (out / "simulated_data.csv").is_file()
+
+
 def test_output_is_reproducible(tmp_path):
     out_a = tmp_path / "a"
     out_b = tmp_path / "b"

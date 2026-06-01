@@ -14,7 +14,7 @@ until the complete feature and its tests are present.
 | # | Status | What already exists |
 |---|---|---|
 | 1 | Implemented | `locations:` config field (default `["loc"]`); every output row carries a `location` column; multi-location data is stacked long-format with independent draws per location; train/test split is per location. Verified end-to-end against the minimalist CHAP example model. |
-| 2 | Partial | Pydantic validates scenarios and tests check the current CSV header, but there is no complete CHAP dataset validator. |
+| 2 | Implemented | `chap_check.validate_chap(df)` checks required columns, standard covariates, monthly/weekly period format, consecutive periods, identical periods per location, NaN in covariates, and disease_cases sanity. Warnings by default; `--strict-chap` refuses to write. |
 | 3 | Not implemented | Both current generators create fresh synthetic covariates. |
 | 4 | Not implemented | The loader reads scenario YAML, not covariate CSV files. |
 | 5 | Partial | The scenario contains seed, lag, weight, and rate settings, but output does not save them as metadata. |
@@ -40,7 +40,7 @@ until the complete feature and its tests are present.
 
   Source: [CHAP data preparation](https://chap.dhis2.org/chap-modeling-platform/external_models/prepare_data/)
 
-- [ ] **2. Validate CHAP output**
+- [x] **2. Validate CHAP output**
 
   Check required columns, period values, locations, data types, and missing
   values before writing output. This catches incompatible datasets early.

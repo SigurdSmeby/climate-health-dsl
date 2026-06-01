@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from dsl.core.config.loader import load_yaml
 from dsl.core.config.schema import parse_config, validate_scenario
+from dsl.core.pipeline.chap_check import validate_chap
 from dsl.core.pipeline.engine import run as run_engine
 from dsl.core.pipeline.output import write_output
 
@@ -39,6 +40,11 @@ def main(argv: list[str] | None = None) -> int:
         default="out",
         help="directory to write the CSV files into (default: out/)",
     )
+    run_parser.add_argument(
+        "--strict-chap",
+        action="store_true",  # a present/absent flag, no value needed
+        help="refuse to write output that breaks CHAP's dataset rules",
+    )
     args = parser.parse_args(argv)
 
     # --- Parse + validate. Any hard error exits here, before generating. ---
@@ -54,8 +60,18 @@ def main(argv: list[str] | None = None) -> int:
     for warning in validate_scenario(config):
         print(f"warning: {warning}", file=sys.stderr)
 
-    # --- Generate and write. ---
+    # --- Generate, check CHAP compatibility, write. ---
     df = run_engine(config)
+
+    findings = validate_chap(df)
+    if findings and args.strict_chap:
+        for finding in findings:
+            print(f"error: {finding}", file=sys.stderr)
+        print("error: output violates CHAP rules (--strict-chap)", file=sys.stderr)
+        return 1  # nothing has been written at this point
+    for finding in findings:
+        print(f"warning: {finding}", file=sys.stderr)
+
     write_output(df, config, args.out_dir)
     print(f"Wrote {len(df)} rows to {args.out_dir}/")
     return 0
