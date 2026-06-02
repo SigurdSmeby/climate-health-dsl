@@ -28,7 +28,7 @@ until the complete feature and its tests are present.
 | 13 | Implemented | Top-level `start_period` config field (e.g. `"2010-07"`, `"2015-W10"`, `"20100615"`, `"2003"`) sets where the series starts on the real calendar, for all four resolutions; validated against the scenario's resolution. Default remains the first period of 2000. |
 | 14 | Partial | One scenario is reproducible from its seed, but there is no command for generating multiple replicates. |
 | 15 | Not implemented | The CLI runs one scenario YAML at a time. |
-| 16 | Not implemented | Train/test CSV files exist, but no visualization is produced. |
+| 16 | Implemented | `plot.py` + `dsl run --plot` writes a faceted plotly chart (one panel per variable, one line per location, train/test boundary marked); interactive HTML by default, or static png/svg/pdf via `--plot-format` (kaleido). |
 | 17 | Not implemented | GeoJSON is neither read nor written. |
 | 18 | Not implemented | Covariate data must be downloaded to a CSV manually; nothing pulls from chap-core datasets or a CHAP server. |
 | 19 | Not implemented | All locations share one population and one set of generator params; real datasets differ per location (Laos: 75k–686k population, systematically different climate). |
@@ -161,7 +161,7 @@ until the complete feature and its tests are present.
   [ConfigGenerator.py](https://github.com/SigurdSmeby/climate_health_simulations/blob/9e8877637b1b7e50a4493adf4bd7a978ad1538a5/src/climate_health_simulations/config/config_variations/ConfigGenerator.py),
   [ConfigParameters.py](https://github.com/SigurdSmeby/climate_health_simulations/blob/9e8877637b1b7e50a4493adf4bd7a978ad1538a5/src/climate_health_simulations/config/config_variations/ConfigParameters.py)
 
-- [ ] **16. Add dataset visualization**
+- [x] **16. Add dataset visualization**
 
   Plot generated variables, disease cases, and train/test boundaries. Visual
   inspection makes incorrect scenarios easier to detect.

@@ -436,11 +436,35 @@ lag is genuinely recoverable from the output.
   mapped its other suggestions onto existing items, added #22–25 (AR climate
   noise, ENSO cycle, realism-validation tooling, interaction transform).
 
+## Roadmap #16 — dataset visualization
+
+**Features**
+- `core/pipeline/plot.py` — `plot_dataset(df, out_path, train_split=None)`:
+  a faceted plotly chart, one stacked panel per variable (covariates +
+  `disease_cases`), one line per location, periods aligned on a shared
+  x-axis, train/test boundary drawn as a dashed line. The file extension
+  picks the format: `.html` is interactive, `.png`/`.svg`/`.pdf` are static.
+- CLI: `dsl run --plot` writes `plot.<fmt>` into the output dir;
+  `--plot-format` chooses (default html). No plot unless asked.
+
+**Considerations**
+- **Library choice: plotly + kaleido** (over matplotlib). Sigurd wanted
+  interactivity (zoom/hover/toggle locations in the HTML) and is considering
+  a TUI later; plotly's HTML covers exploration, and kaleido gives static
+  PNG/SVG/PDF export for a thesis figure. Cost: heavier deps (plotly +
+  a bundled-browser renderer) — verified PNG export works in this env before
+  building on it.
+- Plotting tests assert the contract (right file type written, multi-
+  location and NaN data don't crash, split line accepted, bad extension
+  rejected), not pixels — visual correctness was eyeballed on the Laos
+  example.
+- New runtime deps added to pyproject: `plotly`, `kaleido`.
+
 ---
 
 ## Test suite
 
-153 tests, all green (`uv run pytest`): import smoke test, loader errors,
+161 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),

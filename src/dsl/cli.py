@@ -9,7 +9,9 @@ exit code BEFORE anything is generated; warnings are printed to stderr
 (prefixed ``warning:``) and the run proceeds.
 """
 import argparse
+import math
 import sys
+from pathlib import Path
 
 from pydantic import ValidationError
 
@@ -18,6 +20,7 @@ from dsl.core.config.schema import parse_config, validate_scenario
 from dsl.core.pipeline.chap_check import validate_chap
 from dsl.core.pipeline.engine import run as run_engine
 from dsl.core.pipeline.output import write_output
+from dsl.core.pipeline.plot import plot_dataset
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,6 +42,16 @@ def main(argv: list[str] | None = None) -> int:
         "--out-dir",
         default="out",
         help="directory to write the CSV files into (default: out/)",
+    )
+    run_parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="also write a plot of the dataset into the output directory",
+    )
+    run_parser.add_argument(
+        "--plot-format",
+        default="html",
+        help="plot file format: html (interactive) or png/svg/pdf (default: html)",
     )
     args = parser.parse_args(argv)
 
@@ -66,6 +79,18 @@ def main(argv: list[str] | None = None) -> int:
 
     write_output(df, config, args.out_dir)
     print(f"Wrote {len(df)} rows to {args.out_dir}/")
+
+    if args.plot:
+        # The train/test boundary, as a period index, so the plot can mark it
+        # (same floor() rule the output split uses).
+        split = (
+            math.floor(config.n_total * config.train_fraction)
+            if config.train_fraction is not None
+            else None
+        )
+        plot_path = Path(args.out_dir) / f"plot.{args.plot_format}"
+        plot_dataset(df, plot_path, train_split=split)
+        print(f"Wrote plot to {plot_path}")
     return 0
 
 

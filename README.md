@@ -47,9 +47,17 @@ lag of 3 there is no driver signal yet.
 |---|---|---|
 | `simulated_data.csv` | always | The full dataset: `time_period`, `location`, one column per variable, `disease_cases`, `population`. This is the file to give CHAP — it does its own train/test hiding. |
 | `train.csv`, `test.csv` | only if `train_fraction` is set | A split in time (the first `train_fraction` of each location's periods vs the rest), all columns intact — for evaluation outside CHAP. |
+| `plot.html` (or `.png`/`.svg`/`.pdf`) | only with `--plot` | A faceted plot of the covariates and `disease_cases` over time, one line per location, with the train/test boundary marked. |
 
 Rerunning the same scenario produces identical files: all randomness comes
 from the `seed` in the YAML.
+
+To see a dataset rather than read the CSV, add `--plot` (interactive HTML by
+default, or `--plot-format png`):
+
+```bash
+dsl run examples/laos_like_synthetic.yaml -o out/ --plot
+```
 
 Output is also checked against CHAP's dataset rules (the required
 `time_period`/`location`/`disease_cases` columns, a CHAP-parseable period

@@ -143,6 +143,26 @@ def test_daily_scenario_has_no_chap_warning(tmp_path, capsys):
     assert "time_period" not in capsys.readouterr().err  # no format complaint
 
 
+def test_plot_flag_writes_plot(tmp_path):
+    out = tmp_path / "out"
+    code = main(["run", EXAMPLE, "-o", str(out), "--plot"])
+    assert code == 0
+    assert (out / "plot.html").is_file()
+
+
+def test_plot_format_png(tmp_path):
+    out = tmp_path / "out"
+    code = main(["run", EXAMPLE, "-o", str(out), "--plot", "--plot-format", "png"])
+    assert code == 0
+    assert (out / "plot.png").is_file()
+
+
+def test_no_plot_by_default(tmp_path):
+    out = tmp_path / "out"
+    main(["run", EXAMPLE, "-o", str(out)])
+    assert not (out / "plot.html").exists()
+
+
 def test_output_is_reproducible(tmp_path):
     out_a = tmp_path / "a"
     out_b = tmp_path / "b"
