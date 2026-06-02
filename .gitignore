@@ -35,3 +35,6 @@ out/
 
 # Local logs
 *.log
+
+# Local research notes
+deep-research-report.md
