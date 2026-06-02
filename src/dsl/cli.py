@@ -19,6 +19,7 @@ from dsl.core.config.loader import load_yaml
 from dsl.core.config.schema import parse_config, validate_scenario
 from dsl.core.pipeline.chap_check import validate_chap
 from dsl.core.pipeline.engine import run as run_engine
+from dsl.core.pipeline.metadata import write_metadata
 from dsl.core.pipeline.output import write_output
 from dsl.core.pipeline.plot import plot_dataset
 
@@ -78,6 +79,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"warning: {finding}", file=sys.stderr)
 
     write_output(df, config, args.out_dir)
+    # The ground-truth sidecar: records the resolved scenario so the dataset
+    # is self-describing and reproducible.
+    write_metadata(config, args.out_dir)
     print(f"Wrote {len(df)} rows to {args.out_dir}/")
 
     if args.plot:

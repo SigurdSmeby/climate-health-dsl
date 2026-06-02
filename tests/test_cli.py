@@ -143,6 +143,13 @@ def test_daily_scenario_has_no_chap_warning(tmp_path, capsys):
     assert "time_period" not in capsys.readouterr().err  # no format complaint
 
 
+def test_metadata_sidecar_written(tmp_path):
+    out = tmp_path / "out"
+    code = main(["run", EXAMPLE, "-o", str(out)])
+    assert code == 0
+    assert (out / "metadata.json").is_file()
+
+
 def test_plot_flag_writes_plot(tmp_path):
     out = tmp_path / "out"
     code = main(["run", EXAMPLE, "-o", str(out), "--plot"])

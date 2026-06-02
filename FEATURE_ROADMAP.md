@@ -17,7 +17,7 @@ until the complete feature and its tests are present.
 | 2 | Implemented | `chap_check.validate_chap(df)` checks the required trio (time_period, location, disease_cases), CHAP-parseable period formats (all four resolutions), NaN in covariates, and disease_cases sanity; per-location/consecutive-period mismatches are advisory. All findings are warnings (no hard-fail; synthetic output is always valid, so findings only arise from from_csv real-data gaps). Corrected after a chap-core source audit (was over-strict on population, covariate names, and daily/yearly periods). |
 | 3 | Implemented | The `from_csv` generator backs a variable with real data; `examples/laos_semi_synthetic.yaml` uses bundled CHAP Laos data (rainfall, temperature) with synthetic disease on top. Real population is still out of scope (population is a config scalar). |
 | 4 | Implemented | `from_csv` reads any CHAP-format CSV (`file`, `column`, `source_location`, `start_period` params); insufficient data is a hard error, never wrapped or extrapolated. |
-| 5 | Partial | The scenario contains seed, lag, weight, and rate settings, but output does not save them as metadata. |
+| 5 | Implemented | `metadata.py` writes `metadata.json` beside every dataset: seed, lags, weights, rates, generators, tool version, and the full resolved scenario (round-trips through parse_config to reproduce the run). |
 | 6 | Not implemented | Drivers enter the predictor linearly; the final sigmoid does not provide configurable nonlinear driver effects. |
 | 7 | Not implemented | Each dependency supports one fixed lag, not an effect distributed across several lags. |
 | 8 | Not implemented | Multiple drivers are added independently; they do not interact. |
@@ -76,7 +76,7 @@ until the complete feature and its tests are present.
 
   Source: [CHAP data preparation](https://chap.dhis2.org/chap-modeling-platform/external_models/prepare_data/)
 
-- [ ] **5. Save ground-truth metadata**
+- [x] **5. Save ground-truth metadata**
 
   Save the seed, true lags, weights, rates, generators, and disease settings
   beside each dataset. This makes experiments reproducible and auditable.

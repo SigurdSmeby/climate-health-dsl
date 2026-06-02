@@ -460,11 +460,28 @@ lag is genuinely recoverable from the output.
   example.
 - New runtime deps added to pyproject: `plotly`, `kaleido`.
 
+## Roadmap #5 — ground-truth metadata sidecar
+
+**Features**
+- `core/pipeline/metadata.py` — `write_metadata(config, out_dir)` writes
+  `metadata.json` beside every dataset: tool version, seed, period, the
+  disease dependencies (lags/weights/rates), the generators, and a full
+  resolved `scenario` block. The CLI always writes it after the CSVs.
+- The dataset is now self-describing: the `scenario` block feeds back
+  through `parse_config` to reproduce the run bit-for-bit (tested).
+
+**Considerations**
+- Exposed `dsl.__version__` (read from installed package metadata via
+  `importlib.metadata`, so pyproject.toml stays the single source of truth —
+  no second place to bump).
+- Metadata is built from `config.model_dump(mode="json")`, so it records the
+  *resolved* scenario with defaults filled in, not just what the user typed.
+
 ---
 
 ## Test suite
 
-161 tests, all green (`uv run pytest`): import smoke test, loader errors,
+168 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),
