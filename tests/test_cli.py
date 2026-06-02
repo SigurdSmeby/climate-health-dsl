@@ -1,5 +1,6 @@
 """Smoke tests for the `dsl run` command-line interface."""
 import numpy as np
+import pandas as pd
 import pytest
 import yaml
 
@@ -76,16 +77,40 @@ def test_missing_file_fails_cleanly(tmp_path, capsys):
     assert "nope.yaml" in capsys.readouterr().err
 
 
-def non_chap_scenario():
-    # Legal DSL, but the variable names are not what CHAP models expect.
-    data = base_scenario()
-    data["variables"] = [{"name": "wind", "generate": "seasonal_smooth"}]
-    data["disease_cases"]["depends_on"] = [{"variable": "wind", "lag": 3}]
-    return data
+def nan_covariate_scenario(tmp_path):
+    """A scenario whose covariate carries a NaN (a real CHAP finding).
+
+    A from_csv covariate reads a column containing a NaN, which the CHAP
+    check flags — CHAP requires complete covariates. Engine output is
+    otherwise always CHAP-valid, so this is how we exercise the strict path.
+    """
+    csv = tmp_path / "real.csv"
+    periods = [f"2010-{m + 1:02d}" for m in range(12)]
+    rain = [1.0] * 12
+    rain[4] = float("nan")  # one missing covariate value
+    pd.DataFrame({"time_period": periods, "rainfall": rain}).to_csv(csv, index=False)
+    return {
+        "period": "monthly",
+        "n_total": 12,
+        "start_period": "2010-01",
+        "variables": [
+            {
+                "name": "rainfall",
+                "generate": "from_csv",
+                "params": {"file": str(csv), "column": "rainfall"},
+            }
+        ],
+        "disease_cases": {
+            "population": 1000,
+            "depends_on": [{"variable": "rainfall", "lag": 1}],
+        },
+    }
 
 
-def test_non_chap_output_warns_but_succeeds(tmp_path, capsys):
-    path = write_scenario(tmp_path, non_chap_scenario())
+def test_chap_finding_warns_but_succeeds(tmp_path, capsys):
+    # A CHAP-compatibility finding (here: a NaN in real covariate data) is
+    # advisory — it prints a warning but the run still writes output.
+    path = write_scenario(tmp_path, nan_covariate_scenario(tmp_path))
     out = tmp_path / "out"
     code = main(["run", str(path), "-o", str(out)])
     assert code == 0
@@ -93,20 +118,29 @@ def test_non_chap_output_warns_but_succeeds(tmp_path, capsys):
     assert "rainfall" in capsys.readouterr().err  # CHAP finding, as warning
 
 
-def test_strict_chap_fails_before_writing(tmp_path, capsys):
-    path = write_scenario(tmp_path, non_chap_scenario())
+def test_daily_scenario_has_no_chap_warning(tmp_path, capsys):
+    # Daily output is valid CHAP (TimePeriod.parse accepts YYYYMMDD); it must
+    # not produce a CHAP period-format warning.
+    data = {
+        "period": "daily",
+        "n_total": 400,
+        "variables": [
+            {"name": "rainfall", "generate": "seasonal_spike"},
+            {"name": "mean_temperature", "generate": "seasonal_smooth"},
+        ],
+        "disease_cases": {
+            "population": 1000,
+            "depends_on": [
+                {"variable": "rainfall", "lag": 1},
+                {"variable": "mean_temperature", "lag": 1},
+            ],
+        },
+    }
+    path = write_scenario(tmp_path, data)
     out = tmp_path / "out"
-    code = main(["run", str(path), "-o", str(out), "--strict-chap"])
-    assert code != 0
-    assert not out.exists()  # nothing written on strict failure
-    assert "rainfall" in capsys.readouterr().err
-
-
-def test_strict_chap_passes_chap_scenario(tmp_path):
-    out = tmp_path / "out"
-    code = main(["run", EXAMPLE, "-o", str(out), "--strict-chap"])
+    code = main(["run", str(path), "-o", str(out)])
     assert code == 0
-    assert (out / "simulated_data.csv").is_file()
+    assert "time_period" not in capsys.readouterr().err  # no format complaint
 
 
 def test_output_is_reproducible(tmp_path):

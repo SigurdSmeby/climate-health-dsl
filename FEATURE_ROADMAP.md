@@ -14,7 +14,7 @@ until the complete feature and its tests are present.
 | # | Status | What already exists |
 |---|---|---|
 | 1 | Implemented | `locations:` config field (default `["loc"]`); every output row carries a `location` column; multi-location data is stacked long-format with independent draws per location; train/test split is per location. Verified end-to-end against the minimalist CHAP example model. |
-| 2 | Implemented | `chap_check.validate_chap(df)` checks required columns, standard covariates, monthly/weekly period format, consecutive periods, identical periods per location, NaN in covariates, and disease_cases sanity. Warnings by default; `--strict-chap` refuses to write. |
+| 2 | Implemented | `chap_check.validate_chap(df)` checks the required trio (time_period, location, disease_cases), CHAP-parseable period formats (all four resolutions), NaN in covariates, and disease_cases sanity; per-location/consecutive-period mismatches are advisory. All findings are warnings (no hard-fail; synthetic output is always valid, so findings only arise from from_csv real-data gaps). Corrected after a chap-core source audit (was over-strict on population, covariate names, and daily/yearly periods). |
 | 3 | Implemented | The `from_csv` generator backs a variable with real data; `examples/laos_semi_synthetic.yaml` uses bundled CHAP Laos data (rainfall, temperature) with synthetic disease on top. Real population is still out of scope (population is a config scalar). |
 | 4 | Implemented | `from_csv` reads any CHAP-format CSV (`file`, `column`, `source_location`, `start_period` params); insufficient data is a hard error, never wrapped or extrapolated. |
 | 5 | Partial | The scenario contains seed, lag, weight, and rate settings, but output does not save them as metadata. |
@@ -34,6 +34,10 @@ until the complete feature and its tests are present.
 | 19 | Not implemented | All locations share one population and one set of generator params; real datasets differ per location (Laos: 75k–686k population, systematically different climate). |
 | 20 | Not implemented | Real seasonal temperature is asymmetric (fast rise to an April peak, slow decline); `seasonal_smooth` is a symmetric sine, so the minimum lands in the wrong season. |
 | 21 | Implemented | `clamp_min` param on both synthetic generators floors the series (e.g. 0 for rainfall, which noise could otherwise push negative). |
+| 22 | Not implemented | Generators add only independent Gaussian noise; no serial correlation (AR/ARIMA). |
+| 23 | Not implemented | Seasonality is a single yearly cycle; no multi-year/ENSO component. |
+| 24 | Not implemented | No tooling compares synthetic output to a real reference's statistics. |
+| 25 | Not implemented | Covariates cannot be combined into interaction terms before the disease model. |
 
 ## Prioritized Features
 
@@ -205,6 +209,60 @@ until the complete feature and its tests are present.
   Found while mimicking the Laos subset: rainfall noise produced negative
   millimetres. Set `clamp_min: 0` for any quantity that cannot go below
   zero.
+
+- [ ] **22. Autocorrelated climate noise (AR generator)**
+
+  A generator producing a serially-correlated series (AR(1)/ARIMA:
+  `X_t = phi·X_{t-1} + e_t`), optionally over a seasonal baseline. Real
+  rainfall/temperature have week-to-week persistence that the current
+  independent Gaussian noise on `seasonal_smooth`/`seasonal_spike` lacks.
+  New file in `generators/`.
+
+- [ ] **23. Multi-year (ENSO-like) cycle**
+
+  An optional low-frequency component (period ~3–7 years) on the seasonal
+  generators, for interannual variability in long datasets. Either a param
+  on the existing generators or a composable second cycle.
+
+- [ ] **24. Realism-validation tooling**
+
+  A command/report comparing a generated dataset against a real reference
+  (e.g. the bundled Laos data): mean/variance ratio (overdispersion),
+  lag-1 autocorrelation, seasonal peak-to-trough asymmetry. Tells a user
+  whether their synthetic data is realistic. Overlaps with #16 (plotting)
+  and reuses the kind of stats already written ad hoc for the Laos mimicry.
+
+- [ ] **25. Covariate-interaction transform**
+
+  A transform multiplying two covariate series pointwise (e.g.
+  `rainfall × mean_temperature`) so the product can itself be a driver.
+  This is the *generation-side* framing of interactions; #8 covers
+  interactions inside the disease model. Decide which framing to keep.
+
+## External review (deep-research report, 2026-06)
+
+A literature/CHAP deep-research pass (`deep-research-report.md`) reviewed the
+disease model and covariate generation. Its findings, reconciled against the
+items above:
+
+- **Confirms the priority of** #9 (negative-binomial overdispersion), #6
+  (nonlinear/threshold climate effects, e.g. thermal-suitability curves),
+  #7 (distributed lags / DLNM), and #10 (realistic missingness) as the
+  literature-backed high-value tier — do these before the spatial/ENSO work.
+- **Maps onto existing items:** report's interactions → #8/#25, outbreaks →
+  #11, asymmetric/multi-harmonic seasonality → #20, spatial correlation +
+  population heterogeneity → #19.
+- **Genuinely new → added above:** #22 (AR climate noise), #23 (ENSO),
+  #24 (realism validation), #25 (interaction transform).
+- **Validator audit (acted on):** the report flagged `chap_check` as
+  over-strict; verified against chap-core source (`time_period/
+  date_util_wrapper.py`, `datatypes.py`, `validators.py`) and corrected —
+  population is optional, covariate names are free-form, and all four
+  resolutions (daily/weekly/monthly/yearly, plus CHAP's weekly variants)
+  are accepted. Per-location/consecutive-period checks kept as advisory.
+- **Report caveat:** it never saw this roadmap (it assumed an empty
+  placeholder), so its "no conflicts" conclusion was unreliable; the
+  reconciliation above was done by hand.
 
 ## Rules For Every Feature
 

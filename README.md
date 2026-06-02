@@ -51,12 +51,14 @@ lag of 3 there is no driver signal yet.
 Rerunning the same scenario produces identical files: all randomness comes
 from the `seed` in the YAML.
 
-Output is also checked against CHAP's dataset rules (required columns,
-standard covariate names, monthly/weekly period format, consecutive and
-per-location-identical periods, no NaN in covariates). Findings are printed
-as warnings; with `dsl run ... --strict-chap` they become errors and nothing
-is written. Scenarios don't have to be CHAP-compatible — other variable names
-or daily/yearly resolution are fine for use outside CHAP.
+Output is also checked against CHAP's dataset rules (the required
+`time_period`/`location`/`disease_cases` columns, a CHAP-parseable period
+format, and no NaN in covariates; mismatched or non-consecutive periods
+across locations are flagged too). Any findings print as warnings and the
+run still writes output — in practice they only arise when real data enters
+via `from_csv` with gaps, since the synthetic generators always produce
+CHAP-valid output. All four resolutions and arbitrary covariate names are
+accepted, and `population` is optional, matching what chap-core parses.
 
 ## Writing a scenario
 

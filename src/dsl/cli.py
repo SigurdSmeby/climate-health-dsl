@@ -40,11 +40,6 @@ def main(argv: list[str] | None = None) -> int:
         default="out",
         help="directory to write the CSV files into (default: out/)",
     )
-    run_parser.add_argument(
-        "--strict-chap",
-        action="store_true",  # a present/absent flag, no value needed
-        help="refuse to write output that breaks CHAP's dataset rules",
-    )
     args = parser.parse_args(argv)
 
     # --- Parse + validate. Any hard error exits here, before generating. ---
@@ -63,13 +58,10 @@ def main(argv: list[str] | None = None) -> int:
     # --- Generate, check CHAP compatibility, write. ---
     df = run_engine(config)
 
-    findings = validate_chap(df)
-    if findings and args.strict_chap:
-        for finding in findings:
-            print(f"error: {finding}", file=sys.stderr)
-        print("error: output violates CHAP rules (--strict-chap)", file=sys.stderr)
-        return 1  # nothing has been written at this point
-    for finding in findings:
+    # CHAP-compatibility findings are advisory: print them and proceed.
+    # (In practice these only fire when real data enters via from_csv with
+    # gaps; the synthetic generators always produce CHAP-valid output.)
+    for finding in validate_chap(df):
         print(f"warning: {finding}", file=sys.stderr)
 
     write_output(df, config, args.out_dir)

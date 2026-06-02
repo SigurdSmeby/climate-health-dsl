@@ -401,11 +401,46 @@ lag is genuinely recoverable from the output.
   a full period label mid-build (Sigurd's call) — strictly more flexible,
   since real datasets start mid-year.
 
+## CHAP validator correction (deep-research audit)
+
+**Features**
+- Relaxed `chap_check.validate_chap` to match what chap-core actually
+  accepts, after a deep-research report flagged it as over-strict and the
+  claims were **verified against chap-core source**, not taken on trust:
+  - all four resolutions now pass (daily `YYYYMMDD`, weekly `YYYY-Wnn`/
+    `YYYY-Snn`/date-range, monthly, yearly) — confirmed in
+    `chap_core/time_period/date_util_wrapper.py` `TimePeriod.parse`. The
+    old checker only allowed monthly+weekly, so **daily and yearly DSL
+    output was being wrongly rejected by `--strict-chap`**;
+  - `population` is no longer required — `chap_core/datatypes.py` has
+    `HealthData` (no population) alongside `FullData`;
+  - covariate columns may have any name (no more `rainfall`/
+    `mean_temperature` requirement) — CHAP ingests arbitrary covariates;
+  - per-location-identical and consecutive periods kept, but downgraded to
+    advisory findings (CHAP can auto-fill).
+- **Removed the `--strict-chap` flag.** Once the false alarms were gone, the
+  synthetic generators always produce CHAP-valid output, so a hard-fail mode
+  had almost nothing to reject. All findings are now warnings; the run
+  always writes. Findings in practice only arise when real data enters via
+  `from_csv` with gaps.
+
+**Considerations**
+- The two unverifiable claims (auto-fill of ranges, NaN tolerance) were
+  handled conservatively: the checks stay as advisory findings rather than
+  being dropped.
+- CLI tests previously triggered a finding with a non-standard covariate
+  name — no longer a finding — so they now use a `from_csv` covariate
+  carrying a NaN (a genuine, still-flagged violation), plus a test that a
+  daily scenario produces no CHAP period-format warning (the headline fix).
+- Roadmap reconciled with the report: confirmed the priority of #6/#7/#9/#10,
+  mapped its other suggestions onto existing items, added #22–25 (AR climate
+  noise, ENSO cycle, realism-validation tooling, interaction transform).
+
 ---
 
 ## Test suite
 
-149 tests, all green (`uv run pytest`): import smoke test, loader errors,
+153 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),

@@ -30,19 +30,31 @@ def test_missing_required_column_flagged():
     assert any("disease_cases" in f for f in findings)
 
 
-def test_missing_standard_covariate_flagged():
-    # Legal DSL output, but standard CHAP models expect these names.
-    df = chap_ok_frame().rename(columns={"rainfall": "rain"})
-    findings = validate_chap(df)
-    assert any("rainfall" in f for f in findings)
+def test_custom_covariate_name_is_allowed():
+    # CHAP accepts arbitrary covariate columns (verified against
+    # chap_core CSV ingest), so a non-standard name must NOT be flagged.
+    df = chap_ok_frame().rename(columns={"rainfall": "wind"})
+    assert validate_chap(df) == []
 
 
-def test_non_chap_period_format_flagged():
-    # Daily (YYYYMMDD) and yearly (YYYY) are not documented CHAP formats.
+def test_population_optional():
+    # chap_core has HealthData (no population) alongside FullData; a frame
+    # without population is valid CHAP.
+    df = chap_ok_frame().drop(columns=["population"])
+    assert validate_chap(df) == []
+
+
+def test_daily_format_accepted():
+    # CHAP's TimePeriod.parse accepts daily YYYYMMDD — must not be flagged.
     df = chap_ok_frame(4)
     df["time_period"] = ["20000101", "20000102", "20000103", "20000104"] * 2
-    findings = validate_chap(df)
-    assert any("time_period" in f for f in findings)
+    assert validate_chap(df) == []
+
+
+def test_yearly_format_accepted():
+    df = chap_ok_frame(3)
+    df["time_period"] = ["2000", "2001", "2002"] * 2
+    assert validate_chap(df) == []
 
 
 def test_weekly_format_accepted():
@@ -51,6 +63,14 @@ def test_weekly_format_accepted():
     df = chap_ok_frame(n)
     df["time_period"] = periods * 2
     assert validate_chap(df) == []
+
+
+def test_unparseable_period_flagged():
+    # A label matching no CHAP resolution is still a real problem.
+    df = chap_ok_frame(4)
+    df["time_period"] = ["junk1", "junk2", "junk3", "junk4"] * 2
+    findings = validate_chap(df)
+    assert any("time_period" in f for f in findings)
 
 
 def test_non_consecutive_periods_flagged():
