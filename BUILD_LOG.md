@@ -521,11 +521,29 @@ lag is genuinely recoverable from the output.
 - New ground-truth-style tests assert NB is more variable than Poisson,
   stays non-negative/integer/capped, and is reproducible under a fixed seed.
 
+## Two non-seasonal generators (roadmap #12, partial)
+
+**Features**
+- `generators/flat.py` — a constant `level` plus noise, no seasonality. The
+  control/decoy covariate: a driver with no signal, to test that a model
+  ignores irrelevant variables. Params: `level`, `noise`, `clamp_min`.
+- `generators/linear_trend.py` — `start + slope·t`, optionally noisy. Models
+  slow drift (growth, warming, reporting changes); a non-seasonal confounder.
+  Params: `start`, `slope`, `noise`, `clamp_min`.
+
+**Considerations**
+- Pure one-file additions — the whole point of the generator registry. No
+  schema, engine, or core changes; both auto-register on import.
+- Chosen for *expressiveness*, not just because generators are easy: neither
+  shape (a flat control, a non-seasonal trend) was expressible before, and
+  both unlock confounder/control experiments. A third seasonal variant would
+  not have passed that bar.
+
 ---
 
 ## Test suite
 
-180 tests, all green (`uv run pytest`): import smoke test, loader errors,
+195 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),

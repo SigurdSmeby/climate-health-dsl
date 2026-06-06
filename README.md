@@ -193,6 +193,31 @@ A smooth sine wave, one full cycle per year at any resolution.
 A fully synthetic scenario tuned to resemble the bundled Laos data is at
 `examples/laos_fully_synthetic.yaml`.
 
+### `flat` — non-seasonal control / decoy
+
+A constant level plus noise, with no seasonal structure. Useful as a control
+covariate (a driver with no signal, to check a model doesn't latch onto an
+irrelevant variable).
+
+| Param | Default | Meaning |
+|---|---|---|
+| `level` | `0.0` | The constant value the series sits at. |
+| `noise` | `1.0` | Std. dev. of added Gaussian noise; `0` gives a flat line. |
+| `clamp_min` | unset | Floor for the values. |
+
+### `linear_trend` — steady drift
+
+A straight line `start + slope · t`, optionally noisy. Models slow drift
+(population growth, warming, reporting changes) — useful as a non-seasonal
+confounder.
+
+| Param | Default | Meaning |
+|---|---|---|
+| `start` | `0.0` | Value at the first period. |
+| `slope` | `1.0` | Change per period (negative falls). |
+| `noise` | `0.0` | Std. dev. of added Gaussian noise. |
+| `clamp_min` | unset | Floor for the values. |
+
 ### `from_csv` — real data
 
 Reads the variable's values from a CHAP-format CSV instead of synthesizing

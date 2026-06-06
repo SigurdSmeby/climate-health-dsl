@@ -24,7 +24,7 @@ until the complete feature and its tests are present.
 | 9 | Implemented | `count_distribution: negative_binomial` (with `overdispersion`) draws overdispersed counts via a gamma-Poisson mixture; default stays `poisson` (byte-identical to before). |
 | 10 | Partial | Random missing disease cases are supported, but climate gaps, consecutive gaps, and reporting delays are not. |
 | 11 | Not implemented | There are no outbreak or regime-change components. |
-| 12 | Partial | `seasonal_spike` and `seasonal_smooth` exist, but the listed sparse, uniform-range, and nonseasonal generators do not. |
+| 12 | Partial | `seasonal_spike`, `seasonal_smooth`, plus the nonseasonal `flat` (control/decoy) and `linear_trend` (drift/confounder) generators exist; sparse-event and uniform-range generators still missing. |
 | 13 | Implemented | Top-level `start_period` config field (e.g. `"2010-07"`, `"2015-W10"`, `"20100615"`, `"2003"`) sets where the series starts on the real calendar, for all four resolutions; validated against the scenario's resolution. Default remains the first period of 2000. |
 | 14 | Partial | One scenario is reproducible from its seed, but there is no command for generating multiple replicates. |
 | 15 | Not implemented | The CLI runs one scenario YAML at a time. |
