@@ -170,6 +170,55 @@ def test_no_plot_by_default(tmp_path):
     assert not (out / "plot.html").exists()
 
 
+def test_reproduce_from_metadata(tmp_path):
+    # Run a scenario, then re-run pointing at the produced metadata.json;
+    # the regenerated dataset must be byte-identical.
+    out_a = tmp_path / "a"
+    assert main(["run", EXAMPLE, "-o", str(out_a)]) == 0
+    out_b = tmp_path / "b"
+    assert main(["run", str(out_a / "metadata.json"), "-o", str(out_b)]) == 0
+    a = (out_a / "simulated_data.csv").read_text()
+    b = (out_b / "simulated_data.csv").read_text()
+    assert a == b
+
+
+def test_no_out_dir_creates_named_folder_then_numbers(tmp_path, monkeypatch):
+    # Without -o, write into out/<scenario-stem>/; a second run must not
+    # overwrite it but go to out/<stem>_1/.
+    monkeypatch.chdir(tmp_path)  # so out/ lands in the temp dir, not the repo
+    scenario = write_scenario(tmp_path, base_scenario())  # stem "scenario"
+
+    assert main(["run", str(scenario)]) == 0
+    assert (tmp_path / "out" / "scenario" / "simulated_data.csv").is_file()
+
+    assert main(["run", str(scenario)]) == 0
+    assert (tmp_path / "out" / "scenario_1" / "simulated_data.csv").is_file()
+    # The first folder is untouched.
+    assert (tmp_path / "out" / "scenario" / "simulated_data.csv").is_file()
+
+    assert main(["run", str(scenario)]) == 0
+    assert (tmp_path / "out" / "scenario_2" / "simulated_data.csv").is_file()
+
+
+def test_explicit_out_dir_used_directly(tmp_path):
+    out = tmp_path / "exact"
+    assert main(["run", EXAMPLE, "-o", str(out)]) == 0
+    # Files land directly in the given dir, no auto-subfolder.
+    assert (out / "simulated_data.csv").is_file()
+    assert not (out / "basic_scenario").exists()
+
+
+def test_reproduce_without_out_dir_uses_source_folder_name(tmp_path, monkeypatch):
+    # Reproducing from out/foo/metadata.json with no -o should derive the
+    # folder name from the parent ("foo"), not the file stem ("metadata").
+    monkeypatch.chdir(tmp_path)
+    scenario = write_scenario(tmp_path, base_scenario())
+    main(["run", str(scenario)])  # → out/scenario/
+    meta = tmp_path / "out" / "scenario" / "metadata.json"
+    assert main(["run", str(meta)]) == 0
+    assert (tmp_path / "out" / "scenario_1" / "simulated_data.csv").is_file()
+
+
 def test_output_is_reproducible(tmp_path):
     out_a = tmp_path / "a"
     out_b = tmp_path / "b"

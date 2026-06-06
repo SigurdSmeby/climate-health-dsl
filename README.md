@@ -53,6 +53,26 @@ lag of 3 there is no driver signal yet.
 Rerunning the same scenario produces identical files: all randomness comes
 from the `seed` in the YAML.
 
+### Where output goes
+
+With `-o DIR`, files are written straight into `DIR` (overwriting what's
+there). Without `-o`, the run writes into an auto-named folder under `out/`
+so previous runs are never overwritten: the first run of
+`laos_like_synthetic.yaml` goes to `out/laos_like_synthetic/`, the next to
+`out/laos_like_synthetic_1/`, then `_2/`, and so on.
+
+### Reproducing a run
+
+Because every run writes a `metadata.json` holding its full scenario, you can
+regenerate a dataset by pointing `dsl run` at that file — no original YAML
+needed:
+
+```bash
+dsl run out/laos_like_synthetic/metadata.json -o repro/
+```
+
+The result is byte-identical to the original.
+
 To see a dataset rather than read the CSV, add `--plot` (interactive HTML by
 default, or `--plot-format png`):
 

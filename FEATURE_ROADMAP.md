@@ -38,6 +38,7 @@ until the complete feature and its tests are present.
 | 23 | Not implemented | Seasonality is a single yearly cycle; no multi-year/ENSO component. |
 | 24 | Not implemented | No tooling compares synthetic output to a real reference's statistics. |
 | 25 | Not implemented | Covariates cannot be combined into interaction terms before the disease model. |
+| 26 | Implemented | `dsl run` accepts a `metadata.json` to reproduce a previous dataset, and with no `-o` writes into an auto-named, non-overwriting folder under `out/` (`out/<scenario>/`, then `_1`, `_2`, …). |
 
 ## Prioritized Features
 
@@ -263,6 +264,14 @@ items above:
 - **Report caveat:** it never saw this roadmap (it assumed an empty
   placeholder), so its "no conflicts" conclusion was unreliable; the
   reconciliation above was done by hand.
+
+- [x] **26. Reproduce from metadata + non-overwriting output folders**
+
+  `dsl run` accepts a `metadata.json` as input and regenerates the dataset
+  from its embedded scenario (no original YAML needed). When `-o` is omitted,
+  output goes to an auto-named folder under `out/` (first `out/<scenario>/`,
+  then `_1`, `_2`, …) so earlier runs are never silently overwritten;
+  explicit `-o` still writes directly to the given directory.
 
 ## Rules For Every Feature
 

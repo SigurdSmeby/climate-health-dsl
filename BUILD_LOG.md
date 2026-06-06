@@ -477,11 +477,31 @@ lag is genuinely recoverable from the output.
 - Metadata is built from `config.model_dump(mode="json")`, so it records the
   *resolved* scenario with defaults filled in, not just what the user typed.
 
+## Roadmap #26 — reproduce from metadata + safe output folders
+
+**Features**
+- `dsl run` now accepts a `metadata.json` as input: `_load_scenario_dict`
+  unwraps the embedded `scenario` block (JSON is valid YAML, so `load_yaml`
+  already parses it), so a dataset regenerates from its own folder with no
+  original YAML. Verified byte-identical.
+- When `-o` is omitted, `_resolve_out_dir` writes into an auto-named folder
+  under `out/`: first `out/<scenario-stem>/`, then `_1`, `_2`, … (lowest
+  free suffix), so two runs never clobber each other. Explicit `-o` writes
+  straight to the given dir (overwrite allowed — the user's choice).
+
+**Considerations**
+- Naming rule (Sigurd's call): first run unnumbered, then suffix from 1.
+- For a `metadata.json` input the folder name comes from its *parent folder*
+  (`out/foo/metadata.json` → `foo`), not the file stem (`metadata`), so
+  reproducing keeps a sensible name.
+- `-o` default changed from `"out"` to `None` to distinguish explicit from
+  default; all existing `-o` tests are unaffected.
+
 ---
 
 ## Test suite
 
-168 tests, all green (`uv run pytest`): import smoke test, loader errors,
+172 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),
