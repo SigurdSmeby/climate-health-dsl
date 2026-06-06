@@ -39,6 +39,7 @@ until the complete feature and its tests are present.
 | 24 | Not implemented | No tooling compares synthetic output to a real reference's statistics. |
 | 25 | Not implemented | Covariates cannot be combined into interaction terms before the disease model. |
 | 26 | Implemented | `dsl run` accepts a `metadata.json` to reproduce a previous dataset, and with no `-o` writes into an auto-named, non-overwriting folder under `out/` (`out/<scenario>/`, then `_1`, `_2`, …). |
+| 27 | Not implemented | `from_csv` hard-stops when the CSV is shorter than `n_total`; there is no way to extend a short real series with synthetic periods. |
 
 ## Prioritized Features
 
@@ -272,6 +273,33 @@ items above:
   output goes to an auto-named folder under `out/` (first `out/<scenario>/`,
   then `_1`, `_2`, …) so earlier runs are never silently overwritten;
   explicit `-o` still writes directly to the given directory.
+
+- [ ] **27. Extend short real data with synthetic periods (real+synthetic mix)**
+
+  When a `from_csv` covariate has fewer periods than `n_total` (e.g. 10 real
+  years, scenario needs 12), optionally fill the remainder with generated
+  data instead of hard-stopping.
+
+  **Considered, deliberately deferred** — this is methodologically loaded, not
+  just an engineering task:
+  - Appending synthetic to real creates a **seam**: the real years carry real
+    autocorrelation/seasonality/variance; the synthetic tail won't match, so
+    there's a discontinuity at the join that a model is then partly evaluated
+    on (an artifact we introduced). This can be worse than pure-real or
+    pure-synthetic.
+  - The whole value proposition is *known ground truth*; mixing weakens the
+    honesty of "this is real climate" vs "this is controlled synthetic."
+  - Three possible approaches, increasing soundness: (a) tile/repeat real
+    years — cheap but duplicates and is memorizable; (b) concatenate a
+    generator's output — easiest, worst seam; (c) fit a model to the real
+    years and simulate forward (cf. chap-core `climate_predictor.py`) —
+    principled, smooth join, but the extension is *modelled*, not measured.
+  - If built, the right shape is a **transform that combines two series**, and
+    metadata MUST record which periods are real vs extrapolated so the dataset
+    stays self-describing.
+  - Usual better answers: generate fewer periods, use a longer real dataset,
+    or go fully synthetic tuned to resemble the real one
+    (`laos_fully_synthetic.yaml` already does this).
 
 ## Rules For Every Feature
 
