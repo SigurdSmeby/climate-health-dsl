@@ -1,0 +1,30 @@
+# Demonstrates overdispersed disease counts (negative binomial).
+#
+# Same setup as a basic weekly scenario, but disease_cases are drawn from a
+# negative-binomial distribution instead of Poisson. The mean is unchanged;
+# the variance is larger, so the series has the spiky, bursty look of real
+# surveillance data (long quiet stretches punctuated by sharp outbreaks)
+# rather than tidy Poisson noise. Lower `overdispersion` = spikier.
+period: weekly
+n_total: 156
+seed: 42
+train_fraction: 0.8
+variables:
+  - name: rainfall
+    generate: seasonal_spike
+    params:
+      clamp_min: 0
+  - name: mean_temperature
+    generate: seasonal_smooth
+disease_cases:
+  population: 50000
+  depends_on:
+    - variable: rainfall
+      lag: 3
+      weight: 2.0
+    - variable: mean_temperature
+      lag: 2
+      weight: 1.0
+  count_distribution: negative_binomial
+  overdispersion: 2.0 # smaller = more variable; large approaches Poisson
+  missing_rate: 0

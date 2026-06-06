@@ -45,6 +45,31 @@ def _logit(p: float) -> float:
     return float(np.log(p / (1.0 - p)))
 
 
+def _draw_counts(
+    rate: np.ndarray, spec: DiseaseSpec, rng: np.random.Generator
+) -> np.ndarray:
+    """Draw integer case counts from the per-period incidence ``rate``.
+
+    Poisson (the default) has variance equal to its mean. Negative binomial
+    adds overdispersion: with dispersion ``k`` the variance is
+    ``mean + mean^2 / k``, so real-looking spiky surveillance counts come
+    from a smaller ``k``. We sample it via the gamma-Poisson mixture (draw a
+    gamma-distributed rate per period, then a Poisson from that), which keeps
+    the mean at ``rate`` while inflating the variance.
+    """
+    if spec.count_distribution == "poisson":
+        return rng.poisson(rate).astype(float)
+
+    # Negative binomial as a gamma-Poisson mixture. shape = k, scale =
+    # rate / k → the gamma has mean `rate` and variance `rate^2 / k`; the
+    # Poisson draw on top adds its own `rate`, giving Var = rate + rate^2/k.
+    k = spec.overdispersion
+    # np.errstate: rate can be 0 in quiet periods, making scale 0 — gamma
+    # handles that as a deterministic 0, no warning needed.
+    gamma_rate = rng.gamma(shape=k, scale=rate / k)
+    return rng.poisson(gamma_rate).astype(float)
+
+
 def build_disease_cases(
     drivers: dict[str, np.ndarray],
     spec: DiseaseSpec,
@@ -105,11 +130,12 @@ def build_disease_cases(
     #    max_rate * population no matter how extreme eta gets.
     shifted = eta + _logit(spec.median_rate / spec.max_rate)
     sigmoid = 1.0 / (1.0 + np.exp(-shifted))
-    poisson_rate = sigmoid * spec.population * spec.max_rate
+    incidence_rate = sigmoid * spec.population * spec.max_rate
 
-    # 5. Draw integer counts and cap at the population (a count of sick
-    #    people can't exceed the people that exist).
-    counts = rng.poisson(poisson_rate).astype(float)
+    # 5. Draw integer counts (Poisson or overdispersed negative binomial) and
+    #    cap at the population (a count of sick people can't exceed the people
+    #    that exist).
+    counts = _draw_counts(incidence_rate, spec, rng)
     counts = np.minimum(counts, spec.population)
 
     # 6. Blank the warm-up: the first max_lag rows have no valid lagged

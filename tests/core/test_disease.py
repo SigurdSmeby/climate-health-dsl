@@ -147,6 +147,62 @@ def test_max_rate_caps_incidence(rng):
     assert np.nanmax(cases) <= 0.1 * 100_000 * 1.2
 
 
+def test_negative_binomial_is_more_variable_than_poisson():
+    # Same scenario, same seed: NB counts must scatter more widely than
+    # Poisson around a similar mean (that's the whole point of overdispersion).
+    drivers = {"rainfall": spiky_driver(600, peak=20)}
+    poisson = build_disease_cases(
+        drivers, make_spec(), np.random.default_rng(0), 600, "weekly"
+    )
+    nb = build_disease_cases(
+        drivers,
+        make_spec(count_distribution="negative_binomial", overdispersion=2.0),
+        np.random.default_rng(0),
+        600,
+        "weekly",
+    )
+    p_valid = poisson[~np.isnan(poisson)]
+    nb_valid = nb[~np.isnan(nb)]
+    # Means stay in the same ballpark; NB variance is clearly larger.
+    assert np.mean(nb_valid) == pytest.approx(np.mean(p_valid), rel=0.3)
+    assert np.var(nb_valid) > np.var(p_valid)
+
+
+def test_negative_binomial_still_non_negative_integers_capped(rng):
+    drivers = {"rainfall": spiky_driver(200, peak=20)}
+    spec = make_spec(count_distribution="negative_binomial", overdispersion=1.0)
+    cases = build_disease_cases(drivers, spec, rng, 200, "weekly")
+    valid = cases[~np.isnan(cases)]
+    assert (valid >= 0).all()
+    assert (valid <= 100_000).all()
+    assert np.array_equal(valid, np.round(valid))
+
+
+def test_negative_binomial_reproducible():
+    drivers = {"rainfall": spiky_driver(104, peak=20)}
+    spec = make_spec(count_distribution="negative_binomial", overdispersion=3.0)
+    a = build_disease_cases(drivers, spec, np.random.default_rng(5), 104, "weekly")
+    b = build_disease_cases(drivers, spec, np.random.default_rng(5), 104, "weekly")
+    assert np.array_equal(a, b, equal_nan=True)
+
+
+def test_poisson_is_the_default(rng):
+    # Omitting count_distribution must give byte-identical output to the
+    # explicit poisson value (proves the default is non-breaking).
+    drivers = {"rainfall": spiky_driver(104, peak=20)}
+    default = build_disease_cases(
+        drivers, make_spec(), np.random.default_rng(1), 104, "weekly"
+    )
+    explicit = build_disease_cases(
+        drivers,
+        make_spec(count_distribution="poisson"),
+        np.random.default_rng(1),
+        104,
+        "weekly",
+    )
+    assert np.array_equal(default, explicit, equal_nan=True)
+
+
 def test_constant_driver_does_not_crash(rng):
     # A constant series has zero variance; standardization must not divide
     # by zero and produce NaN/inf.

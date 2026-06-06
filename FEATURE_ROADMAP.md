@@ -15,13 +15,13 @@ until the complete feature and its tests are present.
 |---|---|---|
 | 1 | Implemented | `locations:` config field (default `["loc"]`); every output row carries a `location` column; multi-location data is stacked long-format with independent draws per location; train/test split is per location. Verified end-to-end against the minimalist CHAP example model. |
 | 2 | Implemented | `chap_check.validate_chap(df)` checks the required trio (time_period, location, disease_cases), CHAP-parseable period formats (all four resolutions), NaN in covariates, and disease_cases sanity; per-location/consecutive-period mismatches are advisory. All findings are warnings (no hard-fail; synthetic output is always valid, so findings only arise from from_csv real-data gaps). Corrected after a chap-core source audit (was over-strict on population, covariate names, and daily/yearly periods). |
-| 3 | Implemented | The `from_csv` generator backs a variable with real data; `examples/laos_semi_synthetic.yaml` uses bundled CHAP Laos data (rainfall, temperature) with synthetic disease on top. Real population is still out of scope (population is a config scalar). |
+| 3 | Implemented | The `from_csv` generator backs a variable with real data; `examples/laos_real_climate_from_csv.yaml` uses bundled CHAP Laos data (rainfall, temperature) with synthetic disease on top. Real population is still out of scope (population is a config scalar). |
 | 4 | Implemented | `from_csv` reads any CHAP-format CSV (`file`, `column`, `source_location`, `start_period` params); insufficient data is a hard error, never wrapped or extrapolated. |
 | 5 | Implemented | `metadata.py` writes `metadata.json` beside every dataset: seed, lags, weights, rates, generators, tool version, and the full resolved scenario (round-trips through parse_config to reproduce the run). |
 | 6 | Not implemented | Drivers enter the predictor linearly; the final sigmoid does not provide configurable nonlinear driver effects. |
 | 7 | Not implemented | Each dependency supports one fixed lag, not an effect distributed across several lags. |
 | 8 | Not implemented | Multiple drivers are added independently; they do not interact. |
-| 9 | Not implemented | Disease counts use Poisson sampling only. |
+| 9 | Implemented | `count_distribution: negative_binomial` (with `overdispersion`) draws overdispersed counts via a gamma-Poisson mixture; default stays `poisson` (byte-identical to before). |
 | 10 | Partial | Random missing disease cases are supported, but climate gaps, consecutive gaps, and reporting delays are not. |
 | 11 | Not implemented | There are no outbreak or regime-change components. |
 | 12 | Partial | `seasonal_spike` and `seasonal_smooth` exist, but the listed sparse, uniform-range, and nonseasonal generators do not. |
@@ -108,7 +108,7 @@ until the complete feature and its tests are present.
 
   New research feature.
 
-- [ ] **9. Add overdispersed disease counts**
+- [x] **9. Add overdispersed disease counts**
 
   Add a Negative Binomial option alongside Poisson generation. Surveillance
   counts often vary more than a Poisson model permits.

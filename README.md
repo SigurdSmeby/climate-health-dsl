@@ -58,8 +58,8 @@ from the `seed` in the YAML.
 With `-o DIR`, files are written straight into `DIR` (overwriting what's
 there). Without `-o`, the run writes into an auto-named folder under `out/`
 so previous runs are never overwritten: the first run of
-`laos_like_synthetic.yaml` goes to `out/laos_like_synthetic/`, the next to
-`out/laos_like_synthetic_1/`, then `_2/`, and so on.
+`laos_fully_synthetic.yaml` goes to `out/laos_fully_synthetic/`, the next to
+`out/laos_fully_synthetic_1/`, then `_2/`, and so on.
 
 ### Reproducing a run
 
@@ -68,7 +68,7 @@ regenerate a dataset by pointing `dsl run` at that file — no original YAML
 needed:
 
 ```bash
-dsl run out/laos_like_synthetic/metadata.json -o repro/
+dsl run out/laos_fully_synthetic/metadata.json -o repro/
 ```
 
 The result is byte-identical to the original.
@@ -77,7 +77,7 @@ To see a dataset rather than read the CSV, add `--plot` (interactive HTML by
 default, or `--plot-format png`):
 
 ```bash
-dsl run examples/laos_like_synthetic.yaml -o out/ --plot
+dsl run examples/laos_fully_synthetic.yaml -o out/ --plot
 ```
 
 Output is also checked against CHAP's dataset rules (the required
@@ -151,6 +151,8 @@ does *not* depend on) needs no code, only YAML.
 | `missing_rate` | float, 0–1 | `0` | Fraction of disease values randomly blanked to simulate reporting gaps. |
 | `max_rate` | float, 0–1 | `0.3` | Maximum incidence: cases never exceed ~`max_rate × population`. |
 | `median_rate` | float | `0.1` | Incidence in a typical period. Must be **smaller than** `max_rate`. |
+| `count_distribution` | `poisson` \| `negative_binomial` | `poisson` | How counts are drawn from the rate. `poisson` has variance = mean; `negative_binomial` adds overdispersion, giving spikier, more realistic surveillance counts. |
+| `overdispersion` | float > 0 | `10.0` | Only for `negative_binomial`: variance = mean + mean²/`overdispersion`, so **smaller = more variable**; large values approach Poisson. |
 
 Each `depends_on` entry:
 
@@ -189,7 +191,7 @@ A smooth sine wave, one full cycle per year at any resolution.
 | `clamp_min` | unset | Floor for the values. |
 
 A fully synthetic scenario tuned to resemble the bundled Laos data is at
-`examples/laos_like_synthetic.yaml`.
+`examples/laos_fully_synthetic.yaml`.
 
 ### `from_csv` — real data
 
@@ -207,10 +209,10 @@ periods than `n_total`, the run fails rather than wrapping or extrapolating.
 
 A real multi-location sample is bundled at `examples/data/laos_subset.csv`
 (three Lao provinces, monthly 2010–2012, from the CHAP project), used by
-`examples/laos_semi_synthetic.yaml`:
+`examples/laos_real_climate_from_csv.yaml`:
 
 ```bash
-dsl run examples/laos_semi_synthetic.yaml -o out/
+dsl run examples/laos_real_climate_from_csv.yaml -o out/
 ```
 
 To align the output's `time_period` labels with the source data's real
@@ -232,10 +234,14 @@ plain weighted sum:
    `median_rate`, then scale: `rate × population × max_rate`. The sigmoid
    guarantees incidence stays below `max_rate` no matter how extreme the
    drivers get.
-5. Draw integer counts from a Poisson distribution (seeded), capped at
-   `population`.
+5. Draw integer counts from the rate (seeded), capped at `population` —
+   Poisson by default, or an overdispersed negative binomial via
+   `count_distribution`.
 6. Blank the first `max(lag)` rows (no valid driver signal) and apply
    `missing_rate` last.
+
+See `examples/overdispersed_outbreaks.yaml` for a scenario using the
+negative-binomial counts.
 
 ## Extending the DSL
 

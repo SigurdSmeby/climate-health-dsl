@@ -102,6 +102,34 @@ def test_dangling_depends_on_reference_raises_and_lists_valid_names():
     assert "mean_temperature" in message
 
 
+def test_count_distribution_defaults_to_poisson():
+    config = parse_config(make_config_dict())
+    assert config.disease_cases.count_distribution == "poisson"
+
+
+def test_negative_binomial_accepted():
+    data = make_config_dict()
+    data["disease_cases"]["count_distribution"] = "negative_binomial"
+    data["disease_cases"]["overdispersion"] = 5.0
+    config = parse_config(data)
+    assert config.disease_cases.count_distribution == "negative_binomial"
+    assert config.disease_cases.overdispersion == 5.0
+
+
+def test_unknown_count_distribution_rejected():
+    data = make_config_dict()
+    data["disease_cases"]["count_distribution"] = "gamma"
+    with pytest.raises(ValidationError, match="count_distribution"):
+        parse_config(data)
+
+
+def test_overdispersion_must_be_positive():
+    data = make_config_dict()
+    data["disease_cases"]["overdispersion"] = 0
+    with pytest.raises(ValidationError, match="overdispersion"):
+        parse_config(data)
+
+
 def test_median_rate_must_be_below_max_rate():
     # The sigmoid shift is logit(median_rate / max_rate), undefined at >= 1.
     data = make_config_dict()

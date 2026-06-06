@@ -349,7 +349,7 @@ lag is genuinely recoverable from the output.
   `start_period` (slice from a given label).
 - Bundled real sample data: `examples/data/laos_subset.csv` (three Lao
   provinces, monthly 2010–2012, rainfall/temperature/cases/population,
-  from the chap-core repo) and `examples/laos_semi_synthetic.yaml` using
+  from the chap-core repo) and `examples/laos_real_climate_from_csv.yaml` using
   it — verified to pass `--strict-chap`.
 - One file, zero core edits — the registry pattern carried the whole
   feature, which also covers roadmap #4 (generic CSV) in the same stroke.
@@ -374,7 +374,7 @@ lag is genuinely recoverable from the output.
 ## Laos-mimicry test → clamp_min + start_period (roadmap #13, #21)
 
 **Features**
-- `examples/laos_like_synthetic.yaml` — a fully synthetic scenario tuned to
+- `examples/laos_fully_synthetic.yaml` — a fully synthetic scenario tuned to
   resemble the real Laos subset using only YAML (the expressiveness test):
   monsoon `seasonal_spike` (peak July, ~480 mm vs real 513), temperature
   wave, dengue-scale incidence (`max_rate 0.002`, `median_rate 0.0001`),
@@ -497,11 +497,35 @@ lag is genuinely recoverable from the output.
 - `-o` default changed from `"out"` to `None` to distinguish explicit from
   default; all existing `-o` tests are unaffected.
 
+## Roadmap #9 — overdispersed disease counts (negative binomial)
+
+**Features**
+- New `disease_cases` options: `count_distribution: poisson |
+  negative_binomial` (default `poisson`) and `overdispersion` (default 10).
+  Negative binomial is drawn as a gamma-Poisson mixture in `disease.py`'s
+  `_draw_counts`, keeping the mean at the incidence rate while inflating the
+  variance (Var = mean + mean²/overdispersion; smaller = spikier).
+- Default is non-breaking: omitting `count_distribution` gives byte-identical
+  output to before (tested).
+
+**Considerations**
+- **Not a plugin / not a one-file add.** Generators and transforms have a
+  registry; the disease model deliberately does not (the build plan's YAGNI
+  call). #9 changes one stage of the pipeline, so it edits `disease.py` +
+  `schema.py` directly. A count-distribution mini-registry could be extracted
+  later *if* a third distribution appears — deferred until there's a second
+  example to define the contract.
+- Verified numerically: same scenario/seed, Poisson var/mean ratio ~7.6k vs
+  negative-binomial ~15k, peak 30k→84k, and the weekly series goes from a
+  smooth ramp to realistically spiky.
+- New ground-truth-style tests assert NB is more variable than Poisson,
+  stays non-negative/integer/capped, and is reproducible under a fixed seed.
+
 ---
 
 ## Test suite
 
-172 tests, all green (`uv run pytest`): import smoke test, loader errors,
+180 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),

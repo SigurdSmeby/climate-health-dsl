@@ -1,6 +1,10 @@
-# Semi-synthetic scenario: REAL rainfall and temperature from the bundled
-# CHAP Laos subset (Bokeo province, 2010-2012), with SYNTHETIC disease cases
-# generated on top with a controlled lag/weight relationship.
+# REAL CLIMATE, SYNTHETIC DISEASE: rainfall and temperature are read with the
+# from_csv generator from the bundled CHAP Laos subset (Bokeo province,
+# 2010-2012); only disease_cases is generated, with a controlled lag/weight
+# relationship on top of the real weather.
+#
+# Compare with laos_fully_synthetic.yaml, which generates everything (no real
+# data) but is tuned to resemble this dataset.
 period: monthly
 n_total: 36
 seed: 42
@@ -29,3 +33,6 @@ disease_cases:
       weight: 1.0
   autoregressive: false
   missing_rate: 0
+  # Real dengue counts are overdispersed, not tidy Poisson.
+  count_distribution: negative_binomial
+  overdispersion: 3.0

@@ -65,6 +65,14 @@ class DiseaseSpec(BaseModel):
     # Incidence-model knobs; defaults match the reference implementation.
     max_rate: float = Field(default=0.3, gt=0.0, le=1.0)
     median_rate: float = Field(default=0.1, gt=0.0, le=1.0)
+    # How case counts are drawn from the incidence rate. "poisson" (default)
+    # has variance == mean; "negative_binomial" adds overdispersion (real
+    # surveillance counts are usually more variable than Poisson allows).
+    count_distribution: Literal["poisson", "negative_binomial"] = "poisson"
+    # The negative-binomial dispersion parameter (only used when
+    # count_distribution is "negative_binomial"): variance = mean + mean^2 /
+    # overdispersion, so SMALLER means MORE variable; large → close to Poisson.
+    overdispersion: float = Field(default=10.0, gt=0.0)
 
     @model_validator(mode="after")
     def _check_rates(self) -> "DiseaseSpec":

@@ -1,8 +1,10 @@
-# Fully synthetic scenario tuned to LOOK like examples/data/laos_subset.csv:
-# monthly data for three Lao provinces with a July monsoon rainfall spike,
-# a smooth temperature wave peaking in April, and dengue-scale case counts.
-# No real data is used — this is the basic scenario's generators with
-# parameters matched to the real dataset's statistics.
+# FULLY SYNTHETIC: every column is generated. The climate comes from the
+# seasonal_spike / seasonal_smooth generators with parameters hand-tuned to
+# LOOK like examples/data/laos_subset.csv (July monsoon spike, ~28C April
+# temperature, dengue-scale cases) — but no real data is read.
+#
+# Compare with laos_real_climate_from_csv.yaml, which reads the REAL Laos
+# rainfall/temperature instead of generating them.
 period: monthly
 n_total: 36
 seed: 42
@@ -43,3 +45,6 @@ disease_cases:
   # of monthly cases.
   max_rate: 0.002
   median_rate: 0.0001
+  # Real dengue counts are overdispersed (outbreak years), not tidy Poisson.
+  count_distribution: negative_binomial
+  overdispersion: 3.0
