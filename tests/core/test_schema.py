@@ -189,6 +189,73 @@ def test_mapping_form_without_population_uses_disease_default():
     assert config.population_for("bergen") == 5
 
 
+def test_disease_population_optional_when_all_locations_override():
+    # No top-level population is fine as long as every location sets its own.
+    data = make_config_dict()
+    del data["disease_cases"]["population"]
+    data["locations"] = {
+        "oslo": {"population": 700_000},
+        "bergen": {"population": 280_000},
+    }
+    config = parse_config(data)
+    assert config.population_for("oslo") == 700_000
+    assert config.population_for("bergen") == 280_000
+
+
+def test_missing_population_with_fallback_location_raises():
+    # If any location relies on the (now missing) fallback, it's an error.
+    data = make_config_dict()
+    del data["disease_cases"]["population"]
+    data["locations"] = {"oslo": {"population": 700_000}, "bergen": {}}  # bergen falls back
+    with pytest.raises(ValidationError, match="population"):
+        parse_config(data)
+
+
+def test_missing_population_list_form_raises():
+    # The list form always falls back, so a missing population is an error.
+    data = make_config_dict()
+    del data["disease_cases"]["population"]  # list form locations default
+    with pytest.raises(ValidationError, match="population"):
+        parse_config(data)
+
+
+def test_population_generator_form_parses():
+    data = make_config_dict()
+    data["disease_cases"]["population"] = {
+        "generate": "linear_trend",
+        "params": {"start": 1000, "slope": 10},
+    }
+    config = parse_config(data)
+    source = config.population_for("anywhere")
+    # The generator form resolves to a PopulationSpec, not a bare int.
+    assert source.generate == "linear_trend"
+    assert source.params == {"start": 1000, "slope": 10}
+
+
+def test_population_generator_per_location():
+    data = make_config_dict()
+    data["locations"] = {
+        "oslo": {"population": {"generate": "linear_trend", "params": {"start": 700}}},
+        "bergen": {"population": 280},  # int form still allowed alongside
+    }
+    config = parse_config(data)
+    assert config.population_for("oslo").generate == "linear_trend"
+    assert config.population_for("bergen") == 280
+
+
+def test_population_generator_requires_generate_key():
+    data = make_config_dict()
+    data["disease_cases"]["population"] = {"params": {"start": 1000}}  # no generate
+    with pytest.raises(ValidationError, match="generate"):
+        parse_config(data)
+
+
+def test_population_int_form_still_works():
+    # Backward compatibility: a plain int is unchanged.
+    config = parse_config(make_config_dict())
+    assert config.population_for("anywhere") == 100_000
+
+
 def test_mapping_form_rejects_unknown_override_key():
     data = make_config_dict()
     data["locations"] = {"oslo": {"populaton": 5}}  # typo

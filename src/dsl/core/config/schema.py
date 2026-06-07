@@ -24,18 +24,35 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from dsl.core.pipeline.periods import parse_period, periods_per_year
 
 
-class LocationSpec(BaseModel):
-    """Per-location overrides under the mapping form of ``locations:``.
+class PopulationSpec(BaseModel):
+    """A generator that produces the ``population`` series over time.
 
-    Currently only ``population`` can be overridden; ``None`` means "use the
-    scenario's top-level ``disease_cases.population``". The model exists so a
-    typo'd override key is rejected, and so future per-location settings (a
-    new override) extend this one block rather than reshaping the YAML.
+    The same envelope as ``VariableSpec`` minus ``name`` (population isn't a
+    named covariate). Lets population grow/change instead of being a fixed
+    scalar — e.g. ``{generate: linear_trend, params: {start: 70000, slope: 90}}``.
+    The engine runs it through the generator registry like any covariate and
+    rounds the result to non-negative integer people.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    population: int | None = Field(default=None, ge=1)
+    generate: str
+    params: dict = Field(default_factory=dict)
+
+
+class LocationSpec(BaseModel):
+    """Per-location overrides under the mapping form of ``locations:``.
+
+    Currently only ``population`` can be overridden; ``None`` means "use the
+    scenario's top-level ``disease_cases.population``". population may itself
+    be a generator (a growth trajectory) just like the top-level one. The
+    model exists so a typo'd override key is rejected, and so future
+    per-location settings extend this one block rather than reshaping the YAML.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    population: int | PopulationSpec | None = None
 
 
 class VariableSpec(BaseModel):
@@ -73,7 +90,11 @@ class DiseaseSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     depends_on: list[DependencySpec]
-    population: int = Field(ge=1)
+    # A fixed headcount, or a generator that produces a population series over
+    # time (growth). int is tried first, so a plain number stays an int.
+    # Optional: may be omitted only when EVERY location sets its own
+    # population (checked on ScenarioConfig, which can see the locations).
+    population: int | PopulationSpec | None = None
     autoregressive: bool = False
     missing_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     # Incidence-model knobs; defaults match the reference implementation.
@@ -100,6 +121,10 @@ class DiseaseSpec(BaseModel):
                 f"median_rate ({self.median_rate}) must be smaller than "
                 f"max_rate ({self.max_rate})."
             )
+        # The int form must be a real headcount (the Field range can't sit on
+        # a union arm, so it's enforced here).
+        if isinstance(self.population, int) and self.population < 1:
+            raise ValueError(f"population must be >= 1, got {self.population}.")
         return self
 
 
@@ -177,6 +202,29 @@ class ScenarioConfig(BaseModel):
             raise ValueError(
                 f"locations contains duplicate names: {self.locations}."
             )
+        # A per-location int population must be a real headcount (the Field
+        # range can't sit on the union arm, so it's enforced here).
+        for name, override in self.location_overrides.items():
+            if isinstance(override.population, int) and override.population < 1:
+                raise ValueError(
+                    f"location '{name}' population must be >= 1, "
+                    f"got {override.population}."
+                )
+        # disease_cases.population is the fallback for any location that does
+        # not set its own. It may be omitted ONLY when every location does —
+        # otherwise a location would have no population.
+        if self.disease_cases.population is None:
+            uncovered = [
+                loc
+                for loc in self.locations
+                if self.location_overrides.get(loc) is None
+                or self.location_overrides[loc].population is None
+            ]
+            if uncovered:
+                raise ValueError(
+                    "disease_cases.population is required because these "
+                    f"locations do not set their own: {uncovered}."
+                )
         defined = [v.name for v in self.variables]
         for dep in self.disease_cases.depends_on:
             if dep.variable not in defined:
@@ -192,12 +240,14 @@ class ScenarioConfig(BaseModel):
                 )
         return self
 
-    def population_for(self, location: str) -> int:
-        """The population to use for ``location``.
+    def population_for(self, location: str) -> "int | PopulationSpec":
+        """The population SOURCE for ``location``.
 
         Returns the location's own population if the mapping form set one,
-        otherwise the scenario's top-level ``disease_cases.population``. This
-        is the single place the engine asks "how many people live here?", so
+        otherwise the scenario's top-level ``disease_cases.population``. The
+        source is either a fixed ``int`` headcount or a ``PopulationSpec``
+        (a generator); the engine turns it into a per-period array. This is
+        the single place the engine asks "what is the population here?", so
         list-form and mapping-form scenarios go through the same path.
         """
         override = self.location_overrides.get(location)

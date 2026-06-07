@@ -574,11 +574,52 @@ lag is genuinely recoverable from the output.
   widens the same override block rather than reshaping the file — #19a is a
   real step toward #19b, not throwaway.
 
+## Roadmap #28 — time-varying population (population via a generator)
+
+**Features**
+- `population` (top-level under `disease_cases`, and per-location in the
+  `locations` mapping) now accepts a generator block alongside a plain int:
+  `population: {generate: linear_trend, params: {start: 70000, slope: 90}}`
+  produces a per-period population series (growth). New `PopulationSpec`
+  (generate/params envelope); `population_for` returns the source (int or
+  spec); `engine._resolve_population` turns it into a length-n_total integer
+  array (rounded, floored at 0).
+- Multi-location payoff: each location can have its own growth trajectory —
+  the Laos example now grows the real province sizes (Bokeo 75k→78k,
+  Vientiane 559k→601k over 36 months, urban faster).
+- The plot shows a `population` panel only when population varies (constant
+  population is still skipped).
+- Plot readability fix (found while reviewing the multi-location plot): each
+  location is now pinned to one colour across all panels (was auto-cycled, so
+  a location could change colour between panels). Regression test asserts one
+  colour per location, distinct across locations.
+- `disease_cases.population` made **optional** — required only when a location
+  relies on the fallback. Found because the Laos example had to repeat a dead
+  `population: 75000` when every province already set its own; now that line
+  is gone. A missing population with any uncovered location is a hard error
+  (tested both ways).
+
+**Considerations**
+- The disease model needed NO formula change: `× population` and the count
+  cap already broadcast element-wise once population is an array.
+- RNG guard: a constant population (and a noise-free `linear_trend`) draws no
+  randomness, so all existing scalar scenarios stay byte-identical — pinned
+  by `test_constant_population_unchanged_by_generator_machinery`.
+- **Bug found via end-to-end run (TDD'd):** `build_metadata` put the raw
+  `PopulationSpec` object into the flattened top-level `population` field, so
+  the full CLI `write_metadata` crashed with "not JSON serializable" (the
+  earlier `build_metadata` test only checked the scenario block, which
+  `model_dump` had already made safe). Wrote two failing tests
+  (`test_metadata_round_trips_population_generator` now asserts
+  `json.dumps(meta)`, plus `test_write_metadata_with_population_generator`),
+  then fixed with a `_population_json` helper. Reproduce-from-metadata
+  verified byte-identical for a generated-population run.
+
 ---
 
 ## Test suite
 
-205 tests, all green (`uv run pytest`): import smoke test, loader errors,
+218 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),

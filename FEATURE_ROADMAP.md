@@ -41,6 +41,7 @@ until the complete feature and its tests are present.
 | 25 | Not implemented | Covariates cannot be combined into interaction terms before the disease model. |
 | 26 | Implemented | `dsl run` accepts a `metadata.json` to reproduce a previous dataset, and with no `-o` writes into an auto-named, non-overwriting folder under `out/` (`out/<scenario>/`, then `_1`, `_2`, …). |
 | 27 | Not implemented | `from_csv` hard-stops when the CSV is shorter than `n_total`; there is no way to extend a short real series with synthetic periods. |
+| 28 | Implemented | `population` can be a generator (`{generate: linear_trend, ...}`) producing a per-period series, at the top level and per-location, so population changes over time; a plain int stays constant. Plotted only when it varies. |
 
 ## Prioritized Features
 
@@ -308,6 +309,21 @@ items above:
   - Usual better answers: generate fewer periods, use a longer real dataset,
     or go fully synthetic tuned to resemble the real one
     (`laos_fully_synthetic.yaml` already does this).
+
+- [x] **28. Time-varying population (population via a generator)**
+
+  Let `population` be produced by any generator (e.g. `linear_trend` for
+  growth, `from_csv` for a real trajectory) instead of only a fixed scalar,
+  so population can change over time. Backward compatible: a plain int still
+  means a constant population. Per-location (extends #19a): each location may
+  carry its own population generator, so e.g. urban provinces grow faster
+  than rural ones.
+
+  Key points: population is resolved to a length-`n_total` array and threaded
+  through the disease model (its `× population` and the count cap already
+  broadcast element-wise) and the output column. A constant population — or a
+  noise-free generator like `linear_trend` — must consume no RNG, keeping
+  existing scalar scenarios byte-identical.
 
 ## Rules For Every Feature
 

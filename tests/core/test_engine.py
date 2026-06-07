@@ -288,6 +288,80 @@ def test_per_location_population_caps_disease_counts():
     assert big_max > 50
 
 
+def population_config(population, locations=None, seed=1):
+    data = {
+        "period": "monthly",
+        "n_total": 36,
+        "seed": seed,
+        "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
+        "disease_cases": {
+            "population": population,
+            "depends_on": [{"variable": "rainfall", "lag": 1, "weight": 2.0}],
+        },
+    }
+    if locations is not None:
+        data["locations"] = locations
+    return parse_config(data)
+
+
+def test_constant_population_unchanged_by_generator_machinery():
+    # A scalar population must stay byte-identical to before the feature: the
+    # population path must consume no RNG, so disease draws are unshifted.
+    a = run(population_config(10000))
+    b = run(population_config(10000))
+    assert a.equals(b)
+    assert (a["population"] == 10000).all()
+
+
+def test_linear_trend_population_rises_in_output():
+    config = population_config(
+        {"generate": "linear_trend", "params": {"start": 1000, "slope": 50}}
+    )
+    df = run(config)
+    pop = df["population"].to_numpy()
+    assert pop[0] == 1000
+    assert pop[-1] == 1000 + 50 * 35  # start + slope * (n_total - 1)
+    assert np.all(np.diff(pop) > 0)  # monotonically rising
+    # Population is integer counts of people.
+    assert pop.dtype.kind in "iu"
+
+
+def test_growing_population_scales_disease_up():
+    # With a fast-growing population the disease counts late in the series
+    # should tend higher than early (more people → more cases at same rate).
+    config = population_config(
+        {"generate": "linear_trend", "params": {"start": 1000, "slope": 300}}
+    )
+    df = run(config)
+    cases = df["disease_cases"].dropna().to_numpy()
+    early = cases[: len(cases) // 3].mean()
+    late = cases[-len(cases) // 3 :].mean()
+    assert late > early
+
+
+def test_per_location_population_generators():
+    config = population_config(
+        population=10000,  # fallback, unused here
+        locations={
+            "slow": {"population": {"generate": "linear_trend",
+                                    "params": {"start": 1000, "slope": 10}}},
+            "fast": {"population": {"generate": "linear_trend",
+                                    "params": {"start": 1000, "slope": 500}}},
+        },
+    )
+    df = run(config)
+    slow_end = df[df["location"] == "slow"]["population"].iloc[-1]
+    fast_end = df[df["location"] == "fast"]["population"].iloc[-1]
+    assert fast_end > slow_end  # different trajectories per location
+
+
+def test_generated_population_reproducible():
+    config_spec = {"generate": "linear_trend", "params": {"start": 1000, "slope": 50}}
+    a = run(population_config(config_spec, seed=4))
+    b = run(population_config(config_spec, seed=4))
+    assert a.equals(b)
+
+
 def test_multi_location_is_reproducible():
     a = run(multi_location_config())
     b = run(multi_location_config())

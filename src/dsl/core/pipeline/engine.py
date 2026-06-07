@@ -14,10 +14,32 @@ import pandas as pd
 # these two lines the registries would be empty.
 import dsl.generators  # noqa: F401
 import dsl.transforms  # noqa: F401
-from dsl.core.config.schema import ScenarioConfig
+from dsl.core.config.schema import PopulationSpec, ScenarioConfig
 from dsl.core.extension.generator_base import get_generator
 from dsl.core.pipeline.disease import build_disease_cases
 from dsl.core.pipeline.periods import format_period, parse_period
+
+
+def _resolve_population(
+    source: "int | PopulationSpec",
+    n_periods: int,
+    period: str,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Turn a population source into a length-``n_periods`` integer array.
+
+    A plain int becomes a constant array and draws NO randomness (so scalar
+    scenarios stay byte-identical). A PopulationSpec is run through the
+    generator registry like a covariate, then rounded to non-negative whole
+    people (a population is integer and can't be negative).
+    """
+    if isinstance(source, int):
+        # np.full broadcasts the constant; no rng touched.
+        return np.full(n_periods, source, dtype=int)
+    series = get_generator(source.generate)(**source.params).generate(
+        n_periods, period, rng
+    )
+    return np.maximum(np.round(series), 0).astype(int)
 
 
 def run(config: ScenarioConfig) -> pd.DataFrame:
@@ -53,10 +75,13 @@ def _run_one_location(
         generator = get_generator(spec.generate)(**spec.params)
         drivers[spec.name] = generator.generate(config.n_total, config.period, rng)
 
-    # Resolve this location's population (its own override, or the default)
+    # Resolve this location's population to a per-period array (its own
+    # override or the default; a constant, or a generated growth trajectory)
     # and build a disease spec carrying it, so the incidence model and the
-    # population cap both use the right number for this location.
-    population = config.population_for(location)
+    # population cap both use the right per-period number for this location.
+    population = _resolve_population(
+        config.population_for(location), config.n_total, config.period, rng
+    )
     disease_spec = config.disease_cases.model_copy(update={"population": population})
 
     # Build the dependent signal from the drivers — the ground truth.

@@ -9,13 +9,18 @@ period: monthly
 n_total: 36
 seed: 42
 start_period: "2010-01" # same calendar window as the real dataset
-# Per-location populations (the real province sizes). The mapping form lets
-# each location set its own population; the disease_cases.population below is
-# the fallback for any location that doesn't.
+# Per-location populations that GROW over time (real province sizes as the
+# starting points). Each location's population is a linear_trend generator, so
+# the population rises month by month — urban Vientiane faster than rural
+# Bokeo — instead of being a fixed number. A plain int still works for a
+# constant population; disease_cases.population below is the fallback.
 locations:
-  Bokeo: { population: 75000 }
-  Savannakhet: { population: 686000 }
-  Vientiane[prefecture]: { population: 559000 }
+  Bokeo:
+    population: { generate: linear_trend, params: { start: 75000, slope: 90 } }
+  Savannakhet:
+    population: { generate: linear_trend, params: { start: 686000, slope: 800 } }
+  Vientiane[prefecture]:
+    population: { generate: linear_trend, params: { start: 559000, slope: 1200 } }
 variables:
   - name: rainfall
     generate: seasonal_spike
@@ -34,7 +39,8 @@ variables:
       phase: 0
       noise: 0.7
 disease_cases:
-  population: 75000
+  # No top-level population needed: every location above sets its own. It is
+  # only required as a fallback for locations that don't.
   depends_on:
     - variable: rainfall
       lag: 2

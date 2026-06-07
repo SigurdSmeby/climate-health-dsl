@@ -116,3 +116,54 @@ def test_write_metadata_reproduces_mapping_form(tmp_path):
     write_metadata(config, tmp_path)
     loaded = json.loads((tmp_path / "metadata.json").read_text())
     assert parse_config(loaded["scenario"]) == config
+
+
+def test_metadata_round_trips_population_generator():
+    # A time-varying (generated) population must survive the round-trip,
+    # otherwise reproducing the run would silently revert to a constant.
+    config = parse_config(
+        {
+            "period": "monthly",
+            "n_total": 24,
+            "disease_cases": {
+                "population": {
+                    "generate": "linear_trend",
+                    "params": {"start": 1000, "slope": 10},
+                },
+                "depends_on": [{"variable": "rainfall", "lag": 1}],
+            },
+            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
+        }
+    )
+    meta = build_metadata(config)
+    # The WHOLE metadata dict must be JSON-serializable, not just the scenario
+    # block — the flattened top-level population field must not leak a raw
+    # PopulationSpec object (regression: it did, breaking write_metadata).
+    json.dumps(meta)
+    rebuilt = parse_config(meta["scenario"])
+    assert rebuilt == config
+
+
+def test_write_metadata_with_population_generator(tmp_path):
+    # The full write path (json.dumps to disk) must succeed with a generated
+    # population — this is what the CLI does.
+    config = parse_config(
+        {
+            "period": "monthly",
+            "n_total": 24,
+            "disease_cases": {
+                "population": {
+                    "generate": "linear_trend",
+                    "params": {"start": 1000, "slope": 10},
+                },
+                "depends_on": [{"variable": "rainfall", "lag": 1}],
+            },
+            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
+        }
+    )
+    write_metadata(config, tmp_path)
+    loaded = json.loads((tmp_path / "metadata.json").read_text())
+    assert loaded["disease_cases"]["population"] == {
+        "generate": "linear_trend",
+        "params": {"start": 1000, "slope": 10},
+    }

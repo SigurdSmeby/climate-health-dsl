@@ -14,12 +14,24 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Columns that are identifiers or constants, not series worth their own panel.
+# Identifier columns that are never their own panel (time_period is the x
+# axis; location splits the lines). population is handled separately: it gets
+# a panel only when it varies over time (growth), not when it's constant.
 _NON_SERIES = ("time_period", "location", "population")
 
 # Which file extensions we can write, and how. HTML is interactive; the rest
 # are static images rendered by kaleido.
 _IMAGE_EXTENSIONS = (".png", ".svg", ".pdf", ".jpg", ".jpeg")
+
+
+def _series_columns(df: pd.DataFrame) -> list[str]:
+    """Pick which columns get a panel: every covariate plus disease_cases,
+    and population ONLY when it varies over time (a growth trajectory is
+    worth a panel; a constant population is not)."""
+    columns = [c for c in df.columns if c not in _NON_SERIES]
+    if "population" in df.columns and df["population"].nunique() > 1:
+        columns.append("population")
+    return columns
 
 
 def plot_dataset(
@@ -58,13 +70,33 @@ def plot_dataset(
         )
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # The series to plot, in their column order: every column that isn't an
-    # identifier or the constant population.
-    series_columns = [c for c in df.columns if c not in _NON_SERIES]
+    fig = _build_figure(df, train_split)
 
+    if suffix == ".html":
+        fig.write_html(out_path)
+    else:
+        # Needs kaleido (a project dependency) to rasterize.
+        fig.write_image(out_path)
+
+
+# A fixed qualitative palette; each location is pinned to one entry so it has
+# the SAME colour in every panel (makes lines easy to follow across panels).
+_PALETTE = (
+    "#636efa", "#ef553b", "#00cc96", "#ab63fa", "#ffa15a",
+    "#19d3f3", "#ff6692", "#b6e880", "#ff97ff", "#fecb52",
+)
+
+
+def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure:
+    """Build the faceted figure: one panel per series, one line per location,
+    with each location pinned to a single colour across all panels."""
+    series_columns = _series_columns(df)
     locations = list(df["location"].unique()) if "location" in df.columns else [None]
+    # Map each location to a fixed colour (cycling if there are many).
+    colour_for = {
+        loc: _PALETTE[i % len(_PALETTE)] for i, loc in enumerate(locations)
+    }
 
-    # One row per variable, sharing the x-axis so periods line up vertically.
     fig = make_subplots(
         rows=len(series_columns),
         cols=1,
@@ -83,6 +115,7 @@ def plot_dataset(
                     y=block[column],
                     mode="lines",
                     name=str(loc),
+                    line_color=colour_for[loc],  # same colour in every panel
                     text=block["time_period"] if "time_period" in block else None,
                     legendgroup=str(loc),
                     # Only the first row contributes to the legend, so each
@@ -109,9 +142,4 @@ def plot_dataset(
         title="Generated dataset",
         showlegend=len(locations) > 1,
     )
-
-    if suffix == ".html":
-        fig.write_html(out_path)
-    else:
-        # Needs kaleido (a project dependency) to rasterize.
-        fig.write_image(out_path)
+    return fig

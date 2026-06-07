@@ -12,9 +12,18 @@ import json
 from pathlib import Path
 
 from dsl import __version__
+from pydantic import BaseModel
+
 from dsl.core.config.schema import ScenarioConfig
 
 METADATA_FILENAME = "metadata.json"
+
+
+def _population_json(population: "int | BaseModel") -> object:
+    """A JSON-safe view of a population: an int as-is, a spec as a dict."""
+    if isinstance(population, BaseModel):
+        return population.model_dump(mode="json")
+    return population
 
 
 def build_metadata(config: ScenarioConfig) -> dict:
@@ -52,7 +61,9 @@ def build_metadata(config: ScenarioConfig) -> dict:
             for v in config.variables
         ],
         "disease_cases": {
-            "population": config.disease_cases.population,
+            # population may be an int or a PopulationSpec (a generator);
+            # dump the model form so the whole metadata dict is JSON-safe.
+            "population": _population_json(config.disease_cases.population),
             "autoregressive": config.disease_cases.autoregressive,
             "missing_rate": config.disease_cases.missing_rate,
             "max_rate": config.disease_cases.max_rate,
