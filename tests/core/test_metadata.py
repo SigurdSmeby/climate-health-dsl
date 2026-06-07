@@ -78,3 +78,41 @@ def test_write_metadata_reproduces_config(tmp_path):
     loaded = json.loads((tmp_path / "metadata.json").read_text())
     rebuilt = parse_config(loaded["scenario"])
     assert rebuilt == sample_config()
+
+
+def mapping_location_config():
+    """A scenario using the per-location population mapping form."""
+    return parse_config(
+        {
+            "period": "monthly",
+            "n_total": 24,
+            "seed": 7,
+            "locations": {
+                "oslo": {"population": 700_000},
+                "bergen": {"population": 280_000},
+            },
+            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
+            "disease_cases": {
+                "population": 10_000,
+                "depends_on": [{"variable": "rainfall", "lag": 2}],
+            },
+        }
+    )
+
+
+def test_metadata_preserves_per_location_population():
+    # Regression test: location_overrides is excluded from model_dump, so the
+    # mapping form's per-location populations must be rebuilt into the
+    # scenario block — otherwise the round-trip silently loses them.
+    config = mapping_location_config()
+    rebuilt = parse_config(build_metadata(config)["scenario"])
+    assert rebuilt.population_for("oslo") == 700_000
+    assert rebuilt.population_for("bergen") == 280_000
+    assert rebuilt == config
+
+
+def test_write_metadata_reproduces_mapping_form(tmp_path):
+    config = mapping_location_config()
+    write_metadata(config, tmp_path)
+    loaded = json.loads((tmp_path / "metadata.json").read_text())
+    assert parse_config(loaded["scenario"]) == config

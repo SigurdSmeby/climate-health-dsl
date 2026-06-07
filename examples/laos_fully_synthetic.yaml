@@ -9,10 +9,13 @@ period: monthly
 n_total: 36
 seed: 42
 start_period: "2010-01" # same calendar window as the real dataset
+# Per-location populations (the real province sizes). The mapping form lets
+# each location set its own population; the disease_cases.population below is
+# the fallback for any location that doesn't.
 locations:
-  - Bokeo
-  - Savannakhet
-  - Vientiane[prefecture]
+  Bokeo: { population: 75000 }
+  Savannakhet: { population: 686000 }
+  Vientiane[prefecture]: { population: 559000 }
 variables:
   - name: rainfall
     generate: seasonal_spike

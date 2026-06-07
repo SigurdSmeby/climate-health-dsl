@@ -538,12 +538,47 @@ lag is genuinely recoverable from the output.
   shape (a flat control, a non-seasonal trend) was expressible before, and
   both unlock confounder/control experiments. A third seasonal variant would
   not have passed that bar.
+- Demonstrated in `examples/confounders_and_controls.yaml`: rainfall is the
+  only real driver; flat `humidity` and trending `access_index` are decoys
+  the disease ignores (also exercises `autoregressive: true`). Verified that
+  rainfall correlates ~0.9 with disease while the flat/trend decoys sit at
+  ~0.08.
+
+## Roadmap #19a — per-location population
+
+**Features**
+- The `locations:` field now accepts a **mapping** form alongside the list:
+  `locations: {Bokeo: {population: 75000}, ...}` sets each location's own
+  population; the list form keeps one shared population. A `model_validator
+  (mode="before")` normalizes the mapping into the internal name list +
+  `location_overrides` dict, so the engine still sees an ordered name list.
+- New `LocationSpec` (currently just `population`, extra="forbid" so typos
+  fail) and `ScenarioConfig.population_for(location)` — the single place the
+  engine resolves a location's population (override or the top-level default).
+- The engine builds a per-location copy of the disease spec, so population
+  drives both the output column AND the incidence model/cap per location.
+  Verified: a tiny-population location's counts are capped lower than a large
+  one's. The Laos example now uses the real province sizes (75k/686k/559k),
+  giving realistically different case scales instead of three near-copies.
+
+**Considerations**
+- **Bug found and regression-tested:** `location_overrides` is `exclude=True`,
+  so `model_dump` dropped the per-location populations — the metadata
+  round-trip silently lost them (reproducing a mapping-form run gave the wrong
+  populations). Fixed by rebuilding the mapping form in `build_metadata`, and
+  added two regression tests (`test_metadata_preserves_per_location_population`,
+  `test_write_metadata_reproduces_mapping_form`) confirmed to fail without the
+  fix.
+- Split from the old #19 into **#19a (population, done)** and **#19b
+  (generator params, later)**. The mapping YAML shape was chosen so #19b
+  widens the same override block rather than reshaping the file — #19a is a
+  real step toward #19b, not throwaway.
 
 ---
 
 ## Test suite
 
-195 tests, all green (`uv run pytest`): import smoke test, loader errors,
+205 tests, all green (`uv run pytest`): import smoke test, loader errors,
 both validation tiers, period formats and rollover, registry behaviour,
 auto-discovery, generator shapes, parameter validation, transform behaviour
 (causal shift, NaN warm-up, reproducible masks, no input mutation),

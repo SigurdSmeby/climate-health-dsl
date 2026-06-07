@@ -24,6 +24,20 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from dsl.core.pipeline.periods import parse_period, periods_per_year
 
 
+class LocationSpec(BaseModel):
+    """Per-location overrides under the mapping form of ``locations:``.
+
+    Currently only ``population`` can be overridden; ``None`` means "use the
+    scenario's top-level ``disease_cases.population``". The model exists so a
+    typo'd override key is rejected, and so future per-location settings (a
+    new override) extend this one block rather than reshaping the YAML.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    population: int | None = Field(default=None, ge=1)
+
+
 class VariableSpec(BaseModel):
     """One entry under ``variables:`` — a variable the scenario generates.
 
@@ -106,10 +120,40 @@ class ScenarioConfig(BaseModel):
     # monthly scenario). None means the first period of the year 2000.
     start_period: str | None = None
     # CHAP datasets carry a location column; each named location gets its own
-    # independently drawn series. min_length=1: at least one location.
+    # independently drawn series. Two YAML forms are accepted:
+    #   locations: [oslo, bergen]                      # names only
+    #   locations: {oslo: {population: 700000}, ...}   # with per-location overrides
+    # Both normalize to the same internal pair below (a name list + an
+    # overrides dict), so the engine always sees an ordered list of names.
     locations: list[str] = Field(default=["loc"], min_length=1)
+    # Per-location overrides, keyed by name. Empty for the list form. Not a
+    # YAML field itself — it is populated from the mapping form by the
+    # validator below, and excluded from dumps so metadata round-trips.
+    location_overrides: dict[str, LocationSpec] = Field(
+        default_factory=dict, exclude=True
+    )
     variables: list[VariableSpec]
     disease_cases: DiseaseSpec
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_locations(cls, data: object) -> object:
+        """Accept either a name list or a name→overrides mapping.
+
+        Runs before field validation (mode="before"), turning the mapping
+        form into the internal ``locations`` list + ``location_overrides``
+        dict. The list form is left untouched.
+        """
+        if not isinstance(data, dict):
+            return data
+        locations = data.get("locations")
+        if isinstance(locations, dict):
+            if not locations:
+                raise ValueError("locations mapping must not be empty.")
+            # dict preserves insertion order, so location order is the YAML order.
+            data["locations"] = list(locations.keys())
+            data["location_overrides"] = locations
+        return data
 
     # mode="after" runs once the individual fields are already validated, so
     # cross-field relationships can be checked safely here.
@@ -147,6 +191,19 @@ class ScenarioConfig(BaseModel):
                     f"the series length for the relationship to appear."
                 )
         return self
+
+    def population_for(self, location: str) -> int:
+        """The population to use for ``location``.
+
+        Returns the location's own population if the mapping form set one,
+        otherwise the scenario's top-level ``disease_cases.population``. This
+        is the single place the engine asks "how many people live here?", so
+        list-form and mapping-form scenarios go through the same path.
+        """
+        override = self.location_overrides.get(location)
+        if override is not None and override.population is not None:
+            return override.population
+        return self.disease_cases.population
 
 
 def parse_config(data: dict) -> ScenarioConfig:

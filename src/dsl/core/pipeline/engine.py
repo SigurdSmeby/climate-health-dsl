@@ -53,9 +53,15 @@ def _run_one_location(
         generator = get_generator(spec.generate)(**spec.params)
         drivers[spec.name] = generator.generate(config.n_total, config.period, rng)
 
+    # Resolve this location's population (its own override, or the default)
+    # and build a disease spec carrying it, so the incidence model and the
+    # population cap both use the right number for this location.
+    population = config.population_for(location)
+    disease_spec = config.disease_cases.model_copy(update={"population": population})
+
     # Build the dependent signal from the drivers — the ground truth.
     disease = build_disease_cases(
-        drivers, config.disease_cases, rng, config.n_total, config.period
+        drivers, disease_spec, rng, config.n_total, config.period
     )
 
     # Where on the real calendar the series starts: row 0 is start_period
@@ -77,5 +83,5 @@ def _run_one_location(
     }
     columns.update(drivers)
     columns["disease_cases"] = disease
-    columns["population"] = config.disease_cases.population
+    columns["population"] = population
     return pd.DataFrame(columns)

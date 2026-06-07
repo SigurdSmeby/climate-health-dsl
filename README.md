@@ -126,7 +126,7 @@ disease_cases:
 | `seed` | int | `0` | Seed for all randomness. Same scenario + same seed → identical output. |
 | `train_fraction` | float, 0 < x < 1 | unset | If set, also write `train.csv`/`test.csv`. |
 | `start_period` | str | first period of 2000 | Where the series starts on the real calendar, in the scenario's resolution: `"2010-07"` (monthly), `"2015-W10"` (weekly), `"20100615"` (daily), `"2003"` (yearly). |
-| `locations` | list of str | `["loc"]` | Named locations. Each gets its own independently drawn series of `n_total` periods, stacked in long format with a `location` column. |
+| `locations` | list of str, or mapping | `["loc"]` | Named locations, each an independently drawn series of `n_total` periods, stacked in long format with a `location` column. Use the **list** form (`[oslo, bergen]`) for one shared population, or the **mapping** form to set a per-location population: `{Bokeo: {population: 75000}, ...}`. A location with no `population` falls back to `disease_cases.population`. |
 | `variables` | list | required | The independent (climate) variables — see below. |
 | `disease_cases` | mapping | required | How the dependent disease signal is built — see below. |
 
@@ -145,7 +145,7 @@ does *not* depend on) needs no code, only YAML.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `population` | int ≥ 1 | required | Constant population; scales the incidence model and caps the counts. |
+| `population` | int ≥ 1 | required | Population; scales the incidence model and caps the counts. Shared across locations unless the `locations` mapping form overrides it per location. |
 | `depends_on` | list | required | The drivers of disease (see below). |
 | `autoregressive` | bool | `false` | Add a random-walk component, giving the signal memory of its own past. |
 | `missing_rate` | float, 0–1 | `0` | Fraction of disease values randomly blanked to simulate reporting gaps. |
@@ -217,6 +217,9 @@ confounder.
 | `slope` | `1.0` | Change per period (negative falls). |
 | `noise` | `0.0` | Std. dev. of added Gaussian noise. |
 | `clamp_min` | unset | Floor for the values. |
+
+`examples/confounders_and_controls.yaml` uses `flat` and `linear_trend` as
+decoys the disease ignores, to test whether a model finds the real driver.
 
 ### `from_csv` — real data
 

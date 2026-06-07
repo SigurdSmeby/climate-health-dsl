@@ -240,6 +240,54 @@ def test_locations_get_different_draws():
     assert not np.array_equal(oslo, bergen)
 
 
+def test_per_location_population_in_output():
+    config = parse_config(
+        {
+            "period": "monthly",
+            "n_total": 24,
+            "seed": 1,
+            "locations": {
+                "oslo": {"population": 700000},
+                "bergen": {"population": 280000},
+            },
+            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
+            "disease_cases": {
+                "population": 10000,  # the fallback; overridden per location
+                "depends_on": [{"variable": "rainfall", "lag": 2}],
+            },
+        }
+    )
+    df = run(config)
+    oslo_pop = df[df["location"] == "oslo"]["population"].unique()
+    bergen_pop = df[df["location"] == "bergen"]["population"].unique()
+    assert list(oslo_pop) == [700000]
+    assert list(bergen_pop) == [280000]
+
+
+def test_per_location_population_caps_disease_counts():
+    # A tiny-population location must have its disease_cases capped lower
+    # than a large-population one — proof the population actually drives the
+    # incidence model per location, not just the output column.
+    config = parse_config(
+        {
+            "period": "monthly",
+            "n_total": 36,
+            "seed": 3,
+            "locations": {"big": {"population": 100000}, "small": {"population": 50}},
+            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
+            "disease_cases": {
+                "population": 100000,
+                "depends_on": [{"variable": "rainfall", "lag": 1, "weight": 3.0}],
+            },
+        }
+    )
+    df = run(config)
+    big_max = df[df["location"] == "big"]["disease_cases"].max()
+    small_max = df[df["location"] == "small"]["disease_cases"].max()
+    assert small_max <= 50
+    assert big_max > 50
+
+
 def test_multi_location_is_reproducible():
     a = run(multi_location_config())
     b = run(multi_location_config())

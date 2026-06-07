@@ -31,7 +31,8 @@ until the complete feature and its tests are present.
 | 16 | Implemented | `plot.py` + `dsl run --plot` writes a faceted plotly chart (one panel per variable, one line per location, train/test boundary marked); interactive HTML by default, or static png/svg/pdf via `--plot-format` (kaleido). |
 | 17 | Not implemented | GeoJSON is neither read nor written. |
 | 18 | Not implemented | Covariate data must be downloaded to a CSV manually; nothing pulls from chap-core datasets or a CHAP server. |
-| 19 | Not implemented | All locations share one population and one set of generator params; real datasets differ per location (Laos: 75k–686k population, systematically different climate). |
+| 19a | Implemented | The `locations` mapping form (`{Bokeo: {population: 75000}, ...}`) sets per-location population; the list form keeps one shared population. Drives both the output column and the incidence model/cap per location. |
+| 19b | Not implemented | Locations cannot override generator params (per-location climate shape). |
 | 20 | Not implemented | Real seasonal temperature is asymmetric (fast rise to an April peak, slow decline); `seasonal_smooth` is a symmetric sine, so the minimum lands in the wrong season. |
 | 21 | Implemented | `clamp_min` param on both synthetic generators floors the series (e.g. 0 for rainfall, which noise could otherwise push negative). |
 | 22 | Not implemented | Generators add only independent Gaussian noise; no serial correlation (AR/ARIMA). |
@@ -190,13 +191,20 @@ until the complete feature and its tests are present.
   chap-core out of the core dependencies (optional extra or separate
   command, e.g. `dsl fetch`).
 
-- [ ] **19. Per-location parameters**
+- [x] **19a. Per-location population**
 
-  Let population and generator params vary per location (e.g.
-  `locations: {Bokeo: {population: 75000}, ...}`). Found while mimicking
-  the Laos subset: all synthetic locations currently share one population
-  and one climate, while the real provinces range 75k–686k people with
-  systematically different rainfall and temperature.
+  Each location can set its own `population` via the mapping form of
+  `locations:` (`locations: {Bokeo: {population: 75000}, ...}`); the plain
+  list form keeps using the top-level population. The mapping structure is
+  built so #19b extends it (more override keys) rather than replacing it.
+
+- [ ] **19b. Per-location generator params**
+
+  Let a location also override generator params (e.g. a wetter rainfall
+  spike for one province), by allowing more keys inside each location's
+  override block introduced in #19a. Lower priority than population, and
+  `from_csv` with `source_location` already supplies real per-location
+  climate.
 
 - [ ] **20. Asymmetric seasonal generator**
 

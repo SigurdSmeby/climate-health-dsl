@@ -161,6 +161,55 @@ def test_start_period_must_match_resolution():
         parse_config(make_config_dict(period="weekly", start_period="2010-07"))
 
 
+def test_locations_mapping_form_sets_per_location_population():
+    data = make_config_dict()
+    data["locations"] = {
+        "oslo": {"population": 700_000},
+        "bergen": {"population": 280_000},
+    }
+    config = parse_config(data)
+    # Names still come out as a plain list (engine/order unchanged).
+    assert config.locations == ["oslo", "bergen"]
+    assert config.population_for("oslo") == 700_000
+    assert config.population_for("bergen") == 280_000
+
+
+def test_list_form_falls_back_to_disease_population():
+    data = make_config_dict()  # list form, disease_cases.population = 100_000
+    config = parse_config(data)
+    assert config.population_for("rainfall_location_does_not_matter") == 100_000
+
+
+def test_mapping_form_without_population_uses_disease_default():
+    # An empty override block means "use the top-level population".
+    data = make_config_dict()
+    data["locations"] = {"oslo": {}, "bergen": {"population": 5}}
+    config = parse_config(data)
+    assert config.population_for("oslo") == 100_000  # the disease default
+    assert config.population_for("bergen") == 5
+
+
+def test_mapping_form_rejects_unknown_override_key():
+    data = make_config_dict()
+    data["locations"] = {"oslo": {"populaton": 5}}  # typo
+    with pytest.raises(ValidationError, match="populaton"):
+        parse_config(data)
+
+
+def test_mapping_form_population_must_be_positive():
+    data = make_config_dict()
+    data["locations"] = {"oslo": {"population": 0}}
+    with pytest.raises(ValidationError, match="population"):
+        parse_config(data)
+
+
+def test_empty_mapping_rejected():
+    data = make_config_dict()
+    data["locations"] = {}
+    with pytest.raises(ValidationError, match="locations"):
+        parse_config(data)
+
+
 def test_locations_default_is_single_loc():
     config = parse_config(make_config_dict())
     assert config.locations == ["loc"]

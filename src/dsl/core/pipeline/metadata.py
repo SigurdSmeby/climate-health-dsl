@@ -29,6 +29,17 @@ def build_metadata(config: ScenarioConfig) -> dict:
     # filled in (so the sidecar shows the *resolved* scenario, not just what
     # the user typed). mode="json" makes every value JSON-safe.
     scenario = config.model_dump(mode="json")
+    # location_overrides is excluded from the dump (it's internal), so when a
+    # scenario used the mapping form we rebuild it here — otherwise the
+    # per-location populations would be lost and the round-trip wouldn't
+    # reproduce the dataset.
+    if config.location_overrides:
+        scenario["locations"] = {
+            name: config.location_overrides[name].model_dump(mode="json")
+            if name in config.location_overrides
+            else {}
+            for name in config.locations
+        }
     return {
         "dsl_version": __version__,
         "seed": config.seed,

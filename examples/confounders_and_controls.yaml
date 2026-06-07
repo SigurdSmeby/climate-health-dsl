@@ -1,0 +1,49 @@
+# Demonstrates control / decoy / confounder covariates and an autoregressive
+# disease signal — the kind of scenario that tests whether a model finds the
+# REAL driver and isn't fooled by irrelevant ones.
+#
+# Ground truth: disease depends ONLY on rainfall (lag 4). The other three
+# variables are present in the data but the disease does NOT use them:
+#   - humidity     : a flat, non-seasonal decoy (no signal at all)
+#   - access_index : a steady upward trend (a confounder — e.g. improving
+#                    reporting or urbanization that drifts over time)
+#   - mean_temperature : a real-looking seasonal variable that is still a
+#                    decoy here (seasonal, but disease ignores it)
+# A good forecasting model should recover the rainfall->disease lag and give
+# little weight to the three decoys.
+#
+# autoregressive: true adds a random-walk component, so the disease signal
+# also has memory of its own past (not just the climate drivers).
+period: weekly
+n_total: 156
+seed: 7
+train_fraction: 0.8
+variables:
+  - name: rainfall
+    generate: seasonal_spike
+    params:
+      clamp_min: 0
+  - name: mean_temperature
+    generate: seasonal_smooth
+  - name: humidity # flat control: constant level + noise, no seasonality
+    generate: flat
+    params:
+      level: 70
+      noise: 5
+      clamp_min: 0
+  - name: access_index # linear trend: a slow drift that confounds nothing real
+    generate: linear_trend
+    params:
+      start: 50
+      slope: 0.2
+      noise: 1
+disease_cases:
+  population: 40000
+  depends_on:
+    # Only rainfall drives disease. humidity, access_index and
+    # mean_temperature are deliberately left out — they are decoys.
+    - variable: rainfall
+      lag: 4
+      weight: 2.0
+  autoregressive: true # add a random-walk component to the disease signal
+  missing_rate: 0
