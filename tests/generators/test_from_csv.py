@@ -135,3 +135,80 @@ def test_works_with_bundled_laos_data(rng):
     series = gen.generate(36, "monthly", rng)
     assert len(series) == 36
     assert series[0] == pytest.approx(37.965)
+
+
+# --- Round 2 bug fixes (#9–#12) ---
+
+
+def test_from_csv_unsorted_periods_are_sorted(tmp_path, rng):
+    # Bug #9: rows out of time order must be sorted by period before slicing,
+    # so values map to the right periods (not file order).
+    csv = tmp_path / "unsorted.csv"
+    pd.DataFrame(
+        {"time_period": ["2010-03", "2010-01", "2010-02", "2010-04"],
+         "rainfall": [30.0, 10.0, 20.0, 40.0]}
+    ).to_csv(csv, index=False)
+    gen = FromCsvGenerator(file=str(csv), column="rainfall", start_period="2010-01")
+    # Jan, Feb, Mar — must be 10, 20, 30 (not 10, 20, 40 in file order).
+    assert list(gen.generate(3, "monthly", rng)) == [10.0, 20.0, 30.0]
+
+
+def test_from_csv_unsorted_without_start_period(tmp_path, rng):
+    csv = tmp_path / "unsorted2.csv"
+    pd.DataFrame(
+        {"time_period": ["2010-03", "2010-01", "2010-02"],
+         "rainfall": [3.0, 1.0, 2.0]}
+    ).to_csv(csv, index=False)
+    gen = FromCsvGenerator(file=str(csv), column="rainfall")
+    assert list(gen.generate(3, "monthly", rng)) == [1.0, 2.0, 3.0]
+
+
+def test_from_csv_duplicate_periods_rejected(tmp_path, rng):
+    # Bug #9: a repeated period silently shifts alignment — reject it.
+    csv = tmp_path / "dup.csv"
+    pd.DataFrame(
+        {"time_period": ["2010-01", "2010-01", "2010-02"],
+         "rainfall": [10.0, 999.0, 20.0]}
+    ).to_csv(csv, index=False)
+    gen = FromCsvGenerator(file=str(csv), column="rainfall")
+    with pytest.raises(ValueError, match="duplicate"):
+        gen.generate(2, "monthly", rng)
+
+
+def test_from_csv_requires_time_period_for_start(tmp_path, rng):
+    # Bug #10: no time_period column means start_period can't be honored.
+    csv = tmp_path / "notp.csv"
+    pd.DataFrame({"date": ["2010-01", "2010-02"], "rainfall": [1.0, 2.0]}).to_csv(
+        csv, index=False
+    )
+    gen = FromCsvGenerator(file=str(csv), column="rainfall", start_period="2010-02")
+    with pytest.raises(ValueError, match="time_period"):
+        gen.generate(2, "monthly", rng)
+
+
+def test_from_csv_empty_file(tmp_path, rng):
+    # Bug #11: an empty file must give a clear from_csv error.
+    csv = tmp_path / "empty.csv"
+    csv.write_text("")
+    with pytest.raises(ValueError, match="from_csv"):
+        FromCsvGenerator(file=str(csv), column="rainfall").generate(2, "monthly", rng)
+
+
+def test_from_csv_header_only(tmp_path, rng):
+    # Bug #11: a header with no data rows must give a clear error, not IndexError.
+    csv = tmp_path / "ho.csv"
+    csv.write_text("time_period,rainfall\n")
+    with pytest.raises(ValueError, match="no data"):
+        FromCsvGenerator(file=str(csv), column="rainfall").generate(2, "monthly", rng)
+
+
+def test_from_csv_non_numeric_clear_error(tmp_path, rng):
+    # Bug #12: text in the numeric column should give a clear from_csv message.
+    csv = tmp_path / "text.csv"
+    pd.DataFrame(
+        {"time_period": ["2010-01", "2010-02", "2010-03"],
+         "rainfall": ["1", "heavy", "3"]}
+    ).to_csv(csv, index=False)
+    gen = FromCsvGenerator(file=str(csv), column="rainfall")
+    with pytest.raises(ValueError, match="rainfall"):
+        gen.generate(3, "monthly", rng)

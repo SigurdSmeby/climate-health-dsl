@@ -20,6 +20,18 @@ from dsl.core.pipeline.disease import build_disease_cases
 from dsl.core.pipeline.periods import format_period, parse_period
 
 
+def _build_generator(name: str, params: dict, variable: str = None):
+    """Instantiate a generator, turning an unexpected-param TypeError into a
+    clear message naming the variable, generator, and bad param."""
+    try:
+        return get_generator(name)(**params)
+    except TypeError as exc:
+        where = f"variable '{variable}'" if variable else "population"
+        raise ValueError(
+            f"{where}: generator '{name}' got an invalid param ({exc})."
+        ) from exc
+
+
 def _resolve_population(
     source: "int | PopulationSpec",
     n_periods: int,
@@ -36,7 +48,7 @@ def _resolve_population(
     if isinstance(source, int):
         # np.full broadcasts the constant; no rng touched.
         return np.full(n_periods, source, dtype=int)
-    series = get_generator(source.generate)(**source.params).generate(
+    series = _build_generator(source.generate, source.params).generate(
         n_periods, period, rng
     )
     return np.maximum(np.round(series), 0).astype(int)
@@ -83,7 +95,7 @@ def _run_one_location(
             and "start_period" not in params
         ):
             params["start_period"] = config.start_period
-        generator = get_generator(spec.generate)(**params)
+        generator = _build_generator(spec.generate, params, spec.name)
         drivers[spec.name] = generator.generate(config.n_total, config.period, rng)
 
     # Resolve this location's population to a per-period array (its own

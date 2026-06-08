@@ -150,6 +150,30 @@ def test_unknown_generator_name_raises_with_available():
         run(config)
 
 
+def test_unknown_generator_param_clear_error():
+    # Bug #8: an unexpected generator param should give a clear message naming
+    # the variable, generator, and bad param — not a raw Python TypeError.
+    config = parse_config(
+        {
+            "period": "weekly",
+            "n_total": 10,
+            "variables": [
+                {
+                    "name": "rainfall",
+                    "generate": "seasonal_spike",
+                    "params": {"bogus_param": 99},
+                }
+            ],
+            "disease_cases": {
+                "population": 1_000,
+                "depends_on": [{"variable": "rainfall", "lag": 1}],
+            },
+        }
+    )
+    with pytest.raises(ValueError, match="bogus_param"):
+        run(config)
+
+
 def test_returns_dataframe(example_config):
     assert isinstance(run(example_config), pd.DataFrame)
 

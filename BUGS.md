@@ -1,9 +1,11 @@
 # Bug log
 
-Found during a QA bug-hunt on v1.4.0 (branch `qa/bug-hunt`). **All six are now
-fixed**, each with a regression test so they can't return. Severity:
-🔴 data corruption / silent wrong output, 🟡 missing guard / misleading,
-⚪ cosmetic.
+QA bug-hunt on v1.4.0 (branch `qa/bug-hunt`). **All 12 found are fixed**, each
+with a regression test so they can't return. Severity: 🔴 data corruption /
+silent wrong output, 🟡 missing guard / misleading, ⚪ cosmetic.
+
+Round 1 (#1–6) — general input-validation hunt. Round 2 (#7–12) — a deeper
+re-hunt plus a focused `from_csv` malformed-CSV stress test.
 
 | # | Severity | Status | Regression test |
 |---|---|---|---|
@@ -13,6 +15,12 @@ fixed**, each with a regression test so they can't return. Severity:
 | 4 | 🟡 | Fixed | `test_duplicate_variable_names_rejected` |
 | 5 | 🟡 | Fixed | `test_parse_period_date_range_week_gives_helpful_error` |
 | 6 | ⚪ | Fixed | `test_extreme_weight_no_overflow_warning` |
+| 7 | 🔴 | Fixed | `test_nan_covariate_blanks_disease_cases` |
+| 8 | ⚪ | Fixed | `test_unknown_generator_param_clear_error` |
+| 9 | 🔴 | Fixed | `test_from_csv_unsorted_periods_are_sorted`, `test_from_csv_duplicate_periods_rejected` |
+| 10 | 🟡 | Fixed | `test_from_csv_requires_time_period_for_start` |
+| 11 | 🟡 | Fixed | `test_from_csv_empty_file`, `test_from_csv_header_only` |
+| 12 | ⚪ | Fixed | `test_from_csv_non_numeric_clear_error` |
 
 ## 🔴 1. A variable named `disease_cases` / `population` / `time_period` / `location` silently overwrites the built-in column
 
@@ -152,6 +160,192 @@ is the smallest fix. Test that an extreme weight produces no warning and valid
 counts.
 
 **Fixed:** the sigmoid input is clipped to ±700 before `np.exp` (no numerical change, no warning).
+
+---
+
+# Round 2 (#7–12) — deeper re-hunt + `from_csv` stress test
+
+## 🔴 7. A NaN covariate value produces a fabricated `disease_cases` count
+
+**What:** If a `from_csv` covariate has a missing value (NaN) at some period,
+that NaN flows into the disease model, where `build_disease_cases` does
+`np.nan_to_num(eta, nan=0.0)` — turning the missing driver into eta=0, i.e.
+the *average* predictor. So at a period whose real driver is **unknown**, the
+model still emits a confident `disease_cases` count as if the covariate were
+exactly average. The output row then shows a blank covariate but a definite
+disease number built from invented data — a silent ground-truth violation.
+(`nan_to_num` is also what zeroes the lag warm-up, which IS re-blanked at the
+end; the covariate-NaN rows are not.)
+
+**Reproduce:**
+```python
+import pandas as pd, numpy as np
+from dsl.core.config.schema import parse_config
+from dsl.core.pipeline.engine import run
+pd.DataFrame({"time_period":[f"2010-{m:02d}" for m in range(1,13)],
+              "rainfall":[1,2,np.nan,4,5,6,7,8,9,10,11,12]}).to_csv("withnan.csv", index=False)
+df = run(parse_config({"period":"monthly","n_total":12,
+    "variables":[{"name":"rainfall","generate":"from_csv",
+                  "params":{"file":"withnan.csv","column":"rainfall"}}],
+    "disease_cases":{"population":1000,"depends_on":[{"variable":"rainfall","lag":1}]}}))
+# row 3 (the NaN month, after lag 1): rainfall is NaN but disease_cases is a
+# normal number — computed as if rainfall were average.
+```
+
+**Fix:** In `build_disease_cases`, record which rows have NaN in `eta` BEFORE
+`nan_to_num` (i.e. any period where a lagged driver is missing), and blank
+those `disease_cases` rows to NaN at the end — same treatment as the lag
+warm-up. A period with a missing input cannot have a known-ground-truth
+output. Test: a from_csv covariate with a NaN yields NaN disease_cases at the
+affected (post-lag) row, while other rows are unaffected.
+
+**Fixed:** `build_disease_cases` records which `eta` rows are NaN (warm-up + missing driver) before `nan_to_num`, and blanks `disease_cases` at those rows. A period with a missing input now gets NaN, not a fabricated count.
+
+## ⚪ 8. Unknown generator param raises a raw `TypeError`
+
+**What:** Passing a param a generator doesn't accept (e.g.
+`seasonal_spike` with `bogus_param: 99`) surfaces as a bare Python
+`TypeError: __init__() got an unexpected keyword argument 'bogus_param'`
+rather than a clear, user-facing message. It IS rejected (not silently
+ignored), so this is cosmetic — but inconsistent with the friendly errors
+elsewhere (bad *values* like `spike_width: -5` give a nice message).
+
+**Reproduce:**
+```python
+run(parse_config({"period":"weekly","n_total":10,
+    "variables":[{"name":"rainfall","generate":"seasonal_spike",
+                  "params":{"bogus_param":99}}],
+    "disease_cases":{"population":1000,"depends_on":[{"variable":"rainfall","lag":1}]}}))
+# TypeError: SeasonalSpikeGenerator.__init__() got an unexpected keyword argument 'bogus_param'
+```
+
+**Fix:** In the engine, wrap the generator instantiation
+(`get_generator(spec.generate)(**params)`) and re-raise an unexpected-keyword
+`TypeError` as a clear error naming the variable, the generator, and the bad
+param. Test that a bogus param gives the friendly message.
+
+**Fixed:** the engine wraps generator instantiation (`_build_generator`) and re-raises an unexpected-keyword `TypeError` as a clear ValueError naming the variable, generator, and bad param.
+
+## 🔴 9. Unsorted or duplicate `time_period` rows silently map real data to the WRONG periods
+
+**What:** `from_csv` reads rows in FILE order and never sorts or deduplicates
+by `time_period`. With `start_period`, it finds the start label's row
+*position* and slices the next N rows in file order. So if the CSV is not
+sorted by time (real exports often aren't), values are assigned to the wrong
+periods — silently.
+
+**Reproduce (off-by-a-month):**
+```python
+# CSV rows out of order: Mar, Jan, Feb, Apr
+open("uns.csv","w").write("time_period,rainfall\n2010-03,30\n2010-01,10\n2010-02,20\n2010-04,40\n")
+from dsl.generators.from_csv import FromCsvGenerator
+import numpy as np
+out = FromCsvGenerator(file="uns.csv", column="rainfall",
+                       start_period="2010-01").generate(3, "monthly", np.random.default_rng(0))
+# Asked for Jan,Feb,Mar -> got [10, 20, 40] = Jan, Feb, APRIL (March skipped!)
+```
+Duplicate periods are equally bad: a repeated `2010-01` row shifts everything
+after it by one (`[10, 999, 20]` instead of `[10, 20, 30]`).
+
+**Fix:** In `from_csv.generate`, after selecting the location and before
+slicing, **sort by `time_period`** and **reject (or warn on) duplicate
+periods**. Sorting must use period order, not string order — for the DSL's
+label formats string sort is correct for monthly/weekly/yearly but NOT for
+daily mixed widths; safest is to map labels through `parse_period`. Tests:
+unsorted CSV yields correctly-ordered values; duplicate period raises.
+
+**Fixed:** `from_csv` now sorts rows by `time_period` before slicing and rejects duplicate periods, so values always map to the correct period regardless of file order.
+
+## 🟡 10. A CSV with no `time_period` column silently skips all alignment
+
+**What:** If the CSV has no `time_period` column, `from_csv` skips the
+resolution check AND `start_period` entirely (the `if "time_period" in
+df.columns:` guard), then just takes the first N rows. So `start_period` is
+silently ignored and a weekly scenario can read monthly data with no error.
+Real CHAP data always has `time_period`; silently accepting data without it
+removes every alignment safeguard.
+
+**Reproduce:**
+```python
+open("notp.csv","w").write("date,rainfall\n2010-01,1\n2010-02,2\n2010-03,3\n2010-04,4\n")
+FromCsvGenerator(file="notp.csv", column="rainfall",
+                 start_period="2010-03").generate(2, "monthly", np.random.default_rng(0))
+# returns [1, 2] — start_period 2010-03 silently ignored
+```
+
+**Fix:** Require a `time_period` column (error if missing), OR at least error
+when `start_period` is set but there's no `time_period` to align to. Decide
+whether headerless-time CSVs are supported at all; if yes, document that
+alignment is skipped. Test the error.
+
+**Fixed:** `from_csv` raises if `start_period` is set but the CSV has no `time_period` column to align to.
+
+## 🟡 11. Empty / header-only CSV crashes with a raw pandas error
+
+**What:** A completely empty file raises `pandas.errors.EmptyDataError`
+("No columns to parse"); a header-only file (no data rows) raises
+`IndexError: single positional indexer is out-of-bounds` from inside
+`_check_resolution` (`df["time_period"].iloc[0]`). Neither is a clear
+from_csv message.
+
+**Reproduce:**
+```python
+open("empty.csv","w").write("")
+FromCsvGenerator(file="empty.csv", column="rainfall").generate(3,"monthly",rng)  # EmptyDataError
+open("ho.csv","w").write("time_period,rainfall\n")
+FromCsvGenerator(file="ho.csv", column="rainfall").generate(3,"monthly",rng)     # IndexError
+```
+
+**Fix:** After `pd.read_csv` (wrap it to catch `EmptyDataError`), check the
+frame is non-empty and raise a clear `from_csv: <file> has no data rows`.
+Test both empty and header-only files.
+
+**Fixed:** `from_csv` catches `EmptyDataError` and checks for zero data rows, raising a clear `has no data rows` error.
+
+## ⚪ 12. Unparseable cell values raise raw numpy/pandas errors
+
+**What:** Non-numeric content in the target column — text (`"heavy"`),
+thousands separators (`"1,000"`), or a wrong delimiter (semicolon CSV, so the
+column isn't found) — raises raw `ValueError: could not convert string to
+float` / column-not-found, rather than a friendly "column X has non-numeric
+value at period Y". Functionally safe (it does raise), just unpolished.
+
+**Fix:** Coerce with `pd.to_numeric(..., errors="coerce")` and, if that
+introduces NaNs that weren't blank cells, raise a clear error naming the bad
+value/period. (Decide intended behavior for thousands separators — probably
+reject.) Lower priority. Test a friendly message for text in the column.
+
+**Fixed:** `from_csv` coerces with `pd.to_numeric` and raises a clear error naming the non-numeric value and column.
+
+## Round 3 — `from_csv` inputs that behaved correctly
+
+These malformed CSVs were handled fine: extra unrelated columns, reordered
+columns, integer-typed column, surrounding whitespace, quoted numbers, empty
+cells (→ NaN, but see bug #7), BOM prefix, trailing blank lines, negative
+values, scientific notation. Resolution mismatch and too-short data are
+correctly rejected (existing behavior).
+
+## Round 2 — checked and OK (non-bugs)
+
+Probed and correct:
+- Reproducibility: same config run twice, and fresh re-parses, are identical;
+  a complex everything-at-once scenario (per-location pop generator,
+  start_period, AR, negative_binomial, decoy, clamp, missing) round-trips
+  byte-identically through metadata.
+- **Ground truth:** changing a dependency's `weight` changes `disease_cases`
+  but leaves the covariates identical (same seed); changing `seed` changes
+  output; adding a covariate does not shift another covariate's draws.
+- Transforms: `lag`/`missing` don't mutate input; pre-existing NaN preserved;
+  rate 0.0/1.0 correct; negative lag rejected.
+- Population generator reaching 0 → 0 cases (correct); negative weights and
+  negative `linear_trend` covariates produce valid counts.
+- Train/test split per location is time-ordered, leak-free, counts add up,
+  column order consistent across all three CSVs.
+- CLI: spaces in scenario names, auto-numbered folders, nested `-o` paths,
+  plain-JSON-as-scenario, bad subcommand all handled.
+- Plot with `n_total=2` and with an all-NaN disease column don't crash.
+- `from_csv` with a constant (zero-variance) column → no div-by-zero;
+  resolution mismatch rejected; daily `n_total=5000` fast and valid.
 
 ## Checked and OK (non-bugs)
 

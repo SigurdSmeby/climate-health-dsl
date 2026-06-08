@@ -69,7 +69,14 @@ class FromCsvGenerator(VariableGenerator):
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
         """Return the first ``n_periods`` real values. ``rng`` is unused."""
-        df = pd.read_csv(self.path)
+        try:
+            df = pd.read_csv(self.path)
+        except pd.errors.EmptyDataError as exc:
+            raise ValueError(
+                f"from_csv: {self.path.name} is empty (no columns to read)."
+            ) from exc
+        if len(df) == 0:
+            raise ValueError(f"from_csv: {self.path.name} has no data rows.")
 
         if self.column not in df.columns:
             raise ValueError(
@@ -81,9 +88,31 @@ class FromCsvGenerator(VariableGenerator):
 
         if "time_period" in df.columns:
             self._check_resolution(df, period)
+            df = self._order_by_period(df)
             df = self._apply_start_period(df)
+        elif self.start_period is not None:
+            # Without a time_period column there is nothing to align to, so a
+            # start_period can't be honored — fail loudly rather than ignore it.
+            raise ValueError(
+                f"from_csv: start_period '{self.start_period}' was set, but "
+                f"{self.path.name} has no 'time_period' column to align to."
+            )
 
-        values = df[self.column].to_numpy(dtype=float)
+        # Coerce to float with a clear error for non-numeric content (text,
+        # thousands separators, ...) instead of a raw numpy ValueError.
+        values = pd.to_numeric(df[self.column], errors="coerce").to_numpy(dtype=float)
+        original = df[self.column]
+        introduced_nan = values != values  # NaN != NaN
+        was_blank = original.isna().to_numpy()
+        bad = introduced_nan & ~was_blank
+        if bad.any():
+            example = original.to_numpy()[bad][0]
+            raise ValueError(
+                f"from_csv: column '{self.column}' in {self.path.name} has a "
+                f"non-numeric value ({example!r}); covariate columns must be "
+                f"numeric."
+            )
+
         if len(values) < n_periods:
             raise ValueError(
                 f"from_csv: {self.path.name} has only {len(values)} periods "
@@ -91,6 +120,24 @@ class FromCsvGenerator(VariableGenerator):
                 f"{n_periods}. Real data is never wrapped or extrapolated."
             )
         return values[:n_periods]
+
+    def _order_by_period(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Sort rows by time_period and reject duplicates.
+
+        Real CSV exports are often unsorted; reading in file order would map
+        values to the wrong periods. Duplicate periods are ambiguous (which
+        row wins?) and silently shift alignment, so they are an error.
+        """
+        labels = df["time_period"].astype(str)
+        dupes = labels[labels.duplicated()].unique()
+        if len(dupes) > 0:
+            raise ValueError(
+                f"from_csv: {self.path.name} has duplicate time_period values: "
+                f"{sorted(dupes)}."
+            )
+        # Stable sort by the label string. The DSL's labels (YYYY-MM, YYYY-Wnn,
+        # YYYYMMDD, YYYY) all sort chronologically as strings.
+        return df.sort_values("time_period", kind="stable").reset_index(drop=True)
 
     def _select_location(self, df: pd.DataFrame) -> pd.DataFrame:
         """Reduce a multi-location CSV to the configured source location."""

@@ -108,20 +108,24 @@ def build_disease_cases(
     #    drivers attached.
     eta = np.sin(2 * np.pi * (t % ppy) / ppy)
 
-    # 2. Add each lagged, standardized, weighted driver.
-    max_lag = 0
+    # 2. Add each lagged, standardized, weighted driver. The lag leaves NaN in
+    #    the first `lag` rows (the warm-up); those propagate into eta and are
+    #    blanked below along with any missing-input rows.
     for dep in spec.depends_on:
         lagged = LagTransform(n=dep.lag).apply(drivers[dep.variable], rng)
         eta = eta + dep.weight * _standardize(lagged)
-        max_lag = max(max_lag, dep.lag)
 
     # 3. Optional autoregressive component: a random walk (cumulative sum of
     #    white noise), giving the signal memory of its own past.
     if spec.autoregressive:
         eta = eta + np.cumsum(rng.normal(0.0, 0.2, size=n_periods))
 
-    # The warm-up rows are NaN (from the lag); the Poisson sampler cannot
-    # take NaN rates, so temporarily zero them — they are blanked below.
+    # Some eta rows are NaN: the lag warm-up, AND any period where a driver
+    # value is itself missing (e.g. a gap in real from_csv data). The Poisson
+    # sampler can't take NaN rates, so zero them for the draw — but remember
+    # which rows they were so the output is blanked there. A period with a
+    # missing input must NOT get a fabricated count.
+    missing_input = np.isnan(eta)
     eta = np.nan_to_num(eta, nan=0.0)
 
     # 4. eta → incidence rate. Adding logit(median/max) shifts the sigmoid
@@ -142,10 +146,10 @@ def build_disease_cases(
     counts = _draw_counts(incidence_rate, spec, rng)
     counts = np.minimum(counts, spec.population)
 
-    # 6. Blank the warm-up: the first max_lag rows have no valid lagged
-    #    signal, so reporting counts there would be fabricated data.
-    if max_lag > 0:
-        counts[:max_lag] = np.nan
+    # 6. Blank every row whose input was missing — the lag warm-up plus any
+    #    period where a driver value was NaN — so no count is fabricated from
+    #    a missing input. (missing_input already covers the warm-up rows.)
+    counts[missing_input] = np.nan
 
     # 7. Missing data last, so gaps land on the finished signal.
     if spec.missing_rate > 0:

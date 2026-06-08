@@ -203,6 +203,32 @@ def test_poisson_is_the_default(rng):
     assert np.array_equal(default, explicit, equal_nan=True)
 
 
+def test_nan_covariate_blanks_disease_cases(rng):
+    # Bug #7: a missing (NaN) driver value at period t must blank disease_cases
+    # at t — you can't compute a known signal from a missing input. Previously
+    # the NaN was nan_to_num'd to the mean, fabricating a confident count.
+    driver = np.arange(10, dtype=float) + 1.0
+    driver[5] = np.nan  # one missing real value
+    drivers = {"rainfall": driver}
+    spec = make_spec(depends_on=[{"variable": "rainfall", "lag": 0, "weight": 2.0}])
+    cases = build_disease_cases(drivers, spec, rng, 10, "weekly")
+    assert np.isnan(cases[5]), "disease_cases must be NaN where the driver is NaN"
+    # Other rows are unaffected (still valid counts).
+    assert not np.isnan(cases[0])
+    assert not np.isnan(cases[9])
+
+
+def test_nan_covariate_blanks_after_lag(rng):
+    # The blanking must follow the lag: a NaN at driver index k surfaces in
+    # disease_cases at index k + lag.
+    driver = np.arange(12, dtype=float) + 1.0
+    driver[3] = np.nan
+    drivers = {"rainfall": driver}
+    spec = make_spec(depends_on=[{"variable": "rainfall", "lag": 2, "weight": 1.0}])
+    cases = build_disease_cases(drivers, spec, rng, 12, "weekly")
+    assert np.isnan(cases[5])  # 3 + lag 2
+
+
 def test_extreme_weight_no_overflow_warning(rng):
     # Bug #6: a huge weight made np.exp overflow and warn, even though the
     # output is fine (the sigmoid saturates). No warning should leak.
