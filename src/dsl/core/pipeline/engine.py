@@ -72,7 +72,18 @@ def _run_one_location(
     # YAML params builds an instance, whose .generate() makes the series.
     drivers: dict[str, np.ndarray] = {}
     for spec in config.variables:
-        generator = get_generator(spec.generate)(**spec.params)
+        params = dict(spec.params)
+        # When the scenario starts at a real-world period, a from_csv variable
+        # must read its real data from that same period — otherwise the output
+        # would label row 0 as start_period but fill it with the CSV's first
+        # row (mismatched dates). Inject it unless the variable set its own.
+        if (
+            spec.generate == "from_csv"
+            and config.start_period is not None
+            and "start_period" not in params
+        ):
+            params["start_period"] = config.start_period
+        generator = get_generator(spec.generate)(**params)
         drivers[spec.name] = generator.generate(config.n_total, config.period, rng)
 
     # Resolve this location's population to a per-period array (its own

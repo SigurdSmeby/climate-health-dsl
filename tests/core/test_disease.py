@@ -203,6 +203,21 @@ def test_poisson_is_the_default(rng):
     assert np.array_equal(default, explicit, equal_nan=True)
 
 
+def test_extreme_weight_no_overflow_warning(rng):
+    # Bug #6: a huge weight made np.exp overflow and warn, even though the
+    # output is fine (the sigmoid saturates). No warning should leak.
+    import warnings
+
+    drivers = {"rainfall": spiky_driver(104, peak=20)}
+    spec = make_spec(depends_on=[{"variable": "rainfall", "lag": 1, "weight": 5000.0}])
+    with warnings.catch_warnings():
+        # Escalate only the numpy overflow warning to an error.
+        warnings.filterwarnings("error", message="overflow encountered")
+        cases = build_disease_cases(drivers, spec, rng, 104, "weekly")
+    valid = cases[~np.isnan(cases)]
+    assert (valid >= 0).all() and (valid <= 100_000).all()
+
+
 def test_constant_driver_does_not_crash(rng):
     # A constant series has zero variance; standardization must not divide
     # by zero and produce NaN/inf.

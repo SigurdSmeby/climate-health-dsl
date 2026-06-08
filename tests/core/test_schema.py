@@ -146,6 +146,31 @@ def test_lag_at_least_n_total_raises():
         parse_config(data)
 
 
+@pytest.mark.parametrize(
+    "reserved", ["time_period", "location", "disease_cases", "population"]
+)
+def test_variable_named_like_reserved_column_rejected(reserved):
+    # Bug #1: a variable whose name collides with a built-in output column
+    # would silently overwrite it. Must be a hard error.
+    data = make_config_dict()
+    data["variables"] = [{"name": reserved, "generate": "seasonal_spike"}]
+    data["disease_cases"]["depends_on"] = [{"variable": reserved, "lag": 1}]
+    with pytest.raises(ValidationError, match=reserved):
+        parse_config(data)
+
+
+def test_duplicate_variable_names_rejected():
+    # Bug #4: two variables with the same name silently collide (one is lost).
+    data = make_config_dict()
+    data["variables"] = [
+        {"name": "rainfall", "generate": "seasonal_spike"},
+        {"name": "rainfall", "generate": "seasonal_smooth"},
+    ]
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 1}]
+    with pytest.raises(ValidationError, match="duplicate"):
+        parse_config(data)
+
+
 def test_start_period_default_is_none():
     assert parse_config(make_config_dict()).start_period is None
 
@@ -311,6 +336,42 @@ def test_orphan_variable_warns_but_parses():
 def test_clean_config_has_no_warnings():
     warnings = validate_scenario(parse_config(make_config_dict()))
     assert warnings == []
+
+
+def test_from_csv_fixed_source_with_multi_location_warns():
+    # Bug #3: a from_csv variable pinned to one source_location, but the
+    # scenario has several locations, means every location gets the SAME real
+    # series. Warn (it's legal but usually a surprise).
+    data = make_config_dict()
+    data["locations"] = ["oslo", "bergen"]
+    data["variables"] = [
+        {
+            "name": "rainfall",
+            "generate": "from_csv",
+            "params": {"file": "x.csv", "column": "rainfall",
+                       "source_location": "A"},
+        }
+    ]
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 1}]
+    warnings = validate_scenario(parse_config(data))
+    assert any("from_csv" in w and "rainfall" in w for w in warnings)
+
+
+def test_from_csv_single_location_no_warning():
+    # The same from_csv variable with a single location is fine — no warning.
+    data = make_config_dict()
+    data["locations"] = ["oslo"]
+    data["variables"] = [
+        {
+            "name": "rainfall",
+            "generate": "from_csv",
+            "params": {"file": "x.csv", "column": "rainfall",
+                       "source_location": "A"},
+        }
+    ]
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 1}]
+    warnings = validate_scenario(parse_config(data))
+    assert not any("from_csv" in w for w in warnings)
 
 
 def test_high_missing_rate_warns():

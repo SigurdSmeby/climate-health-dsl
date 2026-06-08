@@ -226,6 +226,21 @@ class ScenarioConfig(BaseModel):
                     f"locations do not set their own: {uncovered}."
                 )
         defined = [v.name for v in self.variables]
+        # Variable names become output columns, so they must not collide with
+        # the built-in columns (which would silently overwrite them) or with
+        # each other (a duplicate silently drops one series).
+        reserved = {"time_period", "location", "disease_cases", "population"}
+        clashes = sorted(reserved.intersection(defined))
+        if clashes:
+            raise ValueError(
+                f"variable names may not be reserved column names: {clashes}. "
+                f"Reserved: {sorted(reserved)}."
+            )
+        duplicates = sorted({n for n in defined if defined.count(n) > 1})
+        if duplicates:
+            raise ValueError(
+                f"variables contains duplicate names: {duplicates}."
+            )
         for dep in self.disease_cases.depends_on:
             if dep.variable not in defined:
                 raise ValueError(
@@ -304,5 +319,17 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
             f"n_total ({config.n_total}) is shorter than one seasonal cycle "
             f"({cycle} {config.period} periods); seasonality will not be visible."
         )
+
+    # A from_csv variable pinned to one source_location, with several output
+    # locations, gives every location the SAME real series (a likely surprise).
+    if len(config.locations) > 1:
+        for var in config.variables:
+            if var.generate == "from_csv" and var.params.get("source_location"):
+                warnings.append(
+                    f"variable '{var.name}' uses from_csv with a fixed "
+                    f"source_location '{var.params['source_location']}', but "
+                    f"the scenario has {len(config.locations)} locations; all "
+                    f"of them will get the same real series."
+                )
 
     return warnings

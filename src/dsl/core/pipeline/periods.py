@@ -121,9 +121,16 @@ def parse_period(label: str, period: str) -> tuple[int, int]:
             "monthly": "2010-07",
             "yearly": "2003",
         }
+        # CHAP CSVs may carry the date-range weekly form (YYYY-MM-DD/...),
+        # which the output check accepts, but the DSL's canonical weekly label
+        # (and so a start_period) is YYYY-Wnn. Point users at it explicitly.
+        hint = ""
+        if period == "weekly" and "/" in label:
+            hint = " The date-range week form is read from CSVs but is not a "
+            hint += "usable start_period; use the YYYY-Wnn form instead."
         raise ValueError(
             f"'{label}' is not a valid {period} period label "
-            f"(expected something like '{examples[period]}')."
+            f"(expected something like '{examples[period]}').{hint}"
         )
 
     year = int(label[:4])

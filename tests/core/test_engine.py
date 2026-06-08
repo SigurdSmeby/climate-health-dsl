@@ -362,6 +362,41 @@ def test_generated_population_reproducible():
     assert a.equals(b)
 
 
+def test_start_period_aligns_from_csv_data(tmp_path):
+    # Bug #2: with a scenario start_period and a from_csv variable, the output
+    # labels must match the real values read from the CSV — not label row 0
+    # as a later date. CSV: 2010-01..2010-06 with rainfall 1..6.
+    csv = tmp_path / "real.csv"
+    pd.DataFrame(
+        {
+            "time_period": [f"2010-{m:02d}" for m in range(1, 7)],
+            "rainfall": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
+    ).to_csv(csv, index=False)
+    config = parse_config(
+        {
+            "period": "monthly",
+            "n_total": 3,
+            "start_period": "2010-04",
+            "variables": [
+                {
+                    "name": "rainfall",
+                    "generate": "from_csv",
+                    "params": {"file": str(csv), "column": "rainfall"},
+                }
+            ],
+            "disease_cases": {
+                "population": 1000,
+                "depends_on": [{"variable": "rainfall", "lag": 1}],
+            },
+        }
+    )
+    df = run(config)
+    # The row labelled 2010-04 must carry the CSV's April value (4.0), not 1.0.
+    assert df["time_period"].tolist() == ["2010-04", "2010-05", "2010-06"]
+    assert df["rainfall"].tolist() == [4.0, 5.0, 6.0]
+
+
 def test_multi_location_is_reproducible():
     a = run(multi_location_config())
     b = run(multi_location_config())

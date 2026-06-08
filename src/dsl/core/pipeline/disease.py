@@ -129,7 +129,11 @@ def build_disease_cases(
     #    multiplied by max_rate; the sigmoid keeps every rate below
     #    max_rate * population no matter how extreme eta gets.
     shifted = eta + _logit(spec.median_rate / spec.max_rate)
-    sigmoid = 1.0 / (1.0 + np.exp(-shifted))
+    # Clip before exp: an extreme driver/weight can push `shifted` past the
+    # point where exp(-shifted) overflows float64 (~±710). The sigmoid has
+    # already saturated to 0/1 well before then, so clipping changes nothing
+    # numerically but avoids a spurious overflow RuntimeWarning.
+    sigmoid = 1.0 / (1.0 + np.exp(-np.clip(shifted, -700.0, 700.0)))
     incidence_rate = sigmoid * spec.population * spec.max_rate
 
     # 5. Draw integer counts (Poisson or overdispersed negative binomial) and
