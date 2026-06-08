@@ -20,6 +20,27 @@ from dsl.core.pipeline.disease import build_disease_cases
 from dsl.core.pipeline.periods import format_period, parse_period
 
 
+def _child_rng(seed: int, *keys: str) -> np.random.Generator:
+    """A reproducible Generator derived from ``seed`` plus a component key.
+
+    Each component (a named variable, a location's population, a location's
+    disease draw) gets its OWN independent stream keyed by stable strings, so
+    reordering variables/locations or adding an unused decoy cannot shift
+    another component's draws. The key is hashed to ints fed into a
+    SeedSequence alongside the scenario seed, so the same key always yields
+    the same stream for a given seed.
+    """
+    # Turn each key into a stable non-negative int (Python's hash is salted
+    # per-process, so use a fixed hashlib digest instead).
+    import hashlib
+
+    entropy = [int(seed) & 0xFFFFFFFF]
+    for key in keys:
+        digest = hashlib.sha256(key.encode("utf-8")).digest()[:4]
+        entropy.append(int.from_bytes(digest, "big"))
+    return np.random.default_rng(np.random.SeedSequence(entropy))
+
+
 def _build_generator(name: str, params: dict, variable: str = None):
     """Instantiate a generator, turning an unexpected-param TypeError into a
     clear message naming the variable, generator, and bad param."""
@@ -61,27 +82,25 @@ def run(config: ScenarioConfig) -> pd.DataFrame:
     and columns: ``time_period``, ``location``, one column per YAML variable
     (in declaration order), ``disease_cases``, and a constant ``population``.
     """
-    # The single seeded random generator. Every random draw in the run flows
-    # from this one object, which is what makes output bit-for-bit
-    # reproducible for a given seed. Locations draw from it in turn, so each
-    # location gets its own independent (but reproducible) series.
-    rng = np.random.default_rng(config.seed)
-
+    # Output is reproducible from config.seed, but each component draws from
+    # its OWN stream (derived from the seed plus a stable key), so reordering
+    # variables/locations or adding a decoy can't shift unrelated draws.
     location_frames = [
-        _run_one_location(config, location, rng) for location in config.locations
+        _run_one_location(config, location) for location in config.locations
     ]
     # Stack location blocks on top of each other (long format, the CHAP
     # convention); ignore_index renumbers the rows 0..N-1.
     return pd.concat(location_frames, ignore_index=True)
 
 
-def _run_one_location(
-    config: ScenarioConfig, location: str, rng: np.random.Generator
-) -> pd.DataFrame:
+def _run_one_location(config: ScenarioConfig, location: str) -> pd.DataFrame:
     """Generate the full series for a single named location."""
+    seed = config.seed
     # Generate each declared variable through the registry. get_generator
     # returns the CLASS registered under that name; calling it with the
     # YAML params builds an instance, whose .generate() makes the series.
+    # Each variable gets its own rng keyed by location + name, so its values
+    # depend on its name, not its position or the presence of other variables.
     drivers: dict[str, np.ndarray] = {}
     for spec in config.variables:
         params = dict(spec.params)
@@ -96,20 +115,31 @@ def _run_one_location(
         ):
             params["start_period"] = config.start_period
         generator = _build_generator(spec.generate, params, spec.name)
-        drivers[spec.name] = generator.generate(config.n_total, config.period, rng)
+        var_rng = _child_rng(seed, location, "variable", spec.name)
+        drivers[spec.name] = generator.generate(
+            config.n_total, config.period, var_rng
+        )
 
     # Resolve this location's population to a per-period array (its own
     # override or the default; a constant, or a generated growth trajectory)
     # and build a disease spec carrying it, so the incidence model and the
     # population cap both use the right per-period number for this location.
     population = _resolve_population(
-        config.population_for(location), config.n_total, config.period, rng
+        config.population_for(location),
+        config.n_total,
+        config.period,
+        _child_rng(seed, location, "population"),
     )
     disease_spec = config.disease_cases.model_copy(update={"population": population})
 
-    # Build the dependent signal from the drivers — the ground truth.
+    # Build the dependent signal from the drivers — the ground truth. Its own
+    # stream means the disease draw is unaffected by how many covariates exist.
     disease = build_disease_cases(
-        drivers, disease_spec, rng, config.n_total, config.period
+        drivers,
+        disease_spec,
+        _child_rng(seed, location, "disease"),
+        config.n_total,
+        config.period,
     )
 
     # Where on the real calendar the series starts: row 0 is start_period

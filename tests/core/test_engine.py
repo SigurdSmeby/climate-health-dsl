@@ -264,6 +264,40 @@ def test_locations_get_different_draws():
     assert not np.array_equal(oslo, bergen)
 
 
+def test_adding_decoy_variable_does_not_change_disease():
+    # Bug #24: adding an unused decoy covariate must NOT change the disease
+    # signal or the real driver — components must have independent RNG streams.
+    base = {
+        "period": "monthly", "n_total": 24, "seed": 42,
+        "variables": [{"name": "a", "generate": "flat"}],
+        "disease_cases": {"population": 1000,
+                          "depends_on": [{"variable": "a", "lag": 1}]},
+    }
+    decoy = {**base, "variables": base["variables"] + [
+        {"name": "decoy", "generate": "flat"}]}
+    x = run(parse_config(base))
+    y = run(parse_config(decoy))
+    assert np.array_equal(x["a"].to_numpy(), y["a"].to_numpy())
+    assert np.array_equal(
+        x["disease_cases"].to_numpy(), y["disease_cases"].to_numpy(), equal_nan=True
+    )
+
+
+def test_reordering_variables_does_not_change_their_values():
+    # Bug #24: a variable's values depend on its name, not its position.
+    a = {
+        "period": "monthly", "n_total": 12, "seed": 1,
+        "variables": [{"name": "x", "generate": "flat"},
+                      {"name": "y", "generate": "flat"}],
+        "disease_cases": {"population": 1000,
+                          "depends_on": [{"variable": "x"}]},
+    }
+    b = {**a, "variables": list(reversed(a["variables"]))}
+    da, db = run(parse_config(a)), run(parse_config(b))
+    assert np.array_equal(da["x"].to_numpy(), db["x"].to_numpy())
+    assert np.array_equal(da["y"].to_numpy(), db["y"].to_numpy())
+
+
 def test_per_location_population_in_output():
     config = parse_config(
         {

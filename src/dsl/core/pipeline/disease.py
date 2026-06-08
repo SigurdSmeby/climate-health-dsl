@@ -30,13 +30,19 @@ def _standardize(series: np.ndarray) -> np.ndarray:
     values in the YAML are comparable across drivers regardless of their
     raw units (mm of rain vs degrees).
     """
-    # nanmean/nanstd skip the NaN warm-up a lagged series carries.
+    # nanmean/nanstd skip the NaN warm-up a lagged series carries. With all
+    # values NaN they'd warn and return NaN; guard that.
+    if np.all(np.isnan(series)):
+        return series.astype(float)
     mean = np.nanmean(series)
     std = np.nanstd(series)
     if std == 0:
-        # A constant series carries no signal; mapping it to zeros avoids a
-        # divide-by-zero turning the whole eta into NaN.
-        return np.zeros_like(series)
+        # A constant series carries no signal; map it to zeros — but keep the
+        # NaN positions (a missing input must stay missing so the disease row
+        # is blanked, not fabricated).
+        out = np.zeros_like(series, dtype=float)
+        out[np.isnan(series)] = np.nan
+        return out
     return (series - mean) / std
 
 
@@ -110,8 +116,12 @@ def build_disease_cases(
 
     # 2. Add each lagged, standardized, weighted driver. The lag leaves NaN in
     #    the first `lag` rows (the warm-up); those propagate into eta and are
-    #    blanked below along with any missing-input rows.
+    #    blanked below along with any missing-input rows. A weight-0 dependency
+    #    contributes nothing, so it is skipped entirely — otherwise its lag /
+    #    missing values would blank rows it has no effect on.
     for dep in spec.depends_on:
+        if dep.weight == 0:
+            continue
         lagged = LagTransform(n=dep.lag).apply(drivers[dep.variable], rng)
         eta = eta + dep.weight * _standardize(lagged)
 
