@@ -298,6 +298,51 @@ def test_reordering_variables_does_not_change_their_values():
     assert np.array_equal(da["y"].to_numpy(), db["y"].to_numpy())
 
 
+def test_population_from_csv_honors_start_period(tmp_path):
+    # Bug #15: a from_csv population must align to the scenario start_period,
+    # not read from the CSV's row 0.
+    csv = tmp_path / "pop.csv"
+    pd.DataFrame(
+        {"time_period": [f"2010-{m:02d}" for m in range(1, 5)],
+         "pop": [100, 200, 300, 400]}
+    ).to_csv(csv, index=False)
+    config = parse_config(
+        {
+            "period": "monthly", "n_total": 2, "start_period": "2010-03",
+            "variables": [{"name": "x", "generate": "flat", "params": {"noise": 0}}],
+            "disease_cases": {
+                "population": {"generate": "from_csv",
+                               "params": {"file": str(csv), "column": "pop"}},
+                "depends_on": [{"variable": "x"}],
+            },
+        }
+    )
+    df = run(config)
+    assert df["population"].tolist() == [300, 400]  # March, April
+
+
+def test_population_from_csv_with_nan_errors(tmp_path):
+    # Bug #18: a missing generated-population value must raise a clear error,
+    # not crash inside numpy/Poisson.
+    csv = tmp_path / "popnan.csv"
+    pd.DataFrame(
+        {"time_period": ["2010-01", "2010-02", "2010-03"], "pop": [100.0, float("nan"), 100.0]}
+    ).to_csv(csv, index=False)
+    config = parse_config(
+        {
+            "period": "monthly", "n_total": 3, "start_period": "2010-01",
+            "variables": [{"name": "x", "generate": "flat", "params": {"noise": 0}}],
+            "disease_cases": {
+                "population": {"generate": "from_csv",
+                               "params": {"file": str(csv), "column": "pop"}},
+                "depends_on": [{"variable": "x"}],
+            },
+        }
+    )
+    with pytest.raises(ValueError, match="population"):
+        run(config)
+
+
 def test_per_location_population_in_output():
     config = parse_config(
         {

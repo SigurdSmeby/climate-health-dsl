@@ -357,6 +357,20 @@ def test_from_csv_fixed_source_with_multi_location_warns():
     assert any("from_csv" in w and "rainfall" in w for w in warnings)
 
 
+def test_from_csv_multi_location_without_source_warns():
+    # Bug #28: the warning must fire even without source_location — a
+    # single-source CSV still duplicates into every output location.
+    data = make_config_dict()
+    data["locations"] = ["oslo", "bergen"]
+    data["variables"] = [
+        {"name": "rainfall", "generate": "from_csv",
+         "params": {"file": "x.csv", "column": "rainfall"}}  # no source_location
+    ]
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 1}]
+    warnings = validate_scenario(parse_config(data))
+    assert any("from_csv" in w and "rainfall" in w for w in warnings)
+
+
 def test_from_csv_single_location_no_warning():
     # The same from_csv variable with a single location is fine — no warning.
     data = make_config_dict()

@@ -58,20 +58,36 @@ def _resolve_population(
     n_periods: int,
     period: str,
     rng: np.random.Generator,
+    start_period: "str | None" = None,
 ) -> np.ndarray:
     """Turn a population source into a length-``n_periods`` integer array.
 
     A plain int becomes a constant array and draws NO randomness (so scalar
     scenarios stay byte-identical). A PopulationSpec is run through the
-    generator registry like a covariate, then rounded to non-negative whole
-    people (a population is integer and can't be negative).
+    generator registry like a covariate (with the scenario ``start_period``
+    injected for a from_csv source, so its real values align to the output
+    labels), then validated and rounded to non-negative whole people.
     """
     if isinstance(source, int):
         # np.full broadcasts the constant; no rng touched.
         return np.full(n_periods, source, dtype=int)
-    series = _build_generator(source.generate, source.params).generate(
+    params = dict(source.params)
+    if (
+        source.generate == "from_csv"
+        and start_period is not None
+        and "start_period" not in params
+    ):
+        params["start_period"] = start_period
+    series = _build_generator(source.generate, params).generate(
         n_periods, period, rng
     )
+    # A population must be a known, finite, non-negative headcount at every
+    # period — a missing or non-finite value can't drive the incidence model.
+    if not np.all(np.isfinite(series)):
+        raise ValueError(
+            f"population generator '{source.generate}' produced a missing or "
+            f"non-finite value; population must be finite at every period."
+        )
     return np.maximum(np.round(series), 0).astype(int)
 
 
@@ -129,6 +145,7 @@ def _run_one_location(config: ScenarioConfig, location: str) -> pd.DataFrame:
         config.n_total,
         config.period,
         _child_rng(seed, location, "population"),
+        config.start_period,
     )
     disease_spec = config.disease_cases.model_copy(update={"population": population})
 

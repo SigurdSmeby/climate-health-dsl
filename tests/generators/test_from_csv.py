@@ -212,3 +212,51 @@ def test_from_csv_non_numeric_clear_error(tmp_path, rng):
     gen = FromCsvGenerator(file=str(csv), column="rainfall")
     with pytest.raises(ValueError, match="rainfall"):
         gen.generate(3, "monthly", rng)
+
+
+# --- Round 4/5 from_csv integrity (#13, #27, #31) ---
+
+
+def test_from_csv_gap_in_periods_rejected(tmp_path, rng):
+    # Bug #13: a missing period in the middle must be rejected, not silently
+    # relabelled (Feb absent -> Mar's value written as Feb).
+    csv = tmp_path / "gaps.csv"
+    pd.DataFrame(
+        {"time_period": ["2010-01", "2010-03", "2010-04"], "rainfall": [10.0, 30.0, 40.0]}
+    ).to_csv(csv, index=False)
+    gen = FromCsvGenerator(file=str(csv), column="rainfall")
+    with pytest.raises(ValueError, match="consecutive|gap"):
+        gen.generate(3, "monthly", rng)
+
+
+def test_from_csv_consecutive_periods_ok(tmp_path, rng):
+    csv = tmp_path / "ok.csv"
+    pd.DataFrame(
+        {"time_period": ["2010-01", "2010-02", "2010-03"], "rainfall": [1.0, 2.0, 3.0]}
+    ).to_csv(csv, index=False)
+    gen = FromCsvGenerator(file=str(csv), column="rainfall")
+    assert list(gen.generate(3, "monthly", rng)) == [1.0, 2.0, 3.0]
+
+
+@pytest.mark.parametrize("label", ["2010-00", "2010-13", "2010-99"])
+def test_from_csv_impossible_monthly_label_rejected(tmp_path, rng, label):
+    # Bug #27: shape-valid but impossible calendar labels must be rejected.
+    csv = tmp_path / "bad.csv"
+    pd.DataFrame({"time_period": [label, "2010-02"], "rainfall": [1.0, 2.0]}).to_csv(
+        csv, index=False
+    )
+    gen = FromCsvGenerator(file=str(csv), column="rainfall")
+    with pytest.raises(ValueError):
+        gen.generate(2, "monthly", rng)
+
+
+def test_from_csv_infinite_value_rejected(tmp_path, rng):
+    # Bug #31: inf is numeric but not a valid covariate value.
+    csv = tmp_path / "inf.csv"
+    pd.DataFrame(
+        {"time_period": ["2010-01", "2010-02", "2010-03"],
+         "rainfall": [1.0, float("inf"), 3.0]}
+    ).to_csv(csv, index=False)
+    gen = FromCsvGenerator(file=str(csv), column="rainfall")
+    with pytest.raises(ValueError, match="finite|infinite|rainfall"):
+        gen.generate(3, "monthly", rng)

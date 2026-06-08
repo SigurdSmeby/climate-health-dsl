@@ -320,16 +320,16 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
             f"({cycle} {config.period} periods); seasonality will not be visible."
         )
 
-    # A from_csv variable pinned to one source_location, with several output
-    # locations, gives every location the SAME real series (a likely surprise).
+    # A from_csv variable feeds the SAME real series to every output location
+    # (there is no per-location source mapping), which with several locations
+    # is a likely surprise — warn regardless of whether source_location is set.
     if len(config.locations) > 1:
         for var in config.variables:
-            if var.generate == "from_csv" and var.params.get("source_location"):
+            if var.generate == "from_csv":
                 warnings.append(
-                    f"variable '{var.name}' uses from_csv with a fixed "
-                    f"source_location '{var.params['source_location']}', but "
-                    f"the scenario has {len(config.locations)} locations; all "
-                    f"of them will get the same real series."
+                    f"variable '{var.name}' uses from_csv, but the scenario has "
+                    f"{len(config.locations)} locations; every location will get "
+                    f"the same real series."
                 )
 
     return warnings
