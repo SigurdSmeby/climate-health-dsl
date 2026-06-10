@@ -118,6 +118,30 @@ def test_chap_finding_warns_but_succeeds(tmp_path, capsys):
     assert "rainfall" in capsys.readouterr().err  # CHAP finding, as warning
 
 
+def test_relative_from_csv_path_resolves_to_scenario_dir(tmp_path, monkeypatch):
+    # Bug #29: a from_csv path relative to the scenario file must work even
+    # when dsl is launched from a different directory.
+    exp = tmp_path / "experiment"
+    exp.mkdir()
+    pd.DataFrame(
+        {"time_period": [f"2010-{m:02d}" for m in range(1, 7)],
+         "rainfall": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]}
+    ).to_csv(exp / "data.csv", index=False)
+    scenario = {
+        "period": "monthly", "n_total": 6, "start_period": "2010-01",
+        "variables": [{"name": "rainfall", "generate": "from_csv",
+                       "params": {"file": "data.csv", "column": "rainfall"}}],
+        "disease_cases": {"population": 100, "depends_on": [{"variable": "rainfall"}]},
+    }
+    (exp / "scenario.yaml").write_text(yaml.safe_dump(scenario))
+    # Launch from a DIFFERENT directory.
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "out"
+    code = main(["run", str(exp / "scenario.yaml"), "-o", str(out)])
+    assert code == 0
+    assert (out / "simulated_data.csv").is_file()
+
+
 def test_generation_error_is_clean_cli_error(tmp_path, capsys):
     # Bug #19: an invalid generator param surfaces during generation, after
     # the schema passes. The CLI must print 'error:' and exit 1, not dump a

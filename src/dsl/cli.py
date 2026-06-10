@@ -30,8 +30,45 @@ def _load_scenario_dict(path: str) -> dict:
     """
     data = load_yaml(path)
     if "scenario" in data and isinstance(data["scenario"], dict):
-        return data["scenario"]
+        data = data["scenario"]
+    # Resolve relative from_csv paths against the scenario file's directory,
+    # so a portable folder (scenario.yaml + data.csv) works from any cwd.
+    _resolve_from_csv_paths(data, Path(path).resolve().parent)
     return data
+
+
+def _resolve_from_csv_paths(scenario: dict, base_dir: Path) -> None:
+    """Rewrite relative from_csv `file` params to be relative to base_dir.
+
+    Edits the dict in place. Absolute paths and paths that already exist
+    relative to the cwd are left alone (the latter keeps old behavior).
+    """
+
+    def fix(params: dict) -> None:
+        file = params.get("file")
+        if not isinstance(file, str):
+            return
+        p = Path(file)
+        if p.is_absolute() or p.exists():
+            return
+        candidate = base_dir / file
+        if candidate.exists():
+            params["file"] = str(candidate)
+
+    for var in scenario.get("variables", []):
+        if isinstance(var, dict) and var.get("generate") == "from_csv":
+            fix(var.get("params", {}))
+    # Population can also be a from_csv generator (top-level and per-location).
+    disease = scenario.get("disease_cases", {})
+    pop = disease.get("population")
+    if isinstance(pop, dict) and pop.get("generate") == "from_csv":
+        fix(pop.get("params", {}))
+    locations = scenario.get("locations")
+    if isinstance(locations, dict):
+        for loc in locations.values():
+            lpop = loc.get("population") if isinstance(loc, dict) else None
+            if isinstance(lpop, dict) and lpop.get("generate") == "from_csv":
+                fix(lpop.get("params", {}))
 
 
 def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
