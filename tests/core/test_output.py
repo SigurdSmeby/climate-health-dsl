@@ -121,3 +121,17 @@ def test_multi_location_split_is_per_location(tmp_path):
     # Test rows continue where train rows stopped, for every location.
     assert (train[train["location"] == "oslo"]["time_period"].iloc[-1]) == "2001-06"
     assert (test[test["location"] == "oslo"]["time_period"].iloc[0]) == "2001-07"
+
+
+def test_rerun_without_split_removes_stale_train_test(tmp_path):
+    # Bug #25: a directory first used with train_fraction, then reused without
+    # it, must not keep the old train.csv/test.csv beside the new full dataset.
+    split = make_config(train_fraction=0.8)
+    write_output(run(split), split, tmp_path)
+    assert (tmp_path / "train.csv").is_file()
+
+    plain = make_config()  # no train_fraction, same dir
+    write_output(run(plain), plain, tmp_path)
+    assert not (tmp_path / "train.csv").exists()
+    assert not (tmp_path / "test.csv").exists()
+    assert (tmp_path / "simulated_data.csv").is_file()

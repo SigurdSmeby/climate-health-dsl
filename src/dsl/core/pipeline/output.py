@@ -51,3 +51,8 @@ def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) 
         test = by_location.tail(config.n_total - n_train)
         train.to_csv(out_dir / TRAIN_FILENAME, index=False)
         test.to_csv(out_dir / TEST_FILENAME, index=False)
+    else:
+        # Reusing a directory must not leave a previous run's split files
+        # beside the new full dataset (they would describe a different run).
+        (out_dir / TRAIN_FILENAME).unlink(missing_ok=True)
+        (out_dir / TEST_FILENAME).unlink(missing_ok=True)

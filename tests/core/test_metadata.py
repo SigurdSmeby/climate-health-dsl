@@ -52,6 +52,31 @@ def test_metadata_records_generators():
     }
 
 
+def test_flattened_metadata_includes_count_distribution():
+    # Bug #38: the flattened disease summary must record the count
+    # distribution and overdispersion, not only the nested scenario.
+    config = parse_config(
+        {
+            "period": "monthly", "n_total": 3, "seed": 0,
+            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
+            "disease_cases": {
+                "population": 100,
+                "depends_on": [{"variable": "rainfall", "lag": 1}],
+                "count_distribution": "negative_binomial",
+                "overdispersion": 2.5,
+            },
+        }
+    )
+    meta = build_metadata(config)
+    assert meta["disease_cases"]["count_distribution"] == "negative_binomial"
+    assert meta["disease_cases"]["overdispersion"] == 2.5
+
+
+def test_flattened_metadata_count_distribution_default():
+    meta = build_metadata(sample_config())
+    assert meta["disease_cases"]["count_distribution"] == "poisson"
+
+
 def test_metadata_records_tool_version():
     meta = build_metadata(sample_config())
     assert meta["dsl_version"] == __version__

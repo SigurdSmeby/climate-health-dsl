@@ -119,7 +119,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"warning: {warning}", file=sys.stderr)
 
     # --- Generate, check CHAP compatibility, write. ---
-    df = run_engine(config)
+    # Generation/output can fail on input the schema can't catch (a bad
+    # generator param, a malformed from_csv source). Surface those as clean
+    # CLI errors; let genuine programming bugs propagate.
+    try:
+        df = run_engine(config)
+    except (ValueError, FileNotFoundError, KeyError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     # CHAP-compatibility findings are advisory: print them and proceed.
     # (In practice these only fire when real data enters via from_csv with

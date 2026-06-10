@@ -61,6 +61,30 @@ def test_varying_population_is_plotted():
     assert "population" in _series_columns(df)
 
 
+def test_constant_per_location_population_not_plotted():
+    # Bug #37: two locations with different but individually CONSTANT
+    # populations must not get a population panel (it doesn't vary over time).
+    df = pd.DataFrame({
+        "time_period": ["2000-01", "2000-02"] * 2,
+        "location": ["A", "A", "B", "B"],
+        "rainfall": [1.0, 2.0, 3.0, 4.0],
+        "disease_cases": [1.0, 2.0, 3.0, 4.0],
+        "population": [100, 100, 200, 200],
+    })
+    assert "population" not in _series_columns(df)
+
+
+def test_population_growing_within_location_is_plotted():
+    df = pd.DataFrame({
+        "time_period": ["2000-01", "2000-02"] * 2,
+        "location": ["A", "A", "B", "B"],
+        "rainfall": [1.0, 2.0, 3.0, 4.0],
+        "disease_cases": [1.0, 2.0, 3.0, 4.0],
+        "population": [100, 110, 200, 200],  # A grows
+    })
+    assert "population" in _series_columns(df)
+
+
 def test_each_location_has_one_colour_across_panels():
     # A location must be the SAME colour in every panel, so a reader can
     # follow it down the stacked panels.

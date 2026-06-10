@@ -118,6 +118,25 @@ def test_chap_finding_warns_but_succeeds(tmp_path, capsys):
     assert "rainfall" in capsys.readouterr().err  # CHAP finding, as warning
 
 
+def test_generation_error_is_clean_cli_error(tmp_path, capsys):
+    # Bug #19: an invalid generator param surfaces during generation, after
+    # the schema passes. The CLI must print 'error:' and exit 1, not dump a
+    # traceback.
+    data = {
+        "period": "monthly", "n_total": 3,
+        "variables": [
+            {"name": "x", "generate": "seasonal_spike", "params": {"bogus": 1}}
+        ],
+        "disease_cases": {"population": 100, "depends_on": [{"variable": "x"}]},
+    }
+    path = write_scenario(tmp_path, data)
+    out = tmp_path / "out"
+    code = main(["run", str(path), "-o", str(out)])
+    assert code == 1
+    assert "error:" in capsys.readouterr().err
+    assert not (out / "simulated_data.csv").exists()
+
+
 def test_daily_scenario_has_no_chap_warning(tmp_path, capsys):
     # Daily output is valid CHAP (TimePeriod.parse accepts YYYYMMDD); it must
     # not produce a CHAP period-format warning.

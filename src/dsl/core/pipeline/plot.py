@@ -29,8 +29,16 @@ def _series_columns(df: pd.DataFrame) -> list[str]:
     and population ONLY when it varies over time (a growth trajectory is
     worth a panel; a constant population is not)."""
     columns = [c for c in df.columns if c not in _NON_SERIES]
-    if "population" in df.columns and df["population"].nunique() > 1:
-        columns.append("population")
+    # Population is plotted only when it varies OVER TIME — i.e. within at
+    # least one location. Different constant populations across locations
+    # (each flat) is not "time-varying" and should not get a panel.
+    if "population" in df.columns:
+        if "location" in df.columns:
+            varies = df.groupby("location")["population"].nunique().gt(1).any()
+        else:
+            varies = df["population"].nunique() > 1
+        if varies:
+            columns.append("population")
     return columns
 
 
