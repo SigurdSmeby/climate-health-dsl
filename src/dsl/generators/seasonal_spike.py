@@ -18,7 +18,7 @@ class SeasonalSpikeGenerator(VariableGenerator):
         self,
         baseline: float = 2.0,
         spike_height: float = 20.0,
-        spike_center: int = 26,
+        spike_center: int | None = None,
         spike_width: float = 4.0,
         noise: float = 0.5,
         clamp_min: float | None = None,
@@ -33,7 +33,10 @@ class SeasonalSpikeGenerator(VariableGenerator):
             How far above the baseline the peak rises.
         spike_center:
             The period offset of the peak within the yearly cycle (e.g. 26
-            for mid-year in weekly data, 6 for July in monthly data).
+            for mid-year in weekly data, 6 for July in monthly data). Values
+            beyond one cycle wrap (24 on monthly data == month 0). The
+            default (``None``) is mid-year at any resolution — 26 for weekly,
+            6 for monthly — so a monthly series peaks correctly without tuning.
         spike_width:
             The standard deviation of the Gaussian bump, in periods. Bigger
             means a broader rainy season. Must be > 0.
@@ -62,9 +65,12 @@ class SeasonalSpikeGenerator(VariableGenerator):
         t = np.arange(n_periods)  # the time axis: 0, 1, 2, ...
         # Position within the current year, so the spike repeats annually.
         pos = t % ppy
+        # The peak's position within the year. None → mid-year (works at any
+        # resolution); an explicit value beyond one cycle wraps via % ppy.
+        center = (ppy // 2 if self.spike_center is None else self.spike_center) % ppy
         # Circular distance to the spike center: week 51 is only 2 weeks
         # away from a week-1 peak, not 50, because the seasons wrap around.
-        raw = np.abs(pos - self.spike_center)
+        raw = np.abs(pos - center)
         dist = np.minimum(raw, ppy - raw)
         # A Gaussian bump: exp(-d²/2σ²) is 1 at the center, ~0 far away.
         spike = self.spike_height * np.exp(-0.5 * (dist / self.spike_width) ** 2)

@@ -130,6 +130,33 @@ def test_overdispersion_must_be_positive():
         parse_config(data)
 
 
+@pytest.mark.parametrize(
+    "period,start,n",
+    [
+        ("daily", "99991231", 2),
+        ("monthly", "9999-12", 2),
+        ("weekly", "9999-W52", 2),
+        ("yearly", "9999", 2),
+    ],
+)
+def test_period_range_past_year_9999_rejected(period, start, n):
+    # Bug #36: a range that crosses past year 9999 crashes or emits 5-digit
+    # labels; reject it at the schema.
+    data = make_config_dict(period=period, n_total=n, start_period=start)
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 0}]
+    with pytest.raises(ValidationError, match="9999|range|year"):
+        parse_config(data)
+
+
+def test_seasonal_phase_warns_with_start_period():
+    # Bug #16 (documented limitation): a mid-year start_period only relabels;
+    # seasonal phase still begins at the cycle start. Warn so it's not a
+    # silent surprise.
+    data = make_config_dict(period="monthly", start_period="2010-07")
+    warnings = validate_scenario(parse_config(data))
+    assert any("seasonal" in w.lower() and "start_period" in w for w in warnings)
+
+
 def test_negative_seed_rejected():
     # Bug #30: numpy needs a non-negative seed; reject it at the schema.
     with pytest.raises(ValidationError, match="seed"):

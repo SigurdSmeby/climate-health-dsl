@@ -205,6 +205,30 @@ class ScenarioConfig(BaseModel):
                 parse_period(self.start_period, self.period)
             except ValueError as exc:
                 raise ValueError(f"start_period: {exc}") from exc
+            # The last period must still fit the 4-digit calendar (year <=
+            # 9999); past that, labels become 5-digit or daily dates overflow.
+            from dsl.core.pipeline.periods import format_period
+
+            try:
+                start_year, offset = parse_period(self.start_period, self.period)
+                last = format_period(
+                    offset + self.n_total - 1, self.period, start_year
+                )
+            except (ValueError, OverflowError) as exc:
+                raise ValueError(
+                    f"the period range starting {self.start_period} for "
+                    f"{self.n_total} periods runs past the supported calendar "
+                    f"(year 9999): {exc}"
+                ) from exc
+            # The leading 4 digits are the year for every label format
+            # (YYYYMMDD, YYYY-Wnn, YYYY-MM, YYYY). A label longer than its
+            # normal width means a 5-digit year slipped in (past 9999).
+            normal_widths = {"daily": 8, "weekly": 8, "monthly": 7, "yearly": 4}
+            if len(str(last)) > normal_widths[self.period]:
+                raise ValueError(
+                    f"the period range starting {self.start_period} for "
+                    f"{self.n_total} periods ends at '{last}', past year 9999."
+                )
         if len(set(self.locations)) != len(self.locations):
             raise ValueError(
                 f"locations contains duplicate names: {self.locations}."
@@ -340,6 +364,19 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
             f"n_total ({config.n_total}) is shorter than one seasonal cycle "
             f"({cycle} {config.period} periods); seasonality will not be visible."
         )
+
+    # Known limitation: start_period only relabels the output; the seasonal
+    # generators and disease baseline still begin their cycle at index 0, so a
+    # mid-year start has the wrong seasonal phase. Warn when it matters.
+    if config.start_period is not None:
+        _, offset = parse_period(config.start_period, config.period)
+        if offset != 0:
+            warnings.append(
+                f"start_period '{config.start_period}' begins mid-cycle; "
+                f"seasonal generators and the disease baseline still start "
+                f"their seasonal phase at the cycle start, so seasonality is "
+                f"not aligned to the calendar."
+            )
 
     # If the largest lag covers the whole training split, every training
     # target is warm-up NaN — the train set has no observed cases to learn from.
