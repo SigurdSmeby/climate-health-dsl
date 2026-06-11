@@ -120,16 +120,30 @@ def _run_one_location(config: ScenarioConfig, location: str) -> pd.DataFrame:
     drivers: dict[str, np.ndarray] = {}
     for spec in config.variables:
         params = dict(spec.params)
-        # When the scenario starts at a real-world period, a from_csv variable
-        # must read its real data from that same period — otherwise the output
-        # would label row 0 as start_period but fill it with the CSV's first
-        # row (mismatched dates). Inject it unless the variable set its own.
-        if (
-            spec.generate == "from_csv"
-            and config.start_period is not None
-            and "start_period" not in params
-        ):
-            params["start_period"] = config.start_period
+        if spec.generate == "from_csv":
+            # When the scenario starts at a real-world period, a from_csv
+            # variable must read its real data from that same period —
+            # otherwise the output would label row 0 as start_period but fill
+            # it with the CSV's first row (mismatched dates). Inject it unless
+            # the variable set its own.
+            if config.start_period is not None and "start_period" not in params:
+                params["start_period"] = config.start_period
+            # Per-location source: if no source_location is set and the CSV is
+            # multi-location, give THIS output location its own matching rows.
+            if "source_location" not in params:
+                csv_locations = get_generator("from_csv").locations_in(
+                    params.get("file", "")
+                )
+                if len(csv_locations) > 1:
+                    if location not in csv_locations:
+                        raise ValueError(
+                            f"from_csv: variable '{spec.name}' has no "
+                            f"source_location and output location '{location}' "
+                            f"is not in {params.get('file')} (available: "
+                            f"{csv_locations}); set source_location or rename "
+                            f"the location to match."
+                        )
+                    params["source_location"] = location
         generator = _build_generator(spec.generate, params, spec.name)
         var_rng = _child_rng(seed, location, "variable", spec.name)
         drivers[spec.name] = generator.generate(

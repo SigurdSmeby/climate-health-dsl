@@ -20,18 +20,18 @@ locations:
   HA GIANG: { population: 879206 }
   KHANH HOA: { population: 1174000 } # corrected from the source's odd 2922
 variables:
+  # No source_location: each output province above auto-matches its OWN rows
+  # in the CSV by name, so every province gets its real climate.
   - name: rainfall
     generate: from_csv
     params:
       file: ../data/vietnam_provinces.csv
       column: rainfall
-      source_location: AN GIANG # one source feeds all provinces (see note below)
   - name: mean_temperature
     generate: from_csv
     params:
       file: ../data/vietnam_provinces.csv
       column: mean_temperature
-      source_location: AN GIANG
 disease_cases:
   population: 1000000 # fallback (every location above sets its own)
   depends_on:
@@ -41,7 +41,3 @@ disease_cases:
   overdispersion: 3.0
   max_rate: 0.02
   median_rate: 0.001
-# NOTE: from_csv binds one source_location, so every output province here gets
-# AN GIANG's real climate (the tool warns about this). Per-location real
-# climate is a roadmap item; for now the populations differ but the weather is
-# shared. Demo 2 shows a clean single-location real-climate dataset.

@@ -35,6 +35,23 @@ _LABEL_SHAPE = {
 class FromCsvGenerator(VariableGenerator):
     """Reads a column from a CHAP-format CSV instead of synthesizing it."""
 
+    @staticmethod
+    def locations_in(file: str) -> list[str]:
+        """The distinct ``location`` values in a CSV (empty if no such column).
+
+        Lets the engine decide whether to auto-map each output location to its
+        own rows. Reads only the ``location`` column, and tolerates a missing
+        file (returns empty — generation surfaces that error later).
+        """
+        path = Path(file)
+        if not path.is_file():
+            return []
+        try:
+            col = pd.read_csv(path, usecols=["location"])["location"]
+        except (ValueError, pd.errors.EmptyDataError):
+            return []  # no location column / empty file
+        return list(dict.fromkeys(col.tolist()))  # distinct, order-preserving
+
     def __init__(
         self,
         file: str,

@@ -41,10 +41,11 @@ you control the ground truth.
 ## The demos
 
 ### 1. `01_vietnam_multiprovince.yaml` — real multi-province climate
-Real Vietnam rainfall and temperature drive a synthetic dengue-like signal
-across four provinces, each with its own population, sharing one controlled
-relationship (rainfall lag 2, temperature lag 1). Overdispersed
-(negative-binomial) counts, 80/20 train/test split.
+Each of four provinces reads its **own** real rainfall and temperature (the
+output location names match the CSV's, so `from_csv` auto-matches them), with
+its own population, all sharing one controlled relationship (rainfall lag 2,
+temperature lag 1). Overdispersed (negative-binomial) counts, 80/20
+train/test split.
 *Shows: `from_csv` real covariates, multi-location with per-location
 population, negative-binomial counts, train/test split.*
 
@@ -80,9 +81,10 @@ the exact ground truth (seed, lags, weights, generators — enough to reproduce
 the dataset), and with `--plot` an interactive `plot.html`. Demos that set
 `train_fraction` also write `train.csv`/`test.csv`.
 
-## A note on per-location real climate
+## Per-location real climate
 
-`from_csv` binds one `source_location`, so in demo 1 every output province gets
-the *same* real climate (the tool warns about this). Per-location real climate
-mapping is a planned feature; for now demo 1 differs by population, and demos 3
-and 5 show independent synthetic climate per location.
+A `from_csv` variable with **no** `source_location` auto-matches each output
+location to the CSV rows of the same name — so in demo 1 each province reads
+its own real climate (the output location names match the CSV's). To feed one
+shared source to every location instead, set `source_location` explicitly (the
+tool then warns that all locations get the same series).

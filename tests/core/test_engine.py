@@ -343,6 +343,104 @@ def test_population_from_csv_with_nan_errors(tmp_path):
         run(config)
 
 
+def _multi_loc_csv(tmp_path):
+    """A CSV with two locations whose rows differ, 12 monthly periods each."""
+    csv = tmp_path / "multi.csv"
+    periods = [f"2010-{m:02d}" for m in range(1, 13)]
+    pd.DataFrame(
+        {
+            "time_period": periods * 2,
+            "rainfall": list(range(12)) + list(range(100, 112)),
+            "location": ["north"] * 12 + ["south"] * 12,
+        }
+    ).to_csv(csv, index=False)
+    return csv
+
+
+def test_from_csv_auto_matches_each_location(tmp_path):
+    # Per-location from_csv: with no source_location, each output location
+    # reads the CSV rows of the same name — so north and south differ.
+    csv = _multi_loc_csv(tmp_path)
+    config = parse_config(
+        {
+            "period": "monthly", "n_total": 12, "start_period": "2010-01",
+            "locations": ["north", "south"],
+            "variables": [{"name": "rainfall", "generate": "from_csv",
+                           "params": {"file": str(csv), "column": "rainfall"}}],
+            "disease_cases": {"population": 1000,
+                              "depends_on": [{"variable": "rainfall", "lag": 1}]},
+        }
+    )
+    df = run(config)
+    north = df[df["location"] == "north"]["rainfall"].tolist()
+    south = df[df["location"] == "south"]["rainfall"].tolist()
+    assert north == list(range(12))  # north's own rows
+    assert south == list(range(100, 112))  # south's own rows
+
+
+def test_from_csv_explicit_source_overrides_auto_match(tmp_path):
+    # An explicit source_location forces ONE source for all locations
+    # (the previous behavior, unchanged).
+    csv = _multi_loc_csv(tmp_path)
+    config = parse_config(
+        {
+            "period": "monthly", "n_total": 12, "start_period": "2010-01",
+            "locations": ["north", "south"],
+            "variables": [{"name": "rainfall", "generate": "from_csv",
+                           "params": {"file": str(csv), "column": "rainfall",
+                                      "source_location": "north"}}],
+            "disease_cases": {"population": 1000,
+                              "depends_on": [{"variable": "rainfall", "lag": 1}]},
+        }
+    )
+    df = run(config)
+    north = df[df["location"] == "north"]["rainfall"].tolist()
+    south = df[df["location"] == "south"]["rainfall"].tolist()
+    assert north == south == list(range(12))  # both get north's rows
+
+
+def test_from_csv_unmatched_location_errors(tmp_path):
+    # An output location not present in the CSV (and no explicit source) is a
+    # clear error, not silent wrong data.
+    csv = _multi_loc_csv(tmp_path)
+    config = parse_config(
+        {
+            "period": "monthly", "n_total": 12, "start_period": "2010-01",
+            "locations": ["north", "west"],  # 'west' is not in the CSV
+            "variables": [{"name": "rainfall", "generate": "from_csv",
+                           "params": {"file": str(csv), "column": "rainfall"}}],
+            "disease_cases": {"population": 1000,
+                              "depends_on": [{"variable": "rainfall", "lag": 1}]},
+        }
+    )
+    with pytest.raises(ValueError, match="west"):
+        run(config)
+
+
+def test_from_csv_single_location_csv_unaffected(tmp_path):
+    # A CSV with one location (or none) feeds all output locations the same
+    # series, as before — auto-match only applies to multi-location CSVs.
+    csv = tmp_path / "one.csv"
+    pd.DataFrame(
+        {"time_period": [f"2010-{m:02d}" for m in range(1, 13)],
+         "rainfall": list(range(12))}
+    ).to_csv(csv, index=False)
+    config = parse_config(
+        {
+            "period": "monthly", "n_total": 12, "start_period": "2010-01",
+            "locations": ["a", "b"],
+            "variables": [{"name": "rainfall", "generate": "from_csv",
+                           "params": {"file": str(csv), "column": "rainfall"}}],
+            "disease_cases": {"population": 1000,
+                              "depends_on": [{"variable": "rainfall", "lag": 1}]},
+        }
+    )
+    df = run(config)
+    a = df[df["location"] == "a"]["rainfall"].tolist()
+    b = df[df["location"] == "b"]["rainfall"].tolist()
+    assert a == b == list(range(12))
+
+
 def test_per_location_population_in_output():
     config = parse_config(
         {

@@ -425,9 +425,10 @@ def test_from_csv_fixed_source_with_multi_location_warns():
     assert any("from_csv" in w and "rainfall" in w for w in warnings)
 
 
-def test_from_csv_multi_location_without_source_warns():
-    # Bug #28: the warning must fire even without source_location — a
-    # single-source CSV still duplicates into every output location.
+def test_from_csv_multi_location_without_source_no_warning():
+    # With per-location auto-match, a from_csv variable with NO source_location
+    # and several locations is fine (each location reads its own rows), so
+    # there is no duplication warning — the warning is only for a FIXED source.
     data = make_config_dict()
     data["locations"] = ["oslo", "bergen"]
     data["variables"] = [
@@ -436,7 +437,7 @@ def test_from_csv_multi_location_without_source_warns():
     ]
     data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 1}]
     warnings = validate_scenario(parse_config(data))
-    assert any("from_csv" in w and "rainfall" in w for w in warnings)
+    assert not any("from_csv" in w for w in warnings)
 
 
 def test_lag_consuming_whole_train_split_warns():

@@ -232,7 +232,7 @@ periods than `n_total`, the run fails rather than wrapping or extrapolating.
 |---|---|---|
 | `file` | required | Path to the CSV (`time_period` column plus data columns; `location` column if multi-location). |
 | `column` | required | Which column to use as this variable's values. |
-| `source_location` | unset | Which location's rows to use; required when the CSV has several. |
+| `source_location` | unset | Which location's rows to use. Set it to feed one CSV location to every output location. If left unset and the CSV has several locations, each output location **auto-matches** the CSV rows of the same name (and errors if there's no match). |
 | `start_period` | first row | A `time_period` label to start reading from, e.g. `"2011-01"`. |
 
 A real multi-location sample is bundled at `examples/data/laos_subset.csv`

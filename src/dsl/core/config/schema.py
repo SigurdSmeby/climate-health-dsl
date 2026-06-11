@@ -392,16 +392,18 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
                 f"disease_cases (all warm-up NaN)."
             )
 
-    # A from_csv variable feeds the SAME real series to every output location
-    # (there is no per-location source mapping), which with several locations
-    # is a likely surprise — warn regardless of whether source_location is set.
+    # A from_csv variable with an explicit source_location feeds that ONE
+    # source to every output location — a likely surprise with several
+    # locations. Without an explicit source, each location auto-matches its
+    # own CSV rows (or the engine errors on a mismatch), so no warning needed.
     if len(config.locations) > 1:
         for var in config.variables:
-            if var.generate == "from_csv":
+            if var.generate == "from_csv" and var.params.get("source_location"):
                 warnings.append(
-                    f"variable '{var.name}' uses from_csv, but the scenario has "
-                    f"{len(config.locations)} locations; every location will get "
-                    f"the same real series."
+                    f"variable '{var.name}' uses from_csv with a fixed "
+                    f"source_location '{var.params['source_location']}', but the "
+                    f"scenario has {len(config.locations)} locations; every "
+                    f"location will get the same real series."
                 )
 
     return warnings
