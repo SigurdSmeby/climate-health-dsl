@@ -128,3 +128,88 @@ def test_non_numeric_covariate_flagged():
     df["rainfall"] = "wet"
     findings = validate_chap(df)
     assert any("rainfall" in f and "numeric" in f for f in findings)
+
+
+# --- Round 4/5 chap_check fixes (#21, #32, #33, #31) ---
+
+
+def _frame(periods):
+    return pd.DataFrame({
+        "time_period": periods,
+        "location": ["x"] * len(periods),
+        "rainfall": [1.0] * len(periods),
+        "disease_cases": [1.0] * len(periods),
+    })
+
+
+def test_daily_gap_flagged():
+    # Bug #21: daily consecutiveness must be checked.
+    findings = validate_chap(_frame(["20000101", "20000103"]))
+    assert any("consecutive" in f for f in findings)
+
+
+def test_yearly_gap_flagged():
+    findings = validate_chap(_frame(["2000", "2002"]))
+    assert any("consecutive" in f for f in findings)
+
+
+def test_daily_consecutive_ok():
+    assert validate_chap(_frame(["20000101", "20000102", "20000103"])) == []
+
+
+def test_yearly_consecutive_ok():
+    assert validate_chap(_frame(["2000", "2001", "2002"])) == []
+
+
+def test_string_disease_cases_does_not_crash():
+    # Bug #32: validate_chap must never raise, even on a string target.
+    df = pd.DataFrame({
+        "time_period": ["2000-01", "2000-02"],
+        "location": ["x", "x"],
+        "rainfall": [1.0, 2.0],
+        "disease_cases": ["1", "2"],
+    })
+    findings = validate_chap(df)  # must not raise
+    assert any("disease_cases" in f for f in findings)
+
+
+def test_sunday_weeks_not_falsely_flagged():
+    # Bug #33: YYYY-Snn is a valid CHAP form; consecutive S-weeks are fine.
+    assert validate_chap(_frame(["2000-S01", "2000-S02", "2000-S03"])) == []
+
+
+def test_week_53_not_falsely_flagged():
+    # Bug #33: week 53 exists in some years and must not be flagged.
+    assert validate_chap(_frame(["2020-W52", "2020-W53", "2021-W01"])) == []
+
+
+def test_flat52_week_rollover_not_flagged():
+    # The DSL emits flat-52 weekly labels: W52 rolls straight to next year's
+    # W01 (no W53). chap_check must accept its OWN output as consecutive, even
+    # in an ISO-53-week year like 2020.
+    assert validate_chap(_frame(["2020-W51", "2020-W52", "2021-W01"])) == []
+
+
+def test_genuinely_non_consecutive_weeks_still_flagged():
+    # A real gap (W50 -> W52) must still be flagged.
+    findings = validate_chap(_frame(["2020-W50", "2020-W52"]))
+    assert any("consecutive" in f for f in findings)
+
+
+def test_year_boundary_week_gaps_still_flagged():
+    # The rollover acceptance must be tight: only W52/W53 -> W01 is allowed.
+    # A gap across the boundary (W01 or W52 missing) is still a real gap.
+    assert any(  # W01 skipped
+        "consecutive" in f for f in validate_chap(_frame(["2020-W52", "2021-W02"]))
+    )
+    assert any(  # W52 skipped
+        "consecutive" in f for f in validate_chap(_frame(["2020-W51", "2021-W01"]))
+    )
+
+
+def test_infinite_covariate_flagged():
+    # Bug #31: an infinite covariate value is not CHAP-valid data.
+    df = _frame(["2000-01", "2000-02"])
+    df.loc[0, "rainfall"] = np.inf
+    findings = validate_chap(df)
+    assert any("rainfall" in f for f in findings)

@@ -203,6 +203,82 @@ def test_poisson_is_the_default(rng):
     assert np.array_equal(default, explicit, equal_nan=True)
 
 
+def test_constant_driver_with_nan_still_blanks(rng):
+    # Bug #14: a constant driver hits _standardize's zero-variance branch,
+    # which must STILL preserve the NaN mask so a missing input blanks the
+    # disease row (otherwise #7's fix is bypassed for constant drivers).
+    driver = np.full(10, 5.0)
+    driver[3] = np.nan
+    drivers = {"rainfall": driver}
+    spec = make_spec(depends_on=[{"variable": "rainfall", "lag": 0, "weight": 2.0}])
+    cases = build_disease_cases(drivers, spec, rng, 10, "weekly")
+    assert np.isnan(cases[3]), "missing input must blank disease even for a constant driver"
+
+
+def test_zero_weight_dependency_does_not_blank(rng):
+    # Bug #23: a weight-0 dependency contributes nothing, so its lag warm-up
+    # must NOT blank disease rows. Compare to the same scenario at lag 0.
+    driver = np.arange(12, dtype=float) + 1.0
+    drivers = {"rainfall": driver}
+    spec = make_spec(
+        depends_on=[{"variable": "rainfall", "lag": 5, "weight": 0.0}]
+    )
+    cases = build_disease_cases(drivers, spec, rng, 12, "weekly")
+    # No dependency actually affects the signal, so nothing should be blanked.
+    assert not np.isnan(cases).any()
+
+
+def test_zero_weight_missing_driver_does_not_blank(rng):
+    # A NaN in a weight-0 driver must not blank disease either (it has no effect).
+    driver = np.arange(10, dtype=float) + 1.0
+    driver[4] = np.nan
+    drivers = {"rainfall": driver}
+    spec = make_spec(depends_on=[{"variable": "rainfall", "lag": 0, "weight": 0.0}])
+    cases = build_disease_cases(drivers, spec, rng, 10, "weekly")
+    assert not np.isnan(cases[4])
+
+
+def test_nan_covariate_blanks_disease_cases(rng):
+    # Bug #7: a missing (NaN) driver value at period t must blank disease_cases
+    # at t — you can't compute a known signal from a missing input. Previously
+    # the NaN was nan_to_num'd to the mean, fabricating a confident count.
+    driver = np.arange(10, dtype=float) + 1.0
+    driver[5] = np.nan  # one missing real value
+    drivers = {"rainfall": driver}
+    spec = make_spec(depends_on=[{"variable": "rainfall", "lag": 0, "weight": 2.0}])
+    cases = build_disease_cases(drivers, spec, rng, 10, "weekly")
+    assert np.isnan(cases[5]), "disease_cases must be NaN where the driver is NaN"
+    # Other rows are unaffected (still valid counts).
+    assert not np.isnan(cases[0])
+    assert not np.isnan(cases[9])
+
+
+def test_nan_covariate_blanks_after_lag(rng):
+    # The blanking must follow the lag: a NaN at driver index k surfaces in
+    # disease_cases at index k + lag.
+    driver = np.arange(12, dtype=float) + 1.0
+    driver[3] = np.nan
+    drivers = {"rainfall": driver}
+    spec = make_spec(depends_on=[{"variable": "rainfall", "lag": 2, "weight": 1.0}])
+    cases = build_disease_cases(drivers, spec, rng, 12, "weekly")
+    assert np.isnan(cases[5])  # 3 + lag 2
+
+
+def test_extreme_weight_no_overflow_warning(rng):
+    # Bug #6: a huge weight made np.exp overflow and warn, even though the
+    # output is fine (the sigmoid saturates). No warning should leak.
+    import warnings
+
+    drivers = {"rainfall": spiky_driver(104, peak=20)}
+    spec = make_spec(depends_on=[{"variable": "rainfall", "lag": 1, "weight": 5000.0}])
+    with warnings.catch_warnings():
+        # Escalate only the numpy overflow warning to an error.
+        warnings.filterwarnings("error", message="overflow encountered")
+        cases = build_disease_cases(drivers, spec, rng, 104, "weekly")
+    valid = cases[~np.isnan(cases)]
+    assert (valid >= 0).all() and (valid <= 100_000).all()
+
+
 def test_constant_driver_does_not_crash(rng):
     # A constant series has zero variance; standardization must not divide
     # by zero and produce NaN/inf.

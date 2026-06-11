@@ -95,6 +95,14 @@ def test_parse_period_values():
     assert parse_period("20100103", "daily") == (2010, 2)
 
 
+def test_parse_period_date_range_week_gives_helpful_error():
+    # Bug #5: CHAP's date-range weekly form is valid in a CSV but is NOT a
+    # usable start_period label here (the DSL's canonical weekly form is
+    # YYYY-Wnn). The error must say so, not just "invalid".
+    with pytest.raises(ValueError, match="YYYY-Wnn"):
+        parse_period("2003-12-29/2004-01-04", "weekly")
+
+
 def test_parse_period_wrong_format_raises():
     with pytest.raises(ValueError, match="2010-07"):
         parse_period("2010-07", "weekly")  # monthly label, weekly resolution

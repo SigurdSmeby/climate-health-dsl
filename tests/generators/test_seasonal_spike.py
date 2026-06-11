@@ -51,6 +51,27 @@ def test_scales_to_monthly_resolution(rng):
     assert int(np.argmax(series[:12])) == 5
 
 
+def test_explicit_center_beyond_one_cycle_wraps(rng):
+    # Bug #35: a center >= ppy must wrap (24 on monthly == month 0), so the
+    # spike actually reaches its configured peak.
+    gen = SeasonalSpikeGenerator(
+        baseline=0, spike_height=1, spike_center=24, spike_width=0.5, noise=0
+    )
+    series = gen.generate(12, "monthly", rng)
+    assert int(np.argmax(series)) == 0  # 24 % 12 == 0
+    assert series.max() == pytest.approx(1.0, abs=0.05)
+
+
+def test_monthly_default_reaches_its_peak(rng):
+    # Bug #35: with the default center, a monthly series must still actually
+    # reach baseline+spike_height somewhere (it previously topped out below).
+    gen = SeasonalSpikeGenerator(noise=0)
+    series = gen.generate(12, "monthly", rng)
+    assert series.max() == pytest.approx(
+        gen.baseline + gen.spike_height, abs=0.5
+    )
+
+
 def test_invalid_params_rejected():
     with pytest.raises(ValueError, match="spike_width"):
         SeasonalSpikeGenerator(spike_width=0)

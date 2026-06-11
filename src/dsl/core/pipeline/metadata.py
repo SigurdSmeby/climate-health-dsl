@@ -68,6 +68,8 @@ def build_metadata(config: ScenarioConfig) -> dict:
             "missing_rate": config.disease_cases.missing_rate,
             "max_rate": config.disease_cases.max_rate,
             "median_rate": config.disease_cases.median_rate,
+            "count_distribution": config.disease_cases.count_distribution,
+            "overdispersion": config.disease_cases.overdispersion,
             "depends_on": [
                 {"variable": d.variable, "lag": d.lag, "weight": d.weight}
                 for d in config.disease_cases.depends_on

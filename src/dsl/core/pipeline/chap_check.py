@@ -21,8 +21,10 @@ Like ``validate_scenario``, this returns human-readable findings and never
 raises; the CLI prints them as warnings, or refuses to write with
 ``--strict-chap``.
 """
+import datetime
 import re
 
+import numpy as np
 import pandas as pd
 
 # The columns CHAP genuinely requires (chap_core/datatypes.py).
@@ -38,10 +40,6 @@ _PERIOD_FORMATS = {
     "daily": re.compile(r"^\d{8}$"),
     "yearly": re.compile(r"^\d{4}$"),
 }
-# How to step one period forward, for the resolutions we can check ordering
-# on. (Date-range weeks are left unchecked — the format already proves the
-# span; ordering there would need real date arithmetic.)
-_STEPPERS = {"monthly": "_next_month", "weekly": "_next_week"}
 
 
 def validate_chap(df: pd.DataFrame) -> list[str]:
@@ -98,14 +96,15 @@ def _check_periods(df: pd.DataFrame) -> list[str]:
             "auto-fill, but this is often a mistake)."
         )
 
-    # Consecutiveness is only checked for resolutions we can step.
-    stepper_name = _STEPPERS.get(resolution)
-    if stepper_name is None:
+    # Consecutiveness: map each label to its start date and require each step
+    # to advance by exactly one period's worth of time. This works uniformly
+    # for daily/weekly/monthly/yearly and for Sunday weeks / week 53 (the
+    # date-range week form is skipped — its span is self-describing).
+    if resolution == "weekly_range":
         return findings
-    step = globals()[stepper_name]
     for location, sequence in groups.items():
-        for current, following in zip(sequence, sequence[1:]):
-            if following != step(current):
+        for i, (current, following) in enumerate(zip(sequence, sequence[1:])):
+            if not _consecutive(current, following, resolution):
                 findings.append(
                     f"time periods for location '{location}' are not "
                     f"consecutive: '{following}' follows '{current}'."
@@ -115,20 +114,65 @@ def _check_periods(df: pd.DataFrame) -> list[str]:
     return findings
 
 
-def _next_month(period: str) -> str:
-    """'2000-12' -> '2001-01' (the label one month later)."""
-    year, month = int(period[:4]), int(period[5:7])
-    if month == 12:
-        return f"{year + 1}-01"
-    return f"{year}-{month + 1:02d}"
+def _consecutive(current: str, following: str, resolution: str) -> bool:
+    """True if ``following`` is exactly one period after ``current``."""
+    if resolution == "weekly":
+        return _weekly_consecutive(current, following)
+    try:
+        a = _period_start_date(current, resolution)
+        b = _period_start_date(following, resolution)
+    except ValueError:
+        return True  # unparseable label; the format check already flagged it
+    return _is_one_step(a, b, resolution)
 
 
-def _next_week(period: str) -> str:
-    """'2000-W52' -> '2001-W01' (the label one week later, 52-week years)."""
-    year, week = int(period[:4]), int(period[6:8])
-    if week == 52:
-        return f"{year + 1}-W01"
-    return f"{year}-W{week + 1:02d}"
+def _weekly_consecutive(current: str, following: str) -> bool:
+    """Accept BOTH weekly conventions the ecosystem uses.
+
+    The DSL emits flat-52 labels (W52 rolls straight to next year's W01, no
+    W53), while CHAP also accepts ISO weeks (W52 -> W53 -> W01 in 53-week
+    years). So a step is consecutive if it advances the week by one within the
+    year, OR rolls from the last week of one year (W52 or W53) to W01/S01 of
+    the next.
+    """
+    cy, cw = int(current[:4]), int(current[6:8])
+    fy, fw = int(following[:4]), int(following[6:8])
+    if fy == cy and fw == cw + 1:
+        return True  # same year, next week
+    if fy == cy + 1 and fw == 1 and cw in (52, 53):
+        return True  # year rollover (flat-52 from W52, or ISO from W52/W53)
+    return False
+
+
+def _period_start_date(label: str, resolution: str) -> "datetime.date":
+    """The calendar start date of a period label, for any resolution."""
+    if resolution == "daily":
+        return datetime.datetime.strptime(label, "%Y%m%d").date()
+    if resolution == "monthly":
+        year, month = int(label[:4]), int(label[5:7])
+        return datetime.date(year, month, 1)
+    if resolution == "yearly":
+        return datetime.date(int(label), 1, 1)
+    # weekly: YYYY-Wnn (ISO, Monday) or YYYY-Snn (Sunday-start).
+    year, week = int(label[:4]), int(label[6:8])
+    iso_day = 7 if label[5] == "S" else 1
+    # %G-%V-%u is ISO year-week-weekday; gives that week's Monday/Sunday.
+    return datetime.datetime.strptime(
+        f"{year}-{week:02d}-{iso_day}", "%G-%V-%u"
+    ).date()
+
+
+def _is_one_step(a: "datetime.date", b: "datetime.date", resolution: str) -> bool:
+    """True if ``b`` is exactly one period after ``a``."""
+    if resolution == "daily":
+        return (b - a).days == 1
+    if resolution == "weekly":
+        return (b - a).days == 7
+    if resolution == "monthly":
+        # One month later, accounting for year rollover.
+        months = (b.year - a.year) * 12 + (b.month - a.month)
+        return months == 1 and b.day == 1 and a.day == 1
+    return b.year - a.year == 1  # yearly
 
 
 def _check_values(df: pd.DataFrame) -> list[str]:
@@ -142,15 +186,23 @@ def _check_values(df: pd.DataFrame) -> list[str]:
     for column in covariates:
         if not pd.api.types.is_numeric_dtype(df[column]):
             findings.append(f"covariate '{column}' is not numeric.")
-        elif df[column].isna().any():
+            continue
+        if df[column].isna().any():
             findings.append(
                 f"covariate '{column}' contains NaN values; CHAP requires "
                 f"complete covariates."
             )
+        if np.isinf(df[column].to_numpy(dtype=float)).any():
+            findings.append(
+                f"covariate '{column}' contains non-finite (infinite) values."
+            )
 
     if "disease_cases" in df.columns:
         cases = df["disease_cases"]
-        if cases.isna().all():
+        # Never raise: a non-numeric target is a finding, not a crash.
+        if not pd.api.types.is_numeric_dtype(cases):
+            findings.append("disease_cases is not numeric.")
+        elif cases.isna().all():
             findings.append("disease_cases contains no values at all (all NaN).")
         elif (cases.dropna() < 0).any():
             findings.append("disease_cases contains negative values.")

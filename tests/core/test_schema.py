@@ -130,6 +130,74 @@ def test_overdispersion_must_be_positive():
         parse_config(data)
 
 
+@pytest.mark.parametrize(
+    "period,start,n",
+    [
+        ("daily", "99991231", 2),
+        ("monthly", "9999-12", 2),
+        ("weekly", "9999-W52", 2),
+        ("yearly", "9999", 2),
+    ],
+)
+def test_period_range_past_year_9999_rejected(period, start, n):
+    # Bug #36: a range that crosses past year 9999 crashes or emits 5-digit
+    # labels; reject it at the schema.
+    data = make_config_dict(period=period, n_total=n, start_period=start)
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 0}]
+    with pytest.raises(ValidationError, match="9999|range|year"):
+        parse_config(data)
+
+
+def test_seasonal_phase_warns_with_start_period():
+    # Bug #16 (documented limitation): a mid-year start_period only relabels;
+    # seasonal phase still begins at the cycle start. Warn so it's not a
+    # silent surprise.
+    data = make_config_dict(period="monthly", start_period="2010-07")
+    warnings = validate_scenario(parse_config(data))
+    assert any("seasonal" in w.lower() and "start_period" in w for w in warnings)
+
+
+def test_negative_seed_rejected():
+    # Bug #30: numpy needs a non-negative seed; reject it at the schema.
+    with pytest.raises(ValidationError, match="seed"):
+        parse_config(make_config_dict(seed=-1))
+
+
+def test_zero_seed_ok():
+    assert parse_config(make_config_dict(seed=0)).seed == 0
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_weight_rejected(bad):
+    # Bug #17: NaN/Inf in a float config field must be rejected.
+    data = make_config_dict()
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "weight": bad}]
+    with pytest.raises(ValidationError):
+        parse_config(data)
+
+
+def test_empty_variable_name_rejected():
+    # Bug #20: blank/whitespace variable names create unnamed columns.
+    data = make_config_dict()
+    data["variables"] = [{"name": "  ", "generate": "seasonal_spike"}]
+    data["disease_cases"]["depends_on"] = [{"variable": "  ", "lag": 1}]
+    with pytest.raises(ValidationError, match="name|empty|blank"):
+        parse_config(data)
+
+
+def test_empty_location_name_rejected():
+    data = make_config_dict()
+    data["locations"] = [""]
+    with pytest.raises(ValidationError, match="location|empty|blank"):
+        parse_config(data)
+
+
+def test_train_fraction_yielding_empty_train_rejected():
+    # Bug #22: floor(n_total * fraction) == 0 means an empty train split.
+    with pytest.raises(ValidationError, match="train"):
+        parse_config(make_config_dict(n_total=2, train_fraction=0.1))
+
+
 def test_median_rate_must_be_below_max_rate():
     # The sigmoid shift is logit(median_rate / max_rate), undefined at >= 1.
     data = make_config_dict()
@@ -143,6 +211,31 @@ def test_lag_at_least_n_total_raises():
     data = make_config_dict(n_total=10)
     data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 10}]
     with pytest.raises(ValidationError, match="lag"):
+        parse_config(data)
+
+
+@pytest.mark.parametrize(
+    "reserved", ["time_period", "location", "disease_cases", "population"]
+)
+def test_variable_named_like_reserved_column_rejected(reserved):
+    # Bug #1: a variable whose name collides with a built-in output column
+    # would silently overwrite it. Must be a hard error.
+    data = make_config_dict()
+    data["variables"] = [{"name": reserved, "generate": "seasonal_spike"}]
+    data["disease_cases"]["depends_on"] = [{"variable": reserved, "lag": 1}]
+    with pytest.raises(ValidationError, match=reserved):
+        parse_config(data)
+
+
+def test_duplicate_variable_names_rejected():
+    # Bug #4: two variables with the same name silently collide (one is lost).
+    data = make_config_dict()
+    data["variables"] = [
+        {"name": "rainfall", "generate": "seasonal_spike"},
+        {"name": "rainfall", "generate": "seasonal_smooth"},
+    ]
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 1}]
+    with pytest.raises(ValidationError, match="duplicate"):
         parse_config(data)
 
 
@@ -311,6 +404,65 @@ def test_orphan_variable_warns_but_parses():
 def test_clean_config_has_no_warnings():
     warnings = validate_scenario(parse_config(make_config_dict()))
     assert warnings == []
+
+
+def test_from_csv_fixed_source_with_multi_location_warns():
+    # Bug #3: a from_csv variable pinned to one source_location, but the
+    # scenario has several locations, means every location gets the SAME real
+    # series. Warn (it's legal but usually a surprise).
+    data = make_config_dict()
+    data["locations"] = ["oslo", "bergen"]
+    data["variables"] = [
+        {
+            "name": "rainfall",
+            "generate": "from_csv",
+            "params": {"file": "x.csv", "column": "rainfall",
+                       "source_location": "A"},
+        }
+    ]
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 1}]
+    warnings = validate_scenario(parse_config(data))
+    assert any("from_csv" in w and "rainfall" in w for w in warnings)
+
+
+def test_from_csv_multi_location_without_source_warns():
+    # Bug #28: the warning must fire even without source_location — a
+    # single-source CSV still duplicates into every output location.
+    data = make_config_dict()
+    data["locations"] = ["oslo", "bergen"]
+    data["variables"] = [
+        {"name": "rainfall", "generate": "from_csv",
+         "params": {"file": "x.csv", "column": "rainfall"}}  # no source_location
+    ]
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 1}]
+    warnings = validate_scenario(parse_config(data))
+    assert any("from_csv" in w and "rainfall" in w for w in warnings)
+
+
+def test_lag_consuming_whole_train_split_warns():
+    # Bug #34: if max lag >= the training periods, every train target is
+    # warm-up NaN — warn that training has no observed cases.
+    data = make_config_dict(n_total=10, train_fraction=0.8)
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 8}]
+    warnings = validate_scenario(parse_config(data))
+    assert any("train" in w and "lag" in w for w in warnings)
+
+
+def test_from_csv_single_location_no_warning():
+    # The same from_csv variable with a single location is fine — no warning.
+    data = make_config_dict()
+    data["locations"] = ["oslo"]
+    data["variables"] = [
+        {
+            "name": "rainfall",
+            "generate": "from_csv",
+            "params": {"file": "x.csv", "column": "rainfall",
+                       "source_location": "A"},
+        }
+    ]
+    data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 1}]
+    warnings = validate_scenario(parse_config(data))
+    assert not any("from_csv" in w for w in warnings)
 
 
 def test_high_missing_rate_warns():

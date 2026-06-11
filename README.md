@@ -125,7 +125,7 @@ disease_cases:
 | `n_total` | int ≥ 1 | required | Number of time periods to generate. |
 | `seed` | int | `0` | Seed for all randomness. Same scenario + same seed → identical output. |
 | `train_fraction` | float, 0 < x < 1 | unset | If set, also write `train.csv`/`test.csv`. |
-| `start_period` | str | first period of 2000 | Where the series starts on the real calendar, in the scenario's resolution: `"2010-07"` (monthly), `"2015-W10"` (weekly), `"20100615"` (daily), `"2003"` (yearly). |
+| `start_period` | str | first period of 2000 | Where the series starts on the real calendar, in the scenario's resolution: `"2010-07"` (monthly), `"2015-W10"` (weekly), `"20100615"` (daily), `"2003"` (yearly). Note: this relabels the output but does **not** shift the seasonal *phase* — a mid-year start still begins the seasonal cycle at index 0 (the run warns when this applies). |
 | `locations` | list of str, or mapping | `["loc"]` | Named locations, each an independently drawn series of `n_total` periods, stacked in long format with a `location` column. Use the **list** form (`[oslo, bergen]`) for one shared population, or the **mapping** form to set a per-location population: `{Bokeo: {population: 75000}, ...}`. A per-location population can itself be a generator, so each location can have its own growth trajectory. A location with no `population` falls back to `disease_cases.population`. |
 | `variables` | list | required | The independent (climate) variables — see below. |
 | `disease_cases` | mapping | required | How the dependent disease signal is built — see below. |
@@ -246,6 +246,10 @@ dsl run examples/laos_real_climate_from_csv.yaml -o out/
 To align the output's `time_period` labels with the source data's real
 dates, set the scenario's `start_period` to the source's first period (the
 Laos example uses `start_period: "2010-01"`).
+
+Note: reproducing a `from_csv` run from its `metadata.json` re-reads the
+source CSV by path, so byte-identical reproduction requires that file to be
+unchanged.
 
 ## How `disease_cases` is generated
 

@@ -150,6 +150,30 @@ def test_unknown_generator_name_raises_with_available():
         run(config)
 
 
+def test_unknown_generator_param_clear_error():
+    # Bug #8: an unexpected generator param should give a clear message naming
+    # the variable, generator, and bad param — not a raw Python TypeError.
+    config = parse_config(
+        {
+            "period": "weekly",
+            "n_total": 10,
+            "variables": [
+                {
+                    "name": "rainfall",
+                    "generate": "seasonal_spike",
+                    "params": {"bogus_param": 99},
+                }
+            ],
+            "disease_cases": {
+                "population": 1_000,
+                "depends_on": [{"variable": "rainfall", "lag": 1}],
+            },
+        }
+    )
+    with pytest.raises(ValueError, match="bogus_param"):
+        run(config)
+
+
 def test_returns_dataframe(example_config):
     assert isinstance(run(example_config), pd.DataFrame)
 
@@ -238,6 +262,85 @@ def test_locations_get_different_draws():
     oslo = df[df["location"] == "oslo"]["rainfall"].to_numpy()
     bergen = df[df["location"] == "bergen"]["rainfall"].to_numpy()
     assert not np.array_equal(oslo, bergen)
+
+
+def test_adding_decoy_variable_does_not_change_disease():
+    # Bug #24: adding an unused decoy covariate must NOT change the disease
+    # signal or the real driver — components must have independent RNG streams.
+    base = {
+        "period": "monthly", "n_total": 24, "seed": 42,
+        "variables": [{"name": "a", "generate": "flat"}],
+        "disease_cases": {"population": 1000,
+                          "depends_on": [{"variable": "a", "lag": 1}]},
+    }
+    decoy = {**base, "variables": base["variables"] + [
+        {"name": "decoy", "generate": "flat"}]}
+    x = run(parse_config(base))
+    y = run(parse_config(decoy))
+    assert np.array_equal(x["a"].to_numpy(), y["a"].to_numpy())
+    assert np.array_equal(
+        x["disease_cases"].to_numpy(), y["disease_cases"].to_numpy(), equal_nan=True
+    )
+
+
+def test_reordering_variables_does_not_change_their_values():
+    # Bug #24: a variable's values depend on its name, not its position.
+    a = {
+        "period": "monthly", "n_total": 12, "seed": 1,
+        "variables": [{"name": "x", "generate": "flat"},
+                      {"name": "y", "generate": "flat"}],
+        "disease_cases": {"population": 1000,
+                          "depends_on": [{"variable": "x"}]},
+    }
+    b = {**a, "variables": list(reversed(a["variables"]))}
+    da, db = run(parse_config(a)), run(parse_config(b))
+    assert np.array_equal(da["x"].to_numpy(), db["x"].to_numpy())
+    assert np.array_equal(da["y"].to_numpy(), db["y"].to_numpy())
+
+
+def test_population_from_csv_honors_start_period(tmp_path):
+    # Bug #15: a from_csv population must align to the scenario start_period,
+    # not read from the CSV's row 0.
+    csv = tmp_path / "pop.csv"
+    pd.DataFrame(
+        {"time_period": [f"2010-{m:02d}" for m in range(1, 5)],
+         "pop": [100, 200, 300, 400]}
+    ).to_csv(csv, index=False)
+    config = parse_config(
+        {
+            "period": "monthly", "n_total": 2, "start_period": "2010-03",
+            "variables": [{"name": "x", "generate": "flat", "params": {"noise": 0}}],
+            "disease_cases": {
+                "population": {"generate": "from_csv",
+                               "params": {"file": str(csv), "column": "pop"}},
+                "depends_on": [{"variable": "x"}],
+            },
+        }
+    )
+    df = run(config)
+    assert df["population"].tolist() == [300, 400]  # March, April
+
+
+def test_population_from_csv_with_nan_errors(tmp_path):
+    # Bug #18: a missing generated-population value must raise a clear error,
+    # not crash inside numpy/Poisson.
+    csv = tmp_path / "popnan.csv"
+    pd.DataFrame(
+        {"time_period": ["2010-01", "2010-02", "2010-03"], "pop": [100.0, float("nan"), 100.0]}
+    ).to_csv(csv, index=False)
+    config = parse_config(
+        {
+            "period": "monthly", "n_total": 3, "start_period": "2010-01",
+            "variables": [{"name": "x", "generate": "flat", "params": {"noise": 0}}],
+            "disease_cases": {
+                "population": {"generate": "from_csv",
+                               "params": {"file": str(csv), "column": "pop"}},
+                "depends_on": [{"variable": "x"}],
+            },
+        }
+    )
+    with pytest.raises(ValueError, match="population"):
+        run(config)
 
 
 def test_per_location_population_in_output():
@@ -360,6 +463,41 @@ def test_generated_population_reproducible():
     a = run(population_config(config_spec, seed=4))
     b = run(population_config(config_spec, seed=4))
     assert a.equals(b)
+
+
+def test_start_period_aligns_from_csv_data(tmp_path):
+    # Bug #2: with a scenario start_period and a from_csv variable, the output
+    # labels must match the real values read from the CSV — not label row 0
+    # as a later date. CSV: 2010-01..2010-06 with rainfall 1..6.
+    csv = tmp_path / "real.csv"
+    pd.DataFrame(
+        {
+            "time_period": [f"2010-{m:02d}" for m in range(1, 7)],
+            "rainfall": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
+    ).to_csv(csv, index=False)
+    config = parse_config(
+        {
+            "period": "monthly",
+            "n_total": 3,
+            "start_period": "2010-04",
+            "variables": [
+                {
+                    "name": "rainfall",
+                    "generate": "from_csv",
+                    "params": {"file": str(csv), "column": "rainfall"},
+                }
+            ],
+            "disease_cases": {
+                "population": 1000,
+                "depends_on": [{"variable": "rainfall", "lag": 1}],
+            },
+        }
+    )
+    df = run(config)
+    # The row labelled 2010-04 must carry the CSV's April value (4.0), not 1.0.
+    assert df["time_period"].tolist() == ["2010-04", "2010-05", "2010-06"]
+    assert df["rainfall"].tolist() == [4.0, 5.0, 6.0]
 
 
 def test_multi_location_is_reproducible():

@@ -34,7 +34,7 @@ class PopulationSpec(BaseModel):
     rounds the result to non-negative integer people.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     generate: str
     params: dict = Field(default_factory=dict)
@@ -50,7 +50,7 @@ class LocationSpec(BaseModel):
     per-location settings extend this one block rather than reshaping the YAML.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     population: int | PopulationSpec | None = None
 
@@ -64,19 +64,25 @@ class VariableSpec(BaseModel):
     that generator, which validates it itself.
     """
 
-    # extra="forbid" makes Pydantic reject unknown keys (e.g. a typo like
-    # "generete:") instead of silently ignoring them.
-    model_config = ConfigDict(extra="forbid")
+    # extra="forbid" rejects typo'd keys; allow_inf_nan=False rejects NaN/Inf
+    # in any float field (a non-finite weight/rate would corrupt the output).
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
-    name: str
+    name: str = Field(min_length=1)
     generate: str
     params: dict = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _name_not_blank(self) -> "VariableSpec":
+        if not self.name.strip():
+            raise ValueError("variable name must not be blank.")
+        return self
 
 
 class DependencySpec(BaseModel):
     """One entry under ``depends_on:`` — a driver of the disease signal."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     variable: str
     # ge=0: a negative lag would mean disease precedes its cause.
@@ -87,7 +93,7 @@ class DependencySpec(BaseModel):
 class DiseaseSpec(BaseModel):
     """The ``disease_cases:`` section — how the dependent signal is built."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     depends_on: list[DependencySpec]
     # A fixed headcount, or a generator that produces a population series over
@@ -131,13 +137,14 @@ class DiseaseSpec(BaseModel):
 class ScenarioConfig(BaseModel):
     """The whole scenario file, validated and typed."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     # Literal[...] restricts the value to exactly these strings; anything
     # else ("fortnightly") is a field-level validation error.
     period: Literal["daily", "weekly", "monthly", "yearly"]
     n_total: int = Field(ge=1)
-    seed: int = 0
+    # ge=0: numpy's default_rng requires a non-negative seed.
+    seed: int = Field(default=0, ge=0)
     # None means "write only the single full CSV"; a value in (0, 1) also
     # writes train.csv/test.csv as a row split.
     train_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
@@ -198,10 +205,48 @@ class ScenarioConfig(BaseModel):
                 parse_period(self.start_period, self.period)
             except ValueError as exc:
                 raise ValueError(f"start_period: {exc}") from exc
+            # The last period must still fit the 4-digit calendar (year <=
+            # 9999); past that, labels become 5-digit or daily dates overflow.
+            from dsl.core.pipeline.periods import format_period
+
+            try:
+                start_year, offset = parse_period(self.start_period, self.period)
+                last = format_period(
+                    offset + self.n_total - 1, self.period, start_year
+                )
+            except (ValueError, OverflowError) as exc:
+                raise ValueError(
+                    f"the period range starting {self.start_period} for "
+                    f"{self.n_total} periods runs past the supported calendar "
+                    f"(year 9999): {exc}"
+                ) from exc
+            # The leading 4 digits are the year for every label format
+            # (YYYYMMDD, YYYY-Wnn, YYYY-MM, YYYY). A label longer than its
+            # normal width means a 5-digit year slipped in (past 9999).
+            normal_widths = {"daily": 8, "weekly": 8, "monthly": 7, "yearly": 4}
+            if len(str(last)) > normal_widths[self.period]:
+                raise ValueError(
+                    f"the period range starting {self.start_period} for "
+                    f"{self.n_total} periods ends at '{last}', past year 9999."
+                )
         if len(set(self.locations)) != len(self.locations):
             raise ValueError(
                 f"locations contains duplicate names: {self.locations}."
             )
+        if any(not loc.strip() for loc in self.locations):
+            raise ValueError("location names must not be blank.")
+        # A train_fraction that floors to 0 training (or 0 test) rows is
+        # useless; require both partitions to be non-empty.
+        if self.train_fraction is not None:
+            import math
+
+            n_train = math.floor(self.n_total * self.train_fraction)
+            if n_train < 1 or self.n_total - n_train < 1:
+                raise ValueError(
+                    f"train_fraction {self.train_fraction} with n_total "
+                    f"{self.n_total} gives an empty train or test split "
+                    f"(train={n_train}, test={self.n_total - n_train})."
+                )
         # A per-location int population must be a real headcount (the Field
         # range can't sit on the union arm, so it's enforced here).
         for name, override in self.location_overrides.items():
@@ -226,6 +271,21 @@ class ScenarioConfig(BaseModel):
                     f"locations do not set their own: {uncovered}."
                 )
         defined = [v.name for v in self.variables]
+        # Variable names become output columns, so they must not collide with
+        # the built-in columns (which would silently overwrite them) or with
+        # each other (a duplicate silently drops one series).
+        reserved = {"time_period", "location", "disease_cases", "population"}
+        clashes = sorted(reserved.intersection(defined))
+        if clashes:
+            raise ValueError(
+                f"variable names may not be reserved column names: {clashes}. "
+                f"Reserved: {sorted(reserved)}."
+            )
+        duplicates = sorted({n for n in defined if defined.count(n) > 1})
+        if duplicates:
+            raise ValueError(
+                f"variables contains duplicate names: {duplicates}."
+            )
         for dep in self.disease_cases.depends_on:
             if dep.variable not in defined:
                 raise ValueError(
@@ -304,5 +364,44 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
             f"n_total ({config.n_total}) is shorter than one seasonal cycle "
             f"({cycle} {config.period} periods); seasonality will not be visible."
         )
+
+    # Known limitation: start_period only relabels the output; the seasonal
+    # generators and disease baseline still begin their cycle at index 0, so a
+    # mid-year start has the wrong seasonal phase. Warn when it matters.
+    if config.start_period is not None:
+        _, offset = parse_period(config.start_period, config.period)
+        if offset != 0:
+            warnings.append(
+                f"start_period '{config.start_period}' begins mid-cycle; "
+                f"seasonal generators and the disease baseline still start "
+                f"their seasonal phase at the cycle start, so seasonality is "
+                f"not aligned to the calendar."
+            )
+
+    # If the largest lag covers the whole training split, every training
+    # target is warm-up NaN — the train set has no observed cases to learn from.
+    if config.train_fraction is not None and config.disease_cases.depends_on:
+        import math
+
+        n_train = math.floor(config.n_total * config.train_fraction)
+        max_lag = max(d.lag for d in config.disease_cases.depends_on)
+        if max_lag >= n_train:
+            warnings.append(
+                f"max dependency lag ({max_lag}) covers the whole training "
+                f"split ({n_train} periods); train.csv will have no observed "
+                f"disease_cases (all warm-up NaN)."
+            )
+
+    # A from_csv variable feeds the SAME real series to every output location
+    # (there is no per-location source mapping), which with several locations
+    # is a likely surprise — warn regardless of whether source_location is set.
+    if len(config.locations) > 1:
+        for var in config.variables:
+            if var.generate == "from_csv":
+                warnings.append(
+                    f"variable '{var.name}' uses from_csv, but the scenario has "
+                    f"{len(config.locations)} locations; every location will get "
+                    f"the same real series."
+                )
 
     return warnings
