@@ -1,0 +1,118 @@
+{
+  "dsl_version": "1.5.0",
+  "seed": 7,
+  "period": "monthly",
+  "n_total": 96,
+  "start_period": "2012-01",
+  "locations": [
+    "loc"
+  ],
+  "variables": [
+    {
+      "name": "rainfall",
+      "generate": "seasonal_spike",
+      "params": {
+        "baseline": 20,
+        "spike_height": 200,
+        "spike_center": 0,
+        "spike_width": 1.5,
+        "noise": 15,
+        "clamp_min": 0
+      }
+    },
+    {
+      "name": "mean_temperature",
+      "generate": "from_csv",
+      "params": {
+        "file": "/home/sigurd/Documents/Master/DSL/examples/real_data_demo/../data/brazil_adamantina.csv",
+        "column": "mean_temperature"
+      }
+    }
+  ],
+  "disease_cases": {
+    "population": {
+      "generate": "linear_trend",
+      "params": {
+        "start": 33000,
+        "slope": 30
+      }
+    },
+    "autoregressive": false,
+    "missing_rate": 0.0,
+    "max_rate": 0.08,
+    "median_rate": 0.005,
+    "count_distribution": "negative_binomial",
+    "overdispersion": 2.0,
+    "depends_on": [
+      {
+        "variable": "rainfall",
+        "lag": 3,
+        "weight": 2.0
+      },
+      {
+        "variable": "mean_temperature",
+        "lag": 1,
+        "weight": 1.0
+      }
+    ]
+  },
+  "scenario": {
+    "period": "monthly",
+    "n_total": 96,
+    "seed": 7,
+    "train_fraction": null,
+    "start_period": "2012-01",
+    "locations": [
+      "loc"
+    ],
+    "variables": [
+      {
+        "name": "rainfall",
+        "generate": "seasonal_spike",
+        "params": {
+          "baseline": 20,
+          "spike_height": 200,
+          "spike_center": 0,
+          "spike_width": 1.5,
+          "noise": 15,
+          "clamp_min": 0
+        }
+      },
+      {
+        "name": "mean_temperature",
+        "generate": "from_csv",
+        "params": {
+          "file": "/home/sigurd/Documents/Master/DSL/examples/real_data_demo/../data/brazil_adamantina.csv",
+          "column": "mean_temperature"
+        }
+      }
+    ],
+    "disease_cases": {
+      "depends_on": [
+        {
+          "variable": "rainfall",
+          "lag": 3,
+          "weight": 2.0
+        },
+        {
+          "variable": "mean_temperature",
+          "lag": 1,
+          "weight": 1.0
+        }
+      ],
+      "population": {
+        "generate": "linear_trend",
+        "params": {
+          "start": 33000,
+          "slope": 30
+        }
+      },
+      "autoregressive": false,
+      "missing_rate": 0.0,
+      "max_rate": 0.08,
+      "median_rate": 0.005,
+      "count_distribution": "negative_binomial",
+      "overdispersion": 2.0
+    }
+  }
+}

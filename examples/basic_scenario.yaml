@@ -8,7 +8,7 @@ variables:
   - name: mean_temperature # CHAP's column name (not "temperature")
     generate: seasonal_smooth
 disease_cases:
-  population: 100 # constant population; scales the incidence model
+  population: 100000 # constant population; scales the incidence model
   depends_on:
     - variable: rainfall
       lag: 3

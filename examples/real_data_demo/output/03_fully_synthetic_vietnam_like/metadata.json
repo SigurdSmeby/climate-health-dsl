@@ -1,0 +1,132 @@
+{
+  "dsl_version": "1.5.0",
+  "seed": 42,
+  "period": "monthly",
+  "n_total": 120,
+  "start_period": "2000-01",
+  "locations": [
+    "delta",
+    "highland",
+    "coast"
+  ],
+  "variables": [
+    {
+      "name": "rainfall",
+      "generate": "seasonal_spike",
+      "params": {
+        "baseline": 30,
+        "spike_height": 450,
+        "spike_center": 6,
+        "spike_width": 1.8,
+        "noise": 40,
+        "clamp_min": 0
+      }
+    },
+    {
+      "name": "mean_temperature",
+      "generate": "seasonal_smooth",
+      "params": {
+        "mean": 27,
+        "amplitude": 3.5,
+        "phase": 0,
+        "noise": 0.8
+      }
+    },
+    {
+      "name": "humidity",
+      "generate": "flat",
+      "params": {
+        "level": 80,
+        "noise": 4,
+        "clamp_min": 0
+      }
+    }
+  ],
+  "disease_cases": {
+    "population": 1500000,
+    "autoregressive": false,
+    "missing_rate": 0.03,
+    "max_rate": 0.02,
+    "median_rate": 0.001,
+    "count_distribution": "negative_binomial",
+    "overdispersion": 3.0,
+    "depends_on": [
+      {
+        "variable": "rainfall",
+        "lag": 2,
+        "weight": 1.5
+      },
+      {
+        "variable": "mean_temperature",
+        "lag": 1,
+        "weight": 1.0
+      }
+    ]
+  },
+  "scenario": {
+    "period": "monthly",
+    "n_total": 120,
+    "seed": 42,
+    "train_fraction": null,
+    "start_period": "2000-01",
+    "locations": [
+      "delta",
+      "highland",
+      "coast"
+    ],
+    "variables": [
+      {
+        "name": "rainfall",
+        "generate": "seasonal_spike",
+        "params": {
+          "baseline": 30,
+          "spike_height": 450,
+          "spike_center": 6,
+          "spike_width": 1.8,
+          "noise": 40,
+          "clamp_min": 0
+        }
+      },
+      {
+        "name": "mean_temperature",
+        "generate": "seasonal_smooth",
+        "params": {
+          "mean": 27,
+          "amplitude": 3.5,
+          "phase": 0,
+          "noise": 0.8
+        }
+      },
+      {
+        "name": "humidity",
+        "generate": "flat",
+        "params": {
+          "level": 80,
+          "noise": 4,
+          "clamp_min": 0
+        }
+      }
+    ],
+    "disease_cases": {
+      "depends_on": [
+        {
+          "variable": "rainfall",
+          "lag": 2,
+          "weight": 1.5
+        },
+        {
+          "variable": "mean_temperature",
+          "lag": 1,
+          "weight": 1.0
+        }
+      ],
+      "population": 1500000,
+      "autoregressive": false,
+      "missing_rate": 0.03,
+      "max_rate": 0.02,
+      "median_rate": 0.001,
+      "count_distribution": "negative_binomial",
+      "overdispersion": 3.0
+    }
+  }
+}

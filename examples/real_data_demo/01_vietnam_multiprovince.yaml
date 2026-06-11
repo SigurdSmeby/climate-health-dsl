@@ -1,0 +1,47 @@
+# DEMO 1 — Multi-province semi-synthetic dataset from REAL Vietnam climate.
+#
+# Reads real monthly rainfall and temperature for four Vietnamese provinces
+# (Mekong delta, central highlands, far-north mountains, south-central coast),
+# then generates a SYNTHETIC dengue-like disease signal driven by them with a
+# known 2-month rainfall lag and 1-month temperature lag. Each province keeps
+# its own real climate and its own population, so the four series differ
+# realistically while sharing one controlled cause->effect relationship.
+#
+# Shows: real-data covariates via from_csv, multi-location with per-location
+# population, overdispersed (negative-binomial) counts, train/test split.
+period: monthly
+n_total: 120 # 2000-01 .. 2009-12
+seed: 1
+start_period: "2000-01" # align output labels to the real data's dates
+train_fraction: 0.8
+locations:
+  AN GIANG: { population: 2211544 }
+  DAK LAK: { population: 2114170 }
+  HA GIANG: { population: 879206 }
+  KHANH HOA: { population: 1174000 } # corrected from the source's odd 2922
+variables:
+  - name: rainfall
+    generate: from_csv
+    params:
+      file: ../data/vietnam_provinces.csv
+      column: rainfall
+      source_location: AN GIANG # one source feeds all provinces (see note below)
+  - name: mean_temperature
+    generate: from_csv
+    params:
+      file: ../data/vietnam_provinces.csv
+      column: mean_temperature
+      source_location: AN GIANG
+disease_cases:
+  population: 1000000 # fallback (every location above sets its own)
+  depends_on:
+    - { variable: rainfall, lag: 2, weight: 1.5 }
+    - { variable: mean_temperature, lag: 1, weight: 1.0 }
+  count_distribution: negative_binomial
+  overdispersion: 3.0
+  max_rate: 0.02
+  median_rate: 0.001
+# NOTE: from_csv binds one source_location, so every output province here gets
+# AN GIANG's real climate (the tool warns about this). Per-location real
+# climate is a roadmap item; for now the populations differ but the weather is
+# shared. Demo 2 shows a clean single-location real-climate dataset.

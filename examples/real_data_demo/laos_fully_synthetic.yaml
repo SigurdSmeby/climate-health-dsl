@@ -1,0 +1,59 @@
+# FULLY SYNTHETIC: every column is generated. The climate comes from the
+# seasonal_spike / seasonal_smooth generators with parameters hand-tuned to
+# LOOK like laos_subset.csv (July monsoon spike, ~28C April
+# temperature, dengue-scale cases) — but no real data is read.
+#
+# Compare with laos_real_climate_from_csv.yaml, which reads the REAL Laos
+# rainfall/temperature instead of generating them.
+period: monthly
+n_total: 36
+seed: 42
+start_period: "2010-01" # same calendar window as the real dataset
+# Per-location populations that GROW over time (real province sizes as the
+# starting points). Each location's population is a linear_trend generator, so
+# the population rises month by month — urban Vientiane faster than rural
+# Bokeo — instead of being a fixed number. A plain int still works for a
+# constant population; disease_cases.population below is the fallback.
+locations:
+  Bokeo:
+    population: { generate: linear_trend, params: { start: 75000, slope: 90 } }
+  Savannakhet:
+    population: { generate: linear_trend, params: { start: 686000, slope: 800 } }
+  Vientiane[prefecture]:
+    population: { generate: linear_trend, params: { start: 559000, slope: 1200 } }
+variables:
+  - name: rainfall
+    generate: seasonal_spike
+    params:
+      baseline: 30 # dry-season level, mm
+      spike_height: 450 # monsoon peak above the baseline
+      spike_center: 6 # July (month index 6 within the year)
+      spike_width: 1.5 # months; covers the ~Jun-Sep wet season
+      noise: 25
+      clamp_min: 0 # rainfall can never be negative
+  - name: mean_temperature
+    generate: seasonal_smooth
+    params:
+      mean: 23.5 # deg C; phase 0 peaks at April in monthly data
+      amplitude: 4
+      phase: 0
+      noise: 0.7
+disease_cases:
+  # No top-level population needed: every location above sets its own. It is
+  # only required as a fallback for locations that don't.
+  depends_on:
+    - variable: rainfall
+      lag: 2
+      weight: 1.5
+    - variable: mean_temperature
+      lag: 1
+      weight: 1.0
+  autoregressive: false
+  missing_rate: 0
+  # Real Laos incidence is tiny (~1e-4); the defaults would give thousands
+  # of monthly cases.
+  max_rate: 0.002
+  median_rate: 0.0001
+  # Real dengue counts are overdispersed (outbreak years), not tidy Poisson.
+  count_distribution: negative_binomial
+  overdispersion: 3.0

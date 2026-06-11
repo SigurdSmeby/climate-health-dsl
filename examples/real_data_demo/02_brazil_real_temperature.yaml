@@ -1,0 +1,40 @@
+# DEMO 2 — Single-location semi-synthetic dataset from REAL Brazil temperature.
+#
+# Reads real monthly mean temperature for Adamantina (Sao Paulo state, Brazil)
+# and pairs it with a SYNTHETIC seasonal rainfall covariate, then generates
+# disease cases driven by both. The temperature is genuine; rainfall and
+# disease are generated, with a controlled 3-month rainfall lag.
+#
+# Shows: mixing a real from_csv covariate with a fully synthetic one in the
+# same scenario, plus a growing population via the linear_trend generator.
+period: monthly
+n_total: 96 # 2012-01 .. 2019-12 (start on a year boundary)
+seed: 7
+start_period: "2012-01"
+variables:
+  - name: rainfall # SYNTHETIC monsoon-style rainfall
+    generate: seasonal_spike
+    params:
+      baseline: 20
+      spike_height: 200
+      spike_center: 0 # peaks at the start-of-year (Jan, the wet season)
+      spike_width: 1.5
+      noise: 15
+      clamp_min: 0
+  - name: mean_temperature # REAL temperature from the CSV
+    generate: from_csv
+    params:
+      file: ../data/brazil_adamantina.csv
+      column: mean_temperature
+disease_cases:
+  # Population grows over the ~8 years.
+  population:
+    generate: linear_trend
+    params: { start: 33000, slope: 30 }
+  depends_on:
+    - { variable: rainfall, lag: 3, weight: 2.0 }
+    - { variable: mean_temperature, lag: 1, weight: 1.0 }
+  count_distribution: negative_binomial
+  overdispersion: 2.0
+  max_rate: 0.08
+  median_rate: 0.005

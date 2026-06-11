@@ -1,0 +1,12 @@
+# The smallest possible scenario: one climate variable, one disease driver.
+# Everything else uses defaults. A good starting point to copy and extend.
+period: monthly
+n_total: 36
+variables:
+  - name: rainfall
+    generate: seasonal_spike
+disease_cases:
+  population: 100000
+  depends_on:
+    - variable: rainfall
+      lag: 2

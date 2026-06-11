@@ -1,0 +1,116 @@
+{
+  "dsl_version": "1.5.0",
+  "seed": 1,
+  "period": "monthly",
+  "n_total": 120,
+  "start_period": "2000-01",
+  "locations": [
+    "AN GIANG",
+    "DAK LAK",
+    "HA GIANG",
+    "KHANH HOA"
+  ],
+  "variables": [
+    {
+      "name": "rainfall",
+      "generate": "from_csv",
+      "params": {
+        "file": "/home/sigurd/Documents/Master/DSL/examples/real_data_demo/../data/vietnam_provinces.csv",
+        "column": "rainfall",
+        "source_location": "AN GIANG"
+      }
+    },
+    {
+      "name": "mean_temperature",
+      "generate": "from_csv",
+      "params": {
+        "file": "/home/sigurd/Documents/Master/DSL/examples/real_data_demo/../data/vietnam_provinces.csv",
+        "column": "mean_temperature",
+        "source_location": "AN GIANG"
+      }
+    }
+  ],
+  "disease_cases": {
+    "population": 1000000,
+    "autoregressive": false,
+    "missing_rate": 0.0,
+    "max_rate": 0.02,
+    "median_rate": 0.001,
+    "count_distribution": "negative_binomial",
+    "overdispersion": 3.0,
+    "depends_on": [
+      {
+        "variable": "rainfall",
+        "lag": 2,
+        "weight": 1.5
+      },
+      {
+        "variable": "mean_temperature",
+        "lag": 1,
+        "weight": 1.0
+      }
+    ]
+  },
+  "scenario": {
+    "period": "monthly",
+    "n_total": 120,
+    "seed": 1,
+    "train_fraction": 0.8,
+    "start_period": "2000-01",
+    "locations": {
+      "AN GIANG": {
+        "population": 2211544
+      },
+      "DAK LAK": {
+        "population": 2114170
+      },
+      "HA GIANG": {
+        "population": 879206
+      },
+      "KHANH HOA": {
+        "population": 1174000
+      }
+    },
+    "variables": [
+      {
+        "name": "rainfall",
+        "generate": "from_csv",
+        "params": {
+          "file": "/home/sigurd/Documents/Master/DSL/examples/real_data_demo/../data/vietnam_provinces.csv",
+          "column": "rainfall",
+          "source_location": "AN GIANG"
+        }
+      },
+      {
+        "name": "mean_temperature",
+        "generate": "from_csv",
+        "params": {
+          "file": "/home/sigurd/Documents/Master/DSL/examples/real_data_demo/../data/vietnam_provinces.csv",
+          "column": "mean_temperature",
+          "source_location": "AN GIANG"
+        }
+      }
+    ],
+    "disease_cases": {
+      "depends_on": [
+        {
+          "variable": "rainfall",
+          "lag": 2,
+          "weight": 1.5
+        },
+        {
+          "variable": "mean_temperature",
+          "lag": 1,
+          "weight": 1.0
+        }
+      ],
+      "population": 1000000,
+      "autoregressive": false,
+      "missing_rate": 0.0,
+      "max_rate": 0.02,
+      "median_rate": 0.001,
+      "count_distribution": "negative_binomial",
+      "overdispersion": 3.0
+    }
+  }
+}

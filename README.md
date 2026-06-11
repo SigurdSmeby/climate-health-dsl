@@ -30,10 +30,10 @@ The result (`out/simulated_data.csv`):
 
 ```
 time_period,location,rainfall,mean_temperature,disease_cases,population
-2000-W01,loc,2.152358553260388,15.312795196983668,,100
-2000-W02,loc,1.4800080127540343,16.05069353269311,,100
-2000-W03,loc,2.3752259025028235,17.621544261654282,,100
-2000-W04,loc,2.4702836813159346,18.21508589989203,8.0,100
+2000-W01,loc,2.566973545527822,15.272780092168137,,100000
+2000-W02,loc,1.3282158401690942,15.368975863100253,,100000
+2000-W03,loc,1.384034205465687,17.514373039096835,,100000
+2000-W04,loc,1.691755272991639,19.180676624066287,7838.0,100000
 ...
 ```
 
@@ -77,7 +77,7 @@ To see a dataset rather than read the CSV, add `--plot` (interactive HTML by
 default, or `--plot-format png`):
 
 ```bash
-dsl run examples/laos_fully_synthetic.yaml -o out/ --plot
+dsl run examples/real_data_demo/laos_fully_synthetic.yaml -o out/ --plot
 ```
 
 Output is also checked against CHAP's dataset rules (the required
@@ -105,7 +105,7 @@ variables:
   - name: mean_temperature
     generate: seasonal_smooth
 disease_cases:
-  population: 100
+  population: 100000
   depends_on:
     - variable: rainfall
       lag: 3
@@ -191,7 +191,7 @@ A smooth sine wave, one full cycle per year at any resolution.
 | `clamp_min` | unset | Floor for the values. |
 
 A fully synthetic scenario tuned to resemble the bundled Laos data is at
-`examples/laos_fully_synthetic.yaml`.
+`examples/real_data_demo/laos_fully_synthetic.yaml`.
 
 ### `flat` — non-seasonal control / decoy
 
@@ -237,10 +237,10 @@ periods than `n_total`, the run fails rather than wrapping or extrapolating.
 
 A real multi-location sample is bundled at `examples/data/laos_subset.csv`
 (three Lao provinces, monthly 2010–2012, from the CHAP project), used by
-`examples/laos_real_climate_from_csv.yaml`:
+`examples/real_data_demo/laos_real_climate_from_csv.yaml`:
 
 ```bash
-dsl run examples/laos_real_climate_from_csv.yaml -o out/
+dsl run examples/real_data_demo/laos_real_climate_from_csv.yaml -o out/
 ```
 
 To align the output's `time_period` labels with the source data's real

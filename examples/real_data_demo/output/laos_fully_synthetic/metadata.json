@@ -1,0 +1,138 @@
+{
+  "dsl_version": "1.5.0",
+  "seed": 42,
+  "period": "monthly",
+  "n_total": 36,
+  "start_period": "2010-01",
+  "locations": [
+    "Bokeo",
+    "Savannakhet",
+    "Vientiane[prefecture]"
+  ],
+  "variables": [
+    {
+      "name": "rainfall",
+      "generate": "seasonal_spike",
+      "params": {
+        "baseline": 30,
+        "spike_height": 450,
+        "spike_center": 6,
+        "spike_width": 1.5,
+        "noise": 25,
+        "clamp_min": 0
+      }
+    },
+    {
+      "name": "mean_temperature",
+      "generate": "seasonal_smooth",
+      "params": {
+        "mean": 23.5,
+        "amplitude": 4,
+        "phase": 0,
+        "noise": 0.7
+      }
+    }
+  ],
+  "disease_cases": {
+    "population": null,
+    "autoregressive": false,
+    "missing_rate": 0.0,
+    "max_rate": 0.002,
+    "median_rate": 0.0001,
+    "count_distribution": "negative_binomial",
+    "overdispersion": 3.0,
+    "depends_on": [
+      {
+        "variable": "rainfall",
+        "lag": 2,
+        "weight": 1.5
+      },
+      {
+        "variable": "mean_temperature",
+        "lag": 1,
+        "weight": 1.0
+      }
+    ]
+  },
+  "scenario": {
+    "period": "monthly",
+    "n_total": 36,
+    "seed": 42,
+    "train_fraction": null,
+    "start_period": "2010-01",
+    "locations": {
+      "Bokeo": {
+        "population": {
+          "generate": "linear_trend",
+          "params": {
+            "start": 75000,
+            "slope": 90
+          }
+        }
+      },
+      "Savannakhet": {
+        "population": {
+          "generate": "linear_trend",
+          "params": {
+            "start": 686000,
+            "slope": 800
+          }
+        }
+      },
+      "Vientiane[prefecture]": {
+        "population": {
+          "generate": "linear_trend",
+          "params": {
+            "start": 559000,
+            "slope": 1200
+          }
+        }
+      }
+    },
+    "variables": [
+      {
+        "name": "rainfall",
+        "generate": "seasonal_spike",
+        "params": {
+          "baseline": 30,
+          "spike_height": 450,
+          "spike_center": 6,
+          "spike_width": 1.5,
+          "noise": 25,
+          "clamp_min": 0
+        }
+      },
+      {
+        "name": "mean_temperature",
+        "generate": "seasonal_smooth",
+        "params": {
+          "mean": 23.5,
+          "amplitude": 4,
+          "phase": 0,
+          "noise": 0.7
+        }
+      }
+    ],
+    "disease_cases": {
+      "depends_on": [
+        {
+          "variable": "rainfall",
+          "lag": 2,
+          "weight": 1.5
+        },
+        {
+          "variable": "mean_temperature",
+          "lag": 1,
+          "weight": 1.0
+        }
+      ],
+      "population": null,
+      "autoregressive": false,
+      "missing_rate": 0.0,
+      "max_rate": 0.002,
+      "median_rate": 0.0001,
+      "count_distribution": "negative_binomial",
+      "overdispersion": 3.0
+    }
+  }
+}
