@@ -196,6 +196,17 @@ def test_genuinely_non_consecutive_weeks_still_flagged():
     assert any("consecutive" in f for f in findings)
 
 
+def test_year_boundary_week_gaps_still_flagged():
+    # The rollover acceptance must be tight: only W52/W53 -> W01 is allowed.
+    # A gap across the boundary (W01 or W52 missing) is still a real gap.
+    assert any(  # W01 skipped
+        "consecutive" in f for f in validate_chap(_frame(["2020-W52", "2021-W02"]))
+    )
+    assert any(  # W52 skipped
+        "consecutive" in f for f in validate_chap(_frame(["2020-W51", "2021-W01"]))
+    )
+
+
 def test_infinite_covariate_flagged():
     # Bug #31: an infinite covariate value is not CHAP-valid data.
     df = _frame(["2000-01", "2000-02"])
