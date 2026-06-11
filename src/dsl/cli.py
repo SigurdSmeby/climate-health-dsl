@@ -166,8 +166,6 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # CHAP-compatibility findings are advisory: print them and proceed.
-    # (In practice these only fire when real data enters via from_csv with
-    # gaps; the synthetic generators always produce CHAP-valid output.)
     for finding in validate_chap(df):
         print(f"warning: {finding}", file=sys.stderr)
 

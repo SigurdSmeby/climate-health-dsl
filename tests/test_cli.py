@@ -1,7 +1,5 @@
 """Smoke tests for the `dsl run` command-line interface."""
-import numpy as np
 import pandas as pd
-import pytest
 import yaml
 
 from dsl.cli import main

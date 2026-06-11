@@ -103,7 +103,7 @@ def _check_periods(df: pd.DataFrame) -> list[str]:
     if resolution == "weekly_range":
         return findings
     for location, sequence in groups.items():
-        for i, (current, following) in enumerate(zip(sequence, sequence[1:])):
+        for current, following in zip(sequence, sequence[1:], strict=False):
             if not _consecutive(current, following, resolution):
                 findings.append(
                     f"time periods for location '{location}' are not "

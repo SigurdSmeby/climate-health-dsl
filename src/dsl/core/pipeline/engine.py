@@ -112,24 +112,19 @@ def run(config: ScenarioConfig) -> pd.DataFrame:
 def _run_one_location(config: ScenarioConfig, location: str) -> pd.DataFrame:
     """Generate the full series for a single named location."""
     seed = config.seed
-    # Generate each declared variable through the registry. get_generator
-    # returns the CLASS registered under that name; calling it with the
-    # YAML params builds an instance, whose .generate() makes the series.
     # Each variable gets its own rng keyed by location + name, so its values
     # depend on its name, not its position or the presence of other variables.
     drivers: dict[str, np.ndarray] = {}
     for spec in config.variables:
         params = dict(spec.params)
         if spec.generate == "from_csv":
-            # When the scenario starts at a real-world period, a from_csv
-            # variable must read its real data from that same period —
-            # otherwise the output would label row 0 as start_period but fill
-            # it with the CSV's first row (mismatched dates). Inject it unless
-            # the variable set its own.
+            # Align a from_csv variable to the scenario's calendar: read its
+            # real data starting at start_period (else row 0 would be mislabeled
+            # as start_period), unless the variable set its own.
             if config.start_period is not None and "start_period" not in params:
                 params["start_period"] = config.start_period
-            # Per-location source: if no source_location is set and the CSV is
-            # multi-location, give THIS output location its own matching rows.
+            # With no source_location and a multi-location CSV, give THIS output
+            # location its own matching rows.
             if "source_location" not in params:
                 csv_locations = get_generator("from_csv").locations_in(
                     params.get("file", "")
@@ -150,10 +145,9 @@ def _run_one_location(config: ScenarioConfig, location: str) -> pd.DataFrame:
             config.n_total, config.period, var_rng
         )
 
-    # Resolve this location's population to a per-period array (its own
-    # override or the default; a constant, or a generated growth trajectory)
-    # and build a disease spec carrying it, so the incidence model and the
-    # population cap both use the right per-period number for this location.
+    # This location's population as a per-period array (its override or the
+    # default; constant or a generated trajectory), threaded into the disease
+    # spec so the incidence model and cap use it.
     population = _resolve_population(
         config.population_for(location),
         config.n_total,

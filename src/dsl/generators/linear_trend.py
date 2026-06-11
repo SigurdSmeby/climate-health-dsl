@@ -45,7 +45,7 @@ class LinearTrendGenerator(VariableGenerator):
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
         """Return the trend series, length ``n_periods``."""
-        t = np.arange(n_periods)  # 0, 1, 2, ...
+        t = np.arange(n_periods)
         series = self.start + self.slope * t
         if self.noise > 0:
             series = series + rng.normal(0.0, self.noise, size=n_periods)

@@ -103,7 +103,7 @@ class DiseaseSpec(BaseModel):
     population: int | PopulationSpec | None = None
     autoregressive: bool = False
     missing_rate: float = Field(default=0.0, ge=0.0, le=1.0)
-    # Incidence-model knobs; defaults match the reference implementation.
+    # Incidence-model knobs.
     max_rate: float = Field(default=0.3, gt=0.0, le=1.0)
     median_rate: float = Field(default=0.1, gt=0.0, le=1.0)
     # How case counts are drawn from the incidence rate. "poisson" (default)
@@ -151,16 +151,13 @@ class ScenarioConfig(BaseModel):
     # The real-world period the series starts at (e.g. "2010-07" for a
     # monthly scenario). None means the first period of the year 2000.
     start_period: str | None = None
-    # CHAP datasets carry a location column; each named location gets its own
-    # independently drawn series. Two YAML forms are accepted:
-    #   locations: [oslo, bergen]                      # names only
-    #   locations: {oslo: {population: 700000}, ...}   # with per-location overrides
-    # Both normalize to the same internal pair below (a name list + an
-    # overrides dict), so the engine always sees an ordered list of names.
+    # Named locations, each an independently drawn series. Accepts a plain
+    # list (names only) or a mapping (names with per-location overrides); the
+    # validator below normalizes the mapping into this list plus the overrides.
     locations: list[str] = Field(default=["loc"], min_length=1)
-    # Per-location overrides, keyed by name. Empty for the list form. Not a
-    # YAML field itself — it is populated from the mapping form by the
-    # validator below, and excluded from dumps so metadata round-trips.
+    # Per-location overrides, keyed by name (empty for the list form). Filled
+    # from the mapping form by the validator; excluded from dumps so metadata
+    # round-trips.
     location_overrides: dict[str, LocationSpec] = Field(
         default_factory=dict, exclude=True
     )

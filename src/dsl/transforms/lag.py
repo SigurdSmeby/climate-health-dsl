@@ -2,10 +2,9 @@
 
 This is what makes "disease follows rainfall by 3 weeks" expressible. The
 shift is CAUSAL: the first n positions have no valid past and become NaN
-(the warm-up the disease model blanks). We deliberately do NOT use
-``np.roll``: roll is circular, wrapping the end of the series onto the
-start, which leaks future values into the past — wrong for a forecasting
-benchmark. (The old reference code did exactly that; this is a fix.)
+(the warm-up the disease model blanks). It deliberately does NOT use
+``np.roll``, which is circular — it wraps the end of the series onto the
+start, leaking future values into the past, wrong for a forecasting benchmark.
 """
 import numpy as np
 

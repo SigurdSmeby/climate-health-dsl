@@ -52,7 +52,7 @@ class SeasonalSmoothGenerator(VariableGenerator):
     ) -> np.ndarray:
         """Return the smooth seasonal series, length ``n_periods``."""
         ppy = periods_per_year(period)  # 52 for weekly, 12 for monthly, ...
-        t = np.arange(n_periods)  # the time axis: 0, 1, 2, ...
+        t = np.arange(n_periods)
         # One full sine cycle per year, scaled to the period resolution.
         series = self.mean + self.amplitude * np.sin(
             2 * np.pi * t / ppy + self.phase
@@ -60,6 +60,5 @@ class SeasonalSmoothGenerator(VariableGenerator):
         if self.noise > 0:
             series = series + rng.normal(0.0, self.noise, size=n_periods)
         if self.clamp_min is not None:
-            # np.maximum floors every value at clamp_min (element-wise max).
             series = np.maximum(series, self.clamp_min)
         return series

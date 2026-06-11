@@ -7,9 +7,7 @@ weather, controlled cause→effect.
 
 Hard rule: the generator never invents data. If the CSV holds fewer
 periods than the scenario asks for, that is an error — real data is never
-wrapped, repeated, or extrapolated beyond its available dates. (The old
-reference code silently wrapped into the next region's rows; that was a
-data-integrity bug, deliberately not reproduced.)
+wrapped, repeated, or extrapolated beyond its available dates.
 """
 from pathlib import Path
 
@@ -163,9 +161,9 @@ class FromCsvGenerator(VariableGenerator):
                 f"from_csv: {self.path.name} has duplicate time_period values: "
                 f"{sorted(dupes)}."
             )
-        # Parse each label to an absolute period index (validates the calendar:
-        # 2010-00 / 2010-13 / 20100230 raise here). order[i] = how many periods
-        # label i is after some common origin, so sorting by it is chronological.
+        # Map each label to an absolute period index — also validates the
+        # calendar (2010-00 / 2010-13 / 20100230 raise) — so sorting by it is
+        # chronological.
         ppy = periods_per_year(period)
 
         def absolute_index(label: str) -> int:
@@ -177,9 +175,8 @@ class FromCsvGenerator(VariableGenerator):
             "_order", kind="stable"
         )
         ordered = df["_order"].to_numpy()
-        # Consecutive: each step is exactly +1 absolute index. (For daily the
-        # year*366 base leaves a harmless jump at year ends, so verify daily
-        # consecutiveness by re-deriving labels instead.)
+        # Consecutive = each step is +1. Daily's year*366 base jumps at year
+        # ends, so check daily consecutiveness from real dates instead.
         if period == "daily":
             self._check_daily_consecutive(df["time_period"].astype(str).tolist())
         else:
@@ -200,7 +197,7 @@ class FromCsvGenerator(VariableGenerator):
         import datetime
 
         dates = [datetime.datetime.strptime(d, "%Y%m%d").date() for d in labels]
-        for a, b in zip(dates, dates[1:]):
+        for a, b in zip(dates, dates[1:], strict=False):
             if (b - a).days != 1:
                 raise ValueError(
                     f"from_csv: daily data has a gap between "

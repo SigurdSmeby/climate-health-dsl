@@ -1,6 +1,5 @@
 """Tests for CHAP-format CSV output and the optional train/test split."""
 import pandas as pd
-import pytest
 
 from dsl.core.config.schema import parse_config
 from dsl.core.pipeline.engine import run

@@ -41,7 +41,6 @@ class FlatGenerator(VariableGenerator):
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
         """Return the flat series, length ``n_periods``."""
-        # np.full makes an array of n_periods copies of `level`.
         series = np.full(n_periods, float(self.level))
         if self.noise > 0:
             series = series + rng.normal(0.0, self.noise, size=n_periods)

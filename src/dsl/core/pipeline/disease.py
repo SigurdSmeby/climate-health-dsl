@@ -1,7 +1,6 @@
 """Builds the dependent disease signal — where the known ground truth is made.
 
-This is a population-relative Poisson incidence model (ported from the
-reference implementation), NOT a plain linear sum:
+This is a population-relative Poisson incidence model, NOT a plain linear sum:
 
 1. Start from a seasonal baseline ``eta`` (one sine cycle per year).
 2. For each dependency: lag the named driver (causally), standardize it to
@@ -12,8 +11,7 @@ reference implementation), NOT a plain linear sum:
 5. Draw Poisson counts, cap at the population, and blank the lag warm-up.
 6. Inject missing values last.
 
-All randomness comes from the passed ``rng`` — the reference code used the
-unseeded global ``np.random`` and was not reproducible; this is a fix.
+All randomness comes from the passed seeded ``rng``, so output is reproducible.
 """
 import numpy as np
 
@@ -109,16 +107,13 @@ def build_disease_cases(
     ppy = periods_per_year(period)
     t = np.arange(n_periods)
 
-    # 1. Seasonal baseline: one sine cycle per year (the reference model's
-    #    season weights), so disease has its own seasonality even with no
-    #    drivers attached.
+    # 1. Seasonal baseline: one sine cycle per year, so disease has its own
+    #    seasonality even with no drivers attached.
     eta = np.sin(2 * np.pi * (t % ppy) / ppy)
 
-    # 2. Add each lagged, standardized, weighted driver. The lag leaves NaN in
-    #    the first `lag` rows (the warm-up); those propagate into eta and are
-    #    blanked below along with any missing-input rows. A weight-0 dependency
-    #    contributes nothing, so it is skipped entirely — otherwise its lag /
-    #    missing values would blank rows it has no effect on.
+    # 2. Add each lagged, standardized, weighted driver. A weight-0 dependency
+    #    is skipped: it has no effect, so its lag/missing NaNs must not blank
+    #    rows it doesn't influence.
     for dep in spec.depends_on:
         if dep.weight == 0:
             continue
@@ -130,11 +125,9 @@ def build_disease_cases(
     if spec.autoregressive:
         eta = eta + np.cumsum(rng.normal(0.0, 0.2, size=n_periods))
 
-    # Some eta rows are NaN: the lag warm-up, AND any period where a driver
-    # value is itself missing (e.g. a gap in real from_csv data). The Poisson
-    # sampler can't take NaN rates, so zero them for the draw — but remember
-    # which rows they were so the output is blanked there. A period with a
-    # missing input must NOT get a fabricated count.
+    # eta is NaN at the lag warm-up and wherever a driver value is missing.
+    # The sampler can't take NaN rates, so zero them for the draw but remember
+    # the rows — a period with a missing input must not get a fabricated count.
     missing_input = np.isnan(eta)
     eta = np.nan_to_num(eta, nan=0.0)
 
@@ -156,9 +149,7 @@ def build_disease_cases(
     counts = _draw_counts(incidence_rate, spec, rng)
     counts = np.minimum(counts, spec.population)
 
-    # 6. Blank every row whose input was missing — the lag warm-up plus any
-    #    period where a driver value was NaN — so no count is fabricated from
-    #    a missing input. (missing_input already covers the warm-up rows.)
+    # 6. Blank rows whose input was missing (warm-up + missing driver values).
     counts[missing_input] = np.nan
 
     # 7. Missing data last, so gaps land on the finished signal.
