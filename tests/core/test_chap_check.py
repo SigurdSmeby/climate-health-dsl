@@ -183,6 +183,19 @@ def test_week_53_not_falsely_flagged():
     assert validate_chap(_frame(["2020-W52", "2020-W53", "2021-W01"])) == []
 
 
+def test_flat52_week_rollover_not_flagged():
+    # The DSL emits flat-52 weekly labels: W52 rolls straight to next year's
+    # W01 (no W53). chap_check must accept its OWN output as consecutive, even
+    # in an ISO-53-week year like 2020.
+    assert validate_chap(_frame(["2020-W51", "2020-W52", "2021-W01"])) == []
+
+
+def test_genuinely_non_consecutive_weeks_still_flagged():
+    # A real gap (W50 -> W52) must still be flagged.
+    findings = validate_chap(_frame(["2020-W50", "2020-W52"]))
+    assert any("consecutive" in f for f in findings)
+
+
 def test_infinite_covariate_flagged():
     # Bug #31: an infinite covariate value is not CHAP-valid data.
     df = _frame(["2000-01", "2000-02"])

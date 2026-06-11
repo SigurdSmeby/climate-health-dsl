@@ -103,19 +103,45 @@ def _check_periods(df: pd.DataFrame) -> list[str]:
     if resolution == "weekly_range":
         return findings
     for location, sequence in groups.items():
-        try:
-            dates = [_period_start_date(label, resolution) for label in sequence]
-        except ValueError:
-            continue  # a label we can't date-parse; format check already ran
-        for i, (a, b) in enumerate(zip(dates, dates[1:])):
-            if not _is_one_step(a, b, resolution):
+        for i, (current, following) in enumerate(zip(sequence, sequence[1:])):
+            if not _consecutive(current, following, resolution):
                 findings.append(
                     f"time periods for location '{location}' are not "
-                    f"consecutive: '{sequence[i + 1]}' follows '{sequence[i]}'."
+                    f"consecutive: '{following}' follows '{current}'."
                 )
                 break  # one finding per location is enough
 
     return findings
+
+
+def _consecutive(current: str, following: str, resolution: str) -> bool:
+    """True if ``following`` is exactly one period after ``current``."""
+    if resolution == "weekly":
+        return _weekly_consecutive(current, following)
+    try:
+        a = _period_start_date(current, resolution)
+        b = _period_start_date(following, resolution)
+    except ValueError:
+        return True  # unparseable label; the format check already flagged it
+    return _is_one_step(a, b, resolution)
+
+
+def _weekly_consecutive(current: str, following: str) -> bool:
+    """Accept BOTH weekly conventions the ecosystem uses.
+
+    The DSL emits flat-52 labels (W52 rolls straight to next year's W01, no
+    W53), while CHAP also accepts ISO weeks (W52 -> W53 -> W01 in 53-week
+    years). So a step is consecutive if it advances the week by one within the
+    year, OR rolls from the last week of one year (W52 or W53) to W01/S01 of
+    the next.
+    """
+    cy, cw = int(current[:4]), int(current[6:8])
+    fy, fw = int(following[:4]), int(following[6:8])
+    if fy == cy and fw == cw + 1:
+        return True  # same year, next week
+    if fy == cy + 1 and fw == 1 and cw in (52, 53):
+        return True  # year rollover (flat-52 from W52, or ISO from W52/W53)
+    return False
 
 
 def _period_start_date(label: str, resolution: str) -> "datetime.date":
