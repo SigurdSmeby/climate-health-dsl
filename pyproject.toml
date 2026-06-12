@@ -1,6 +1,6 @@
 [project]
 name = "dsl"
-version = "1.7.0"
+version = "1.7.1"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Sigurd Smeby", email = "sigurd.smeby@proton.me" }]
