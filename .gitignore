@@ -38,3 +38,9 @@ out/
 
 # Local research notes
 deep-research-report.md
+
+# Internal development docs (kept locally, not shipped to users)
+BUGS.md
+BUILD_LOG.md
+BUILD_PLAN.md
+FEATURE_ROADMAP.md
