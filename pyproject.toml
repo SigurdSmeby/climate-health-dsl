@@ -1,6 +1,6 @@
 [project]
 name = "dsl"
-version = "1.6.2"
+version = "1.7.0"
 requires-python = ">=3.11"
 dependencies = ["pydantic>=2", "pyyaml", "numpy", "pandas", "plotly", "kaleido"]
 
