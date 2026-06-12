@@ -1,45 +1,91 @@
 # DSL — synthetic climate-health data
 
-A YAML-based DSL for generating synthetic climate-health datasets. A scenario
-file declares how climate variables relate to disease (lags, weights, missing
-data), and the tool generates a dataset containing those relationships. The
-data can then be used to check how well a forecasting model recovers them.
+A YAML-based DSL for generating synthetic climate-health datasets. A scenario file declares how climate variables relate to disease (lags, weights, missing data), and the tool generates a dataset embedding those relationships — so you can check how well a forecasting model recovers a *known* ground truth.
 
 Output is formatted for [CHAP](https://chap.dhis2.org/), but is plain CSV.
 
-## Quickstart
+## Commands and options
 
-Requires Python 3.11+. With [uv](https://docs.astral.sh/uv/) (recommended):
+| Command | What it does |
+|---|---|
+| `dsl new [path]` | Write a commented starter scenario to edit (default `scenario.yaml`). |
+| `dsl run <scenario>` | Generate a dataset from a scenario YAML (or reproduce one from a `metadata.json`). |
+
+**`dsl new [path]`**
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `scenario.yaml` | Where to write the starter file. |
+| `-f`, `--force` | off | Overwrite the file if it already exists. |
+
+**`dsl run <scenario>`**
+
+| Option | Default | Meaning |
+|---|---|---|
+| `scenario` | required | Path to a scenario YAML, or a `metadata.json` to reproduce a previous run. |
+| `-o`, `--out-dir DIR` | auto-named | Directory to write into. If omitted, an auto-named folder under `out/` is used so previous runs are never overwritten. |
+| `--plot` | off | Also write a plot of the dataset into the output directory. |
+| `--plot-format FMT` | `html` | Plot format: `html` (interactive) or `png`/`svg`/`pdf`. |
+| `--watch` | off | Re-run automatically whenever the scenario file is saved; serves a live-reloading plot when paired with `--plot`. |
+| `--new` | off | Skip the continue-or-new prompt; always write a fresh auto-numbered folder. |
+
+## Getting started
+
+A hands-on path from install to a real-data experiment — one command or edit per step.
+
+**0. Install.** Requires Python 3.11+. With [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv venv
 uv pip install -e ".[dev]"
-uv run dsl run examples/basic_scenario.yaml -o out/
 ```
 
-Or with stock tooling:
+(Without uv: `python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"`, then drop the `uv run` prefix below.)
+
+**1. Scaffold a starter.** Writes a small, commented scenario:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-dsl run examples/basic_scenario.yaml -o out/
+dsl new my_scenario.yaml
 ```
 
-The result (`out/simulated_data.csv`):
+(Prefer to start from a finished example? `examples/` has several ready to run, e.g. `dsl run examples/basic_scenario.yaml`.)
 
-```
-time_period,location,rainfall,mean_temperature,disease_cases,population
-2000-W01,loc,2.566973545527822,15.272780092168137,,100000
-2000-W02,loc,1.3282158401690942,15.368975863100253,,100000
-2000-W03,loc,1.384034205465687,17.514373039096835,,100000
-2000-W04,loc,1.691755272991639,19.180676624066287,7838.0,100000
-...
+**2. Run it and look.** `--plot` writes an interactive `plot.html`; `--watch` re-runs every time you save the file:
+
+```bash
+dsl run my_scenario.yaml --plot --watch
 ```
 
-Weekly rainfall and temperature, and disease cases that depend on both with a
-3-week delay. The first 3 `disease_cases` values are empty on purpose: with a
-lag of 3 there is no driver signal yet.
+Together they open a browser tab served from `localhost` that **reloads itself** whenever you save the scenario — edit, save, watch the plot update live, no manual refresh. (Drop `--watch` for a one-shot run; it just writes `plot.html`.)
+
+When a scenario already has output, `dsl run` lists the earlier runs and asks whether to **continue one** (refine the same `out/` folder) or start fresh — so a second session doesn't silently spawn `out/my_scenario_1/`. Use `--new` to skip the prompt and always start fresh, or `-o DIR` to write somewhere specific.
+
+**3. Read the output.** `out/my_scenario/simulated_data.csv` has one row per period — the climate columns, `disease_cases`, and `population`. The first `disease_cases` are blank on purpose: with `lag: 2` there's no driver signal yet to react to. That blanked warm-up is the lag made visible.
+
+**4. Change one thing, watch it move.** In `my_scenario.yaml`, bump `lag: 2` to `lag: 6` and save. With `--watch` running, the dataset regenerates and the plot refreshes — the disease peak shifts later relative to rainfall. Adding a second driver is pure YAML, no code:
+
+```yaml
+variables:
+  - name: rainfall
+    generate: seasonal_spike
+  - name: mean_temperature      # add a second climate variable
+    generate: seasonal_smooth
+disease_cases:
+  depends_on:
+    - { variable: rainfall, lag: 6 }
+    - { variable: mean_temperature, lag: 2 }   # ...and a second driver
+```
+
+**5. Go real.** Swap a synthetic generator for `from_csv` to drive disease off *real* climate (a bundled three-province Laos sample lives in `examples/data/`):
+
+```yaml
+variables:
+  - name: rainfall
+    generate: from_csv
+    params: { file: examples/data/laos_subset.csv, column: rainfall }
+```
+
+The reference below documents every field; `examples/real_data_demo/` has five worked scenarios with pre-generated output to compare against.
 
 ## Output files
 
@@ -47,52 +93,16 @@ lag of 3 there is no driver signal yet.
 |---|---|---|
 | `simulated_data.csv` | always | The full dataset: `time_period`, `location`, one column per variable, `disease_cases`, `population`. This is the file to give CHAP — it does its own train/test hiding. |
 | `train.csv`, `test.csv` | only if `train_fraction` is set | A split in time (the first `train_fraction` of each location's periods vs the rest), all columns intact — for evaluation outside CHAP. |
-| `metadata.json` | always | The ground truth behind the dataset: seed, lags, weights, rates, generators, tool version, and the full resolved scenario (feed it back to reproduce the data exactly). |
+| `metadata.json` | always | The ground truth behind the dataset: seed, lags, weights, rates, generators, tool version, and the full resolved scenario. Feed it back to `dsl run` to reproduce the data exactly — no original YAML needed; the result is byte-identical. |
 | `plot.html` (or `.png`/`.svg`/`.pdf`) | only with `--plot` | A faceted plot of the covariates and `disease_cases` over time, one line per location, with the train/test boundary marked. |
 
-Rerunning the same scenario produces identical files: all randomness comes
-from the `seed` in the YAML.
+Rerunning the same scenario produces identical files — all randomness comes from the `seed`. Where those files land is controlled by `-o` / `--new` / the continue prompt (see [Commands and options](#commands-and-options) and step 2 of the guide above).
 
-### Where output goes
-
-With `-o DIR`, files are written straight into `DIR` (overwriting what's
-there). Without `-o`, the run writes into an auto-named folder under `out/`
-so previous runs are never overwritten: the first run of
-`laos_fully_synthetic.yaml` goes to `out/laos_fully_synthetic/`, the next to
-`out/laos_fully_synthetic_1/`, then `_2/`, and so on.
-
-### Reproducing a run
-
-Because every run writes a `metadata.json` holding its full scenario, you can
-regenerate a dataset by pointing `dsl run` at that file — no original YAML
-needed:
-
-```bash
-dsl run out/laos_fully_synthetic/metadata.json -o repro/
-```
-
-The result is byte-identical to the original.
-
-To see a dataset rather than read the CSV, add `--plot` (interactive HTML by
-default, or `--plot-format png`):
-
-```bash
-dsl run examples/real_data_demo/laos_fully_synthetic.yaml -o out/ --plot
-```
-
-Output is also checked against CHAP's dataset rules (the required
-`time_period`/`location`/`disease_cases` columns, a CHAP-parseable period
-format, and no NaN in covariates; mismatched or non-consecutive periods
-across locations are flagged too). Any findings print as warnings and the
-run still writes output — in practice they only arise when real data enters
-via `from_csv` with gaps, since the synthetic generators always produce
-CHAP-valid output. All four resolutions and arbitrary covariate names are
-accepted, and `population` is optional, matching what chap-core parses.
+Output is checked against CHAP's dataset rules (required columns, a parseable period format, consecutive periods, no NaN in covariates). Findings print as warnings; the run still writes output. In practice they only arise with `from_csv` data that has gaps — the synthetic generators always produce CHAP-valid output.
 
 ## Writing a scenario
 
-A scenario is one YAML file. The bundled example
-(`examples/basic_scenario.yaml`):
+A scenario is one YAML file. The bundled example (`examples/basic_scenario.yaml`):
 
 ```yaml
 period: weekly
@@ -125,8 +135,8 @@ disease_cases:
 | `n_total` | int ≥ 1 | required | Number of time periods to generate. |
 | `seed` | int | `0` | Seed for all randomness. Same scenario + same seed → identical output. |
 | `train_fraction` | float, 0 < x < 1 | unset | If set, also write `train.csv`/`test.csv`. |
-| `start_period` | str | first period of 2000 | Where the series starts on the real calendar, in the scenario's resolution: `"2010-07"` (monthly), `"2015-W10"` (weekly), `"20100615"` (daily), `"2003"` (yearly). Note: this relabels the output but does **not** shift the seasonal *phase* — a mid-year start still begins the seasonal cycle at index 0 (the run warns when this applies). |
-| `locations` | list of str, or mapping | `["loc"]` | Named locations, each an independently drawn series of `n_total` periods, stacked in long format with a `location` column. Use the **list** form (`[oslo, bergen]`) for one shared population, or the **mapping** form to set a per-location population: `{Bokeo: {population: 75000}, ...}`. A per-location population can itself be a generator, so each location can have its own growth trajectory. A location with no `population` falls back to `disease_cases.population`. |
+| `start_period` | str | first period of 2000 | Where the series starts on the real calendar, in the scenario's resolution: `"2010-07"` (monthly), `"2015-W10"` (weekly), `"20100615"` (daily), `"2003"` (yearly). Relabels the output but does **not** shift the seasonal *phase* — a mid-year start still begins the seasonal cycle at index 0 (the run warns when this applies). |
+| `locations` | list of str, or mapping | `["loc"]` | Named locations, each an independently drawn series of `n_total` periods, stacked in long format with a `location` column. Use the **list** form (`[oslo, bergen]`) for one shared population, or the **mapping** form to set a per-location population: `{Bokeo: {population: 75000}, ...}`. A per-location population can itself be a generator (its own growth trajectory). A location with no `population` falls back to `disease_cases.population`. |
 | `variables` | list | required | The independent (climate) variables — see below. |
 | `disease_cases` | mapping | required | How the dependent disease signal is built — see below. |
 
@@ -135,23 +145,22 @@ disease_cases:
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | str | required | Becomes the output column name. For CHAP datasets use CHAP's names: `rainfall`, `mean_temperature`. |
-| `generate` | str | required | Which generator produces the series (see [built-in generators](#built-in-generators)). |
+| `generate` | str | required | Which generator produces the series (see [generators](#generators)). |
 | `params` | mapping | `{}` | Passed straight to that generator; each generator validates its own. |
 
-A variable is just a named series — adding one more (e.g. a decoy the disease
-does *not* depend on) needs no code, only YAML.
+A variable is just a named series — adding one more (e.g. a decoy the disease does *not* depend on) needs no code, only YAML.
 
 ### `disease_cases` fields
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `population` | int ≥ 1, or a generator | required* | Population; scales the incidence model and caps the counts. A plain int is constant; a generator block (`{generate: linear_trend, params: {start: 70000, slope: 90}}`) makes it **change over time** (growth). Shared across locations unless the `locations` mapping overrides it per location. *Optional when every location sets its own population (it's the fallback for those that don't). |
+| `population` | int ≥ 1, or a generator | required* | Population; scales the incidence model and caps the counts. A plain int is constant; a generator block (`{generate: linear_trend, params: {start: 70000, slope: 90}}`) makes it **change over time**. Shared across locations unless the `locations` mapping overrides it per location. *Optional when every location sets its own population. |
 | `depends_on` | list | required | The drivers of disease (see below). |
 | `autoregressive` | bool | `false` | Add a random-walk component, giving the signal memory of its own past. |
 | `missing_rate` | float, 0–1 | `0` | Fraction of disease values randomly blanked to simulate reporting gaps. |
 | `max_rate` | float, 0–1 | `0.3` | Maximum incidence: cases never exceed ~`max_rate × population`. |
 | `median_rate` | float | `0.1` | Incidence in a typical period. Must be **smaller than** `max_rate`. |
-| `count_distribution` | `poisson` \| `negative_binomial` | `poisson` | How counts are drawn from the rate. `poisson` has variance = mean; `negative_binomial` adds overdispersion, giving spikier, more realistic surveillance counts. |
+| `count_distribution` | `poisson` \| `negative_binomial` | `poisson` | How counts are drawn from the rate. `poisson` has variance = mean; `negative_binomial` adds overdispersion (spikier, more realistic surveillance counts). |
 | `overdispersion` | float > 0 | `10.0` | Only for `negative_binomial`: variance = mean + mean²/`overdispersion`, so **smaller = more variable**; large values approach Poisson. |
 
 Each `depends_on` entry:
@@ -162,12 +171,13 @@ Each `depends_on` entry:
 | `lag` | int ≥ 0 | `0` | Delay in periods between the driver and its effect on disease. |
 | `weight` | float | `1.0` | Strength of the driver relative to the others (drivers are standardized first, so weights are comparable across units). |
 
-## Built-in generators
+## Generators
+
+Each `variable` names a generator that produces its series. Built-ins:
 
 ### `seasonal_spike` — rainy-season shape
 
-A low baseline with a pronounced, smooth spike that peaks at the same point
-every year (a Gaussian bump, wrapping correctly across the year boundary).
+A low baseline with a pronounced, smooth Gaussian spike peaking at the same point every year (wrapping across the year boundary).
 
 | Param | Default | Meaning |
 |---|---|---|
@@ -176,7 +186,7 @@ every year (a Gaussian bump, wrapping correctly across the year boundary).
 | `spike_center` | `26` | Period offset of the peak within the year (26 ≈ mid-year for weekly data). |
 | `spike_width` | `4.0` | Width of the spike, in periods (> 0). |
 | `noise` | `0.5` | Std. dev. of added Gaussian noise; `0` makes the series fully deterministic. |
-| `clamp_min` | unset | Floor for the values — set `0` for quantities like rainfall that can never be negative. |
+| `clamp_min` | unset | Floor for the values — set `0` for quantities like rainfall that can't be negative. |
 
 ### `seasonal_smooth` — temperature shape
 
@@ -185,19 +195,14 @@ A smooth sine wave, one full cycle per year at any resolution.
 | Param | Default | Meaning |
 |---|---|---|
 | `mean` | `15.0` | The value the wave oscillates around. |
-| `amplitude` | `10.0` | Swing above/below the mean (≥ 0). `0` gives pure noise around the mean — useful as an aperiodic driver. |
+| `amplitude` | `10.0` | Swing above/below the mean (≥ 0). `0` gives pure noise — an aperiodic driver. |
 | `phase` | `0.0` | Phase offset in radians (shifts where in the year the peak falls). |
 | `noise` | `0.5` | Std. dev. of added Gaussian noise; `0` disables it. |
 | `clamp_min` | unset | Floor for the values. |
 
-A fully synthetic scenario tuned to resemble the bundled Laos data is at
-`examples/real_data_demo/laos_fully_synthetic.yaml`.
-
 ### `flat` — non-seasonal control / decoy
 
-A constant level plus noise, with no seasonal structure. Useful as a control
-covariate (a driver with no signal, to check a model doesn't latch onto an
-irrelevant variable).
+A constant level plus noise, no seasonal structure. Useful as a control covariate to check a model doesn't latch onto an irrelevant variable.
 
 | Param | Default | Meaning |
 |---|---|---|
@@ -207,9 +212,7 @@ irrelevant variable).
 
 ### `linear_trend` — steady drift
 
-A straight line `start + slope · t`, optionally noisy. Models slow drift
-(population growth, warming, reporting changes) — useful as a non-seasonal
-confounder.
+A straight line `start + slope · t`, optionally noisy. Models slow drift (population growth, warming, reporting changes) — a non-seasonal confounder.
 
 | Param | Default | Meaning |
 |---|---|---|
@@ -218,76 +221,46 @@ confounder.
 | `noise` | `0.0` | Std. dev. of added Gaussian noise. |
 | `clamp_min` | unset | Floor for the values. |
 
-`examples/confounders_and_controls.yaml` uses `flat` and `linear_trend` as
-decoys the disease ignores, to test whether a model finds the real driver.
+`examples/confounders_and_controls.yaml` uses `flat` and `linear_trend` as decoys the disease ignores, to test whether a model finds the real driver.
 
 ### `from_csv` — real data
 
-Reads the variable's values from a CHAP-format CSV instead of synthesizing
-them, for semi-synthetic experiments: real climate, synthetic disease with a
-controlled relationship. The data is used as-is — if the file holds fewer
-periods than `n_total`, the run fails rather than wrapping or extrapolating.
+Reads the variable's values from a CHAP-format CSV instead of synthesizing them, for semi-synthetic experiments: real climate, synthetic disease with a controlled relationship. The data is used as-is — if the file holds fewer periods than `n_total`, the run fails rather than wrapping or extrapolating.
 
 | Param | Default | Meaning |
 |---|---|---|
 | `file` | required | Path to the CSV (`time_period` column plus data columns; `location` column if multi-location). |
 | `column` | required | Which column to use as this variable's values. |
-| `source_location` | unset | Which location's rows to use. Set it to feed one CSV location to every output location. If left unset and the CSV has several locations, each output location **auto-matches** the CSV rows of the same name (and errors if there's no match). |
+| `source_location` | unset | Which location's rows to use. Set it to feed one CSV location to every output location. If unset and the CSV has several locations, each output location **auto-matches** the CSV rows of the same name (and errors if there's no match). |
 | `start_period` | first row | A `time_period` label to start reading from, e.g. `"2011-01"`. |
 
-A real multi-location sample is bundled at `examples/data/laos_subset.csv`
-(three Lao provinces, monthly 2010–2012, from the CHAP project), used by
-`examples/real_data_demo/laos_real_climate_from_csv.yaml`:
+A real multi-location sample is bundled at `examples/data/laos_subset.csv` (three Lao provinces, monthly 2010–2012, from CHAP), used by `examples/real_data_demo/laos_real_climate_from_csv.yaml`. To align the output's `time_period` labels with the source dates, set the scenario's `start_period` to the source's first period (the Laos example uses `"2010-01"`).
 
-```bash
-dsl run examples/real_data_demo/laos_real_climate_from_csv.yaml -o out/
-```
-
-To align the output's `time_period` labels with the source data's real
-dates, set the scenario's `start_period` to the source's first period (the
-Laos example uses `start_period: "2010-01"`).
-
-Note: reproducing a `from_csv` run from its `metadata.json` re-reads the
-source CSV by path, so byte-identical reproduction requires that file to be
-unchanged.
+Note: reproducing a `from_csv` run from its `metadata.json` re-reads the source CSV by path, so byte-identical reproduction requires that file to be unchanged.
 
 ## How `disease_cases` is generated
 
-The disease signal is a population-relative Poisson incidence model, not a
-plain weighted sum:
+The disease signal is a population-relative incidence model, not a plain weighted sum. It builds a per-period incidence *rate*, then draws integer counts from it (Poisson by default, or overdispersed negative binomial — your choice via `count_distribution`):
 
-1. Start from a seasonal baseline (one sine cycle per year), so disease has
-   its own seasonality even with no drivers.
-2. For each `depends_on` entry: delay the driver by `lag` (causally — the
-   warm-up becomes NaN; values never wrap around from the end of the series),
-   standardize it to a z-score, multiply by `weight`, and add.
+1. Start from a seasonal baseline (one sine cycle per year), so disease has its own seasonality even with no drivers.
+2. For each `depends_on` entry: delay the driver by `lag` (causally — the warm-up becomes NaN; values never wrap around from the end), standardize it to a z-score, multiply by `weight`, and add.
 3. If `autoregressive`, add a random walk (cumulative white noise).
-4. Squash through a sigmoid shifted so a typical period lands near
-   `median_rate`, then scale: `rate × population × max_rate`. The sigmoid
-   guarantees incidence stays below `max_rate` no matter how extreme the
-   drivers get.
-5. Draw integer counts from the rate (seeded), capped at `population` —
-   Poisson by default, or an overdispersed negative binomial via
-   `count_distribution`.
-6. Blank the first `max(lag)` rows (no valid driver signal) and apply
-   `missing_rate` last.
+4. Squash through a sigmoid shifted so a typical period lands near `median_rate`, then scale to a rate: `sigmoid × population × max_rate`. The sigmoid guarantees incidence stays below `max_rate` no matter how extreme the drivers get.
+5. Draw integer counts from the rate (seeded, per the chosen distribution), capped at `population`.
+6. Blank any period with no valid driver signal — the lag warm-up, plus rows where a driver value was itself missing — then apply `missing_rate` last.
 
-See `examples/overdispersed_outbreaks.yaml` for a scenario using the
-negative-binomial counts.
+See `examples/overdispersed_outbreaks.yaml` for the negative-binomial counts.
 
-## Extending the DSL
+## Extending the DSL — generators and transforms
 
-Two extension points, one mental model: **generators create a series;
-transforms modify one.** Both live in extension folders where every file
-registers itself — you never edit the core machinery.
+One mental model: **generators create a series; transforms modify one.** Both live in extension folders where every file registers itself — you never edit the core machinery.
 
-First, check whether you need code at all. A new *variable* that reuses an
-existing shape is pure YAML:
+First check whether you need code at all. A new *variable* that reuses an existing shape is pure YAML:
 
 ```yaml
 variables:
   - name: wind
-    generate: seasonal_smooth # reuse
+    generate: seasonal_smooth  # reuse
     params: { mean: 12, amplitude: 4 }
 ```
 
@@ -311,16 +284,9 @@ class GustyGenerator(VariableGenerator):
         return series
 ```
 
-That's the whole workflow: the file is auto-discovered on import, the schema
-passes `params` through, and the engine finds the name in the registry. No
-other file changes. New transforms work the same way under
-`src/dsl/transforms/` (subclass `Transform`, implement `apply(series, rng)`,
-register with `@register_transform`).
+The file is auto-discovered on import, the schema passes `params` through, and the engine finds the name in the registry — no other file changes. **Transforms** work identically under `src/dsl/transforms/`: subclass `Transform`, implement `apply(series, rng)`, register with `@register_transform`.
 
-The only core file ever edited after the initial build is
-`src/dsl/core/config/schema.py`, and only for a genuinely new top-level
-concept (a new `disease_cases` field, a new global setting) — with schema
-tests in the same commit.
+The only core file ever edited after the initial build is `src/dsl/core/config/schema.py`, and only for a genuinely new top-level concept (a new `disease_cases` field, a new global setting) — with schema tests in the same commit.
 
 ## Project layout
 
@@ -332,27 +298,12 @@ src/dsl/
 │   └── pipeline/          #   periods, disease model, engine, CSV output
 ├── generators/            # extension zone: one file = one variable shape
 ├── transforms/            # extension zone: one file = one series modification
-└── cli.py                 # the `dsl run` command
+└── cli.py                 # the `dsl run` / `dsl new` commands
 tests/                     # mirrors the package; conftest.py has shared fixtures
 ```
 
 ## Development
 
-Run the tests with:
+Run the tests with `uv run pytest`. The suite covers determinism (same seed → identical output), ground-truth recovery (`tests/test_ground_truth.py` proves a declared lag is recoverable), validation (broken scenarios give clear, field-specific errors), and the config→DataFrame pipeline. Add tests with each feature, in the same commit.
 
-```bash
-uv run pytest
-```
-
-The suite is layered: **determinism** tests (same seed → identical output)
-underpin the known-ground-truth claim; **ground-truth recovery**
-(`tests/test_ground_truth.py`) proves a declared driver→disease lag is
-actually recoverable from the output; **validation** tests feed broken
-scenarios and assert clear, field-specific rejections; **unit/integration**
-tests cover each component and the config→DataFrame pipeline. When adding a
-feature, add its tests in the same commit — aim for tests that would fail if
-the logic broke, not for a coverage percentage
-(`--cov-report=term-missing` is a gap-finder, not a score).
-
-Commits follow [Conventional Commits](https://www.conventionalcommits.org):
-`type(scope): description`, e.g. `feat(generators): add gusty wind generator`.
+Commits follow [Conventional Commits](https://www.conventionalcommits.org): `type(scope): description`.
