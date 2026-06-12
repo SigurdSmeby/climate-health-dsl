@@ -19,6 +19,11 @@ from pydantic import ValidationError
 
 from dsl.core.config.loader import load_yaml
 from dsl.core.config.schema import parse_config, validate_scenario
+from dsl.core.pipeline.chap_check import validate_chap
+from dsl.core.pipeline.engine import run as run_engine
+from dsl.core.pipeline.metadata import write_metadata
+from dsl.core.pipeline.output import write_output
+from dsl.core.pipeline.plot import plot_dataset
 
 
 def _load_scenario_dict(path: str) -> dict:
@@ -94,11 +99,6 @@ def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
     while (Path("out") / f"{name}_{n}").exists():
         n += 1
     return Path("out") / f"{name}_{n}"
-from dsl.core.pipeline.chap_check import validate_chap
-from dsl.core.pipeline.engine import run as run_engine
-from dsl.core.pipeline.metadata import write_metadata
-from dsl.core.pipeline.output import write_output
-from dsl.core.pipeline.plot import plot_dataset
 
 
 def main(argv: list[str] | None = None) -> int:

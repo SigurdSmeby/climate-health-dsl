@@ -145,29 +145,23 @@ def _weekly_consecutive(current: str, following: str) -> bool:
 
 
 def _period_start_date(label: str, resolution: str) -> "datetime.date":
-    """The calendar start date of a period label, for any resolution."""
+    """The calendar start date of a non-weekly period label.
+
+    Weekly labels never reach here — ``_consecutive`` routes them to
+    ``_weekly_consecutive`` instead.
+    """
     if resolution == "daily":
         return datetime.datetime.strptime(label, "%Y%m%d").date()
     if resolution == "monthly":
         year, month = int(label[:4]), int(label[5:7])
         return datetime.date(year, month, 1)
-    if resolution == "yearly":
-        return datetime.date(int(label), 1, 1)
-    # weekly: YYYY-Wnn (ISO, Monday) or YYYY-Snn (Sunday-start).
-    year, week = int(label[:4]), int(label[6:8])
-    iso_day = 7 if label[5] == "S" else 1
-    # %G-%V-%u is ISO year-week-weekday; gives that week's Monday/Sunday.
-    return datetime.datetime.strptime(
-        f"{year}-{week:02d}-{iso_day}", "%G-%V-%u"
-    ).date()
+    return datetime.date(int(label), 1, 1)  # yearly
 
 
 def _is_one_step(a: "datetime.date", b: "datetime.date", resolution: str) -> bool:
-    """True if ``b`` is exactly one period after ``a``."""
+    """True if ``b`` is exactly one non-weekly period after ``a``."""
     if resolution == "daily":
         return (b - a).days == 1
-    if resolution == "weekly":
-        return (b - a).days == 7
     if resolution == "monthly":
         # One month later, accounting for year rollover.
         months = (b.year - a.year) * 12 + (b.month - a.month)
