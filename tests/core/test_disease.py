@@ -204,7 +204,7 @@ def test_poisson_is_the_default(rng):
 
 
 def test_constant_driver_with_nan_still_blanks(rng):
-    # Bug #14: a constant driver hits _standardize's zero-variance branch,
+    # A constant driver hits _standardize's zero-variance branch,
     # which must STILL preserve the NaN mask so a missing input blanks the
     # disease row (otherwise #7's fix is bypassed for constant drivers).
     driver = np.full(10, 5.0)
@@ -216,7 +216,7 @@ def test_constant_driver_with_nan_still_blanks(rng):
 
 
 def test_zero_weight_dependency_does_not_blank(rng):
-    # Bug #23: a weight-0 dependency contributes nothing, so its lag warm-up
+    # A weight-0 dependency contributes nothing, so its lag warm-up
     # must NOT blank disease rows. Compare to the same scenario at lag 0.
     driver = np.arange(12, dtype=float) + 1.0
     drivers = {"rainfall": driver}
@@ -239,7 +239,7 @@ def test_zero_weight_missing_driver_does_not_blank(rng):
 
 
 def test_nan_covariate_blanks_disease_cases(rng):
-    # Bug #7: a missing (NaN) driver value at period t must blank disease_cases
+    # A missing (NaN) driver value at period t must blank disease_cases
     # at t — you can't compute a known signal from a missing input. Previously
     # the NaN was nan_to_num'd to the mean, fabricating a confident count.
     driver = np.arange(10, dtype=float) + 1.0
@@ -265,7 +265,7 @@ def test_nan_covariate_blanks_after_lag(rng):
 
 
 def test_extreme_weight_no_overflow_warning(rng):
-    # Bug #6: a huge weight made np.exp overflow and warn, even though the
+    # A huge weight made np.exp overflow and warn, even though the
     # output is fine (the sigmoid saturates). No warning should leak.
     import warnings
 

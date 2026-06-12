@@ -107,7 +107,7 @@ def test_multi_location_split_is_per_location(tmp_path):
 
 
 def test_rerun_without_split_removes_stale_train_test(tmp_path):
-    # Bug #25: a directory first used with train_fraction, then reused without
+    # A directory first used with train_fraction, then reused without
     # it, must not keep the old train.csv/test.csv beside the new full dataset.
     split = make_config(train_fraction=0.8)
     write_output(run(split), split, tmp_path)

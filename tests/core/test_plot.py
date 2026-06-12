@@ -62,7 +62,7 @@ def test_varying_population_is_plotted():
 
 
 def test_constant_per_location_population_not_plotted():
-    # Bug #37: two locations with different but individually CONSTANT
+    # Two locations with different but individually CONSTANT
     # populations must not get a population panel (it doesn't vary over time).
     df = pd.DataFrame({
         "time_period": ["2000-01", "2000-02"] * 2,

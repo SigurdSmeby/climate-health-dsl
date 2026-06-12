@@ -52,7 +52,7 @@ def test_scales_to_monthly_resolution(rng):
 
 
 def test_explicit_center_beyond_one_cycle_wraps(rng):
-    # Bug #35: a center >= ppy must wrap (24 on monthly == month 0), so the
+    # A center >= ppy must wrap (24 on monthly == month 0), so the
     # spike actually reaches its configured peak.
     gen = SeasonalSpikeGenerator(
         baseline=0, spike_height=1, spike_center=24, spike_width=0.5, noise=0
@@ -63,7 +63,7 @@ def test_explicit_center_beyond_one_cycle_wraps(rng):
 
 
 def test_monthly_default_reaches_its_peak(rng):
-    # Bug #35: with the default center, a monthly series must still actually
+    # With the default center, a monthly series must still actually
     # reach baseline+spike_height somewhere (it previously topped out below).
     gen = SeasonalSpikeGenerator(noise=0)
     series = gen.generate(12, "monthly", rng)

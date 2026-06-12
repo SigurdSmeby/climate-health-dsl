@@ -53,7 +53,7 @@ def test_metadata_records_generators():
 
 
 def test_flattened_metadata_includes_count_distribution():
-    # Bug #38: the flattened disease summary must record the count
+    # The flattened disease summary must record the count
     # distribution and overdispersion, not only the nested scenario.
     config = parse_config(
         {

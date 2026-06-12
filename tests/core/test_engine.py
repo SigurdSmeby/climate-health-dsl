@@ -152,7 +152,7 @@ def test_unknown_generator_name_raises_with_available():
 
 
 def test_unknown_generator_param_clear_error():
-    # Bug #8: an unexpected generator param should give a clear message naming
+    # An unexpected generator param should give a clear message naming
     # the variable, generator, and bad param — not a raw Python TypeError.
     config = parse_config(
         {
@@ -266,7 +266,7 @@ def test_locations_get_different_draws():
 
 
 def test_adding_decoy_variable_does_not_change_disease():
-    # Bug #24: adding an unused decoy covariate must NOT change the disease
+    # Adding an unused decoy covariate must NOT change the disease
     # signal or the real driver — components must have independent RNG streams.
     base = {
         "period": "monthly", "n_total": 24, "seed": 42,
@@ -285,7 +285,7 @@ def test_adding_decoy_variable_does_not_change_disease():
 
 
 def test_reordering_variables_does_not_change_their_values():
-    # Bug #24: a variable's values depend on its name, not its position.
+    # A variable's values depend on its name, not its position.
     a = {
         "period": "monthly", "n_total": 12, "seed": 1,
         "variables": [{"name": "x", "generate": "flat"},
@@ -300,7 +300,7 @@ def test_reordering_variables_does_not_change_their_values():
 
 
 def test_population_from_csv_honors_start_period(tmp_path):
-    # Bug #15: a from_csv population must align to the scenario start_period,
+    # A from_csv population must align to the scenario start_period,
     # not read from the CSV's row 0.
     csv = write_csv(
         tmp_path / "pop.csv", [f"2010-{m:02d}" for m in range(1, 5)],
@@ -322,7 +322,7 @@ def test_population_from_csv_honors_start_period(tmp_path):
 
 
 def test_population_from_csv_with_nan_errors(tmp_path):
-    # Bug #18: a missing generated-population value must raise a clear error,
+    # A missing generated-population value must raise a clear error,
     # not crash inside numpy/Poisson.
     csv = write_csv(
         tmp_path / "popnan.csv", ["2010-01", "2010-02", "2010-03"],

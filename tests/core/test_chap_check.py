@@ -130,8 +130,6 @@ def test_non_numeric_covariate_flagged():
     assert any("rainfall" in f and "numeric" in f for f in findings)
 
 
-# --- Round 4/5 chap_check fixes (#21, #32, #33, #31) ---
-
 
 def _frame(periods):
     return pd.DataFrame({
@@ -143,7 +141,7 @@ def _frame(periods):
 
 
 def test_daily_gap_flagged():
-    # Bug #21: daily consecutiveness must be checked.
+    # Daily consecutiveness must be checked.
     findings = validate_chap(_frame(["20000101", "20000103"]))
     assert any("consecutive" in f for f in findings)
 
@@ -162,7 +160,7 @@ def test_yearly_consecutive_ok():
 
 
 def test_string_disease_cases_does_not_crash():
-    # Bug #32: validate_chap must never raise, even on a string target.
+    # Validate_chap must never raise, even on a string target.
     df = pd.DataFrame({
         "time_period": ["2000-01", "2000-02"],
         "location": ["x", "x"],
@@ -174,12 +172,12 @@ def test_string_disease_cases_does_not_crash():
 
 
 def test_sunday_weeks_not_falsely_flagged():
-    # Bug #33: YYYY-Snn is a valid CHAP form; consecutive S-weeks are fine.
+    # YYYY-Snn is a valid CHAP form; consecutive S-weeks are fine.
     assert validate_chap(_frame(["2000-S01", "2000-S02", "2000-S03"])) == []
 
 
 def test_week_53_not_falsely_flagged():
-    # Bug #33: week 53 exists in some years and must not be flagged.
+    # Week 53 exists in some years and must not be flagged.
     assert validate_chap(_frame(["2020-W52", "2020-W53", "2021-W01"])) == []
 
 
@@ -208,7 +206,7 @@ def test_year_boundary_week_gaps_still_flagged():
 
 
 def test_infinite_covariate_flagged():
-    # Bug #31: an infinite covariate value is not CHAP-valid data.
+    # An infinite covariate value is not CHAP-valid data.
     df = _frame(["2000-01", "2000-02"])
     df.loc[0, "rainfall"] = np.inf
     findings = validate_chap(df)

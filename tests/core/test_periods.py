@@ -96,7 +96,7 @@ def test_parse_period_values():
 
 
 def test_parse_period_date_range_week_gives_helpful_error():
-    # Bug #5: CHAP's date-range weekly form is valid in a CSV but is NOT a
+    # CHAP's date-range weekly form is valid in a CSV but is NOT a
     # usable start_period label here (the DSL's canonical weekly form is
     # YYYY-Wnn). The error must say so, not just "invalid".
     with pytest.raises(ValueError, match="YYYY-Wnn"):

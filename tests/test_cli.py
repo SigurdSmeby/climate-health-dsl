@@ -99,7 +99,7 @@ def test_chap_finding_warns_but_succeeds(tmp_path, capsys):
 
 
 def test_relative_from_csv_path_resolves_to_scenario_dir(tmp_path, monkeypatch):
-    # Bug #29: a from_csv path relative to the scenario file must work even
+    # A from_csv path relative to the scenario file must work even
     # when dsl is launched from a different directory.
     exp = tmp_path / "experiment"
     exp.mkdir()
@@ -123,7 +123,7 @@ def test_relative_from_csv_path_resolves_to_scenario_dir(tmp_path, monkeypatch):
 
 
 def test_generation_error_is_clean_cli_error(tmp_path, capsys):
-    # Bug #19: an invalid generator param surfaces during generation, after
+    # An invalid generator param surfaces during generation, after
     # the schema passes. The CLI must print 'error:' and exit 1, not dump a
     # traceback.
     data = {

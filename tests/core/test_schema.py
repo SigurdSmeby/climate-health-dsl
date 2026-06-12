@@ -120,7 +120,7 @@ def test_overdispersion_must_be_positive():
     ],
 )
 def test_period_range_past_year_9999_rejected(period, start, n):
-    # Bug #36: a range that crosses past year 9999 crashes or emits 5-digit
+    # A range that crosses past year 9999 crashes or emits 5-digit
     # labels; reject it at the schema.
     data = make_config_dict(period=period, n_total=n, start_period=start)
     data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 0}]
@@ -129,7 +129,7 @@ def test_period_range_past_year_9999_rejected(period, start, n):
 
 
 def test_seasonal_phase_warns_with_start_period():
-    # Bug #16 (documented limitation): a mid-year start_period only relabels;
+    # A mid-year start_period only relabels;
     # seasonal phase still begins at the cycle start. Warn so it's not a
     # silent surprise.
     data = make_config_dict(period="monthly", start_period="2010-07")
@@ -138,7 +138,7 @@ def test_seasonal_phase_warns_with_start_period():
 
 
 def test_negative_seed_rejected():
-    # Bug #30: numpy needs a non-negative seed; reject it at the schema.
+    # Numpy needs a non-negative seed; reject it at the schema.
     with pytest.raises(ValidationError, match="seed"):
         parse_config(make_config_dict(seed=-1))
 
@@ -149,7 +149,7 @@ def test_zero_seed_ok():
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
 def test_non_finite_weight_rejected(bad):
-    # Bug #17: NaN/Inf in a float config field must be rejected.
+    # NaN/Inf in a float config field must be rejected.
     data = make_config_dict()
     data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "weight": bad}]
     with pytest.raises(ValidationError):
@@ -157,7 +157,7 @@ def test_non_finite_weight_rejected(bad):
 
 
 def test_empty_variable_name_rejected():
-    # Bug #20: blank/whitespace variable names create unnamed columns.
+    # Blank/whitespace variable names create unnamed columns.
     data = make_config_dict()
     data["variables"] = [{"name": "  ", "generate": "seasonal_spike"}]
     data["disease_cases"]["depends_on"] = [{"variable": "  ", "lag": 1}]
@@ -173,7 +173,7 @@ def test_empty_location_name_rejected():
 
 
 def test_train_fraction_yielding_empty_train_rejected():
-    # Bug #22: floor(n_total * fraction) == 0 means an empty train split.
+    # Floor(n_total * fraction) == 0 means an empty train split.
     with pytest.raises(ValidationError, match="train"):
         parse_config(make_config_dict(n_total=2, train_fraction=0.1))
 
@@ -198,7 +198,7 @@ def test_lag_at_least_n_total_raises():
     "reserved", ["time_period", "location", "disease_cases", "population"]
 )
 def test_variable_named_like_reserved_column_rejected(reserved):
-    # Bug #1: a variable whose name collides with a built-in output column
+    # A variable whose name collides with a built-in output column
     # would silently overwrite it. Must be a hard error.
     data = make_config_dict()
     data["variables"] = [{"name": reserved, "generate": "seasonal_spike"}]
@@ -208,7 +208,7 @@ def test_variable_named_like_reserved_column_rejected(reserved):
 
 
 def test_duplicate_variable_names_rejected():
-    # Bug #4: two variables with the same name silently collide (one is lost).
+    # Two variables with the same name silently collide (one is lost).
     data = make_config_dict()
     data["variables"] = [
         {"name": "rainfall", "generate": "seasonal_spike"},
@@ -387,7 +387,7 @@ def test_clean_config_has_no_warnings():
 
 
 def test_from_csv_fixed_source_with_multi_location_warns():
-    # Bug #3: a from_csv variable pinned to one source_location, but the
+    # A from_csv variable pinned to one source_location, but the
     # scenario has several locations, means every location gets the SAME real
     # series. Warn (it's legal but usually a surprise).
     data = make_config_dict()
@@ -421,7 +421,7 @@ def test_from_csv_multi_location_without_source_no_warning():
 
 
 def test_lag_consuming_whole_train_split_warns():
-    # Bug #34: if max lag >= the training periods, every train target is
+    # If max lag >= the training periods, every train target is
     # warm-up NaN — warn that training has no observed cases.
     data = make_config_dict(n_total=10, train_fraction=0.8)
     data["disease_cases"]["depends_on"] = [{"variable": "rainfall", "lag": 8}]
