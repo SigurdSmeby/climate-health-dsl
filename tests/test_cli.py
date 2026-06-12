@@ -3,6 +3,7 @@ import pandas as pd
 import yaml
 
 from dsl.cli import main
+from tests.conftest import scenario_dict as base_scenario
 
 EXAMPLE = "examples/basic_scenario.yaml"
 
@@ -11,25 +12,6 @@ def write_scenario(tmp_path, data):
     path = tmp_path / "scenario.yaml"
     path.write_text(yaml.safe_dump(data))
     return path
-
-
-def base_scenario():
-    return {
-        "period": "weekly",
-        "n_total": 78,
-        "seed": 42,
-        "variables": [
-            {"name": "rainfall", "generate": "seasonal_spike"},
-            {"name": "mean_temperature", "generate": "seasonal_smooth"},
-        ],
-        "disease_cases": {
-            "population": 100_000,
-            "depends_on": [
-                {"variable": "rainfall", "lag": 3, "weight": 2.0},
-                {"variable": "mean_temperature", "lag": 3, "weight": 1.0},
-            ],
-        },
-    }
 
 
 def test_example_scenario_runs_and_writes_files(tmp_path, capsys):

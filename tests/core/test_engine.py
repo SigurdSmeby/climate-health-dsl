@@ -5,6 +5,7 @@ import pytest
 
 from dsl.core.config.schema import parse_config
 from dsl.core.pipeline.engine import run
+from tests.conftest import write_csv
 
 
 @pytest.fixture
@@ -301,11 +302,10 @@ def test_reordering_variables_does_not_change_their_values():
 def test_population_from_csv_honors_start_period(tmp_path):
     # Bug #15: a from_csv population must align to the scenario start_period,
     # not read from the CSV's row 0.
-    csv = tmp_path / "pop.csv"
-    pd.DataFrame(
-        {"time_period": [f"2010-{m:02d}" for m in range(1, 5)],
-         "pop": [100, 200, 300, 400]}
-    ).to_csv(csv, index=False)
+    csv = write_csv(
+        tmp_path / "pop.csv", [f"2010-{m:02d}" for m in range(1, 5)],
+        pop=[100, 200, 300, 400],
+    )
     config = parse_config(
         {
             "period": "monthly", "n_total": 2, "start_period": "2010-03",
@@ -324,10 +324,10 @@ def test_population_from_csv_honors_start_period(tmp_path):
 def test_population_from_csv_with_nan_errors(tmp_path):
     # Bug #18: a missing generated-population value must raise a clear error,
     # not crash inside numpy/Poisson.
-    csv = tmp_path / "popnan.csv"
-    pd.DataFrame(
-        {"time_period": ["2010-01", "2010-02", "2010-03"], "pop": [100.0, float("nan"), 100.0]}
-    ).to_csv(csv, index=False)
+    csv = write_csv(
+        tmp_path / "popnan.csv", ["2010-01", "2010-02", "2010-03"],
+        pop=[100.0, float("nan"), 100.0],
+    )
     config = parse_config(
         {
             "period": "monthly", "n_total": 3, "start_period": "2010-01",
@@ -345,16 +345,12 @@ def test_population_from_csv_with_nan_errors(tmp_path):
 
 def _multi_loc_csv(tmp_path):
     """A CSV with two locations whose rows differ, 12 monthly periods each."""
-    csv = tmp_path / "multi.csv"
     periods = [f"2010-{m:02d}" for m in range(1, 13)]
-    pd.DataFrame(
-        {
-            "time_period": periods * 2,
-            "rainfall": list(range(12)) + list(range(100, 112)),
-            "location": ["north"] * 12 + ["south"] * 12,
-        }
-    ).to_csv(csv, index=False)
-    return csv
+    return write_csv(
+        tmp_path / "multi.csv", periods * 2,
+        rainfall=list(range(12)) + list(range(100, 112)),
+        location=["north"] * 12 + ["south"] * 12,
+    )
 
 
 def test_from_csv_auto_matches_each_location(tmp_path):
@@ -420,11 +416,10 @@ def test_from_csv_unmatched_location_errors(tmp_path):
 def test_from_csv_single_location_csv_unaffected(tmp_path):
     # A CSV with one location (or none) feeds all output locations the same
     # series, as before — auto-match only applies to multi-location CSVs.
-    csv = tmp_path / "one.csv"
-    pd.DataFrame(
-        {"time_period": [f"2010-{m:02d}" for m in range(1, 13)],
-         "rainfall": list(range(12))}
-    ).to_csv(csv, index=False)
+    csv = write_csv(
+        tmp_path / "one.csv", [f"2010-{m:02d}" for m in range(1, 13)],
+        rainfall=list(range(12)),
+    )
     config = parse_config(
         {
             "period": "monthly", "n_total": 12, "start_period": "2010-01",
@@ -564,16 +559,13 @@ def test_generated_population_reproducible():
 
 
 def test_start_period_aligns_from_csv_data(tmp_path):
-    # Bug #2: with a scenario start_period and a from_csv variable, the output
-    # labels must match the real values read from the CSV — not label row 0
-    # as a later date. CSV: 2010-01..2010-06 with rainfall 1..6.
-    csv = tmp_path / "real.csv"
-    pd.DataFrame(
-        {
-            "time_period": [f"2010-{m:02d}" for m in range(1, 7)],
-            "rainfall": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        }
-    ).to_csv(csv, index=False)
+    # With a scenario start_period, a from_csv variable's values must align to
+    # the output labels — the row labelled start_period holds that period's
+    # real value, not the CSV's first row.
+    csv = write_csv(
+        tmp_path / "real.csv", [f"2010-{m:02d}" for m in range(1, 7)],
+        rainfall=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+    )
     config = parse_config(
         {
             "period": "monthly",

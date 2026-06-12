@@ -4,38 +4,28 @@ import pandas as pd
 import pytest
 
 from dsl.generators.from_csv import FromCsvGenerator
+from tests.conftest import write_csv
 
 
 @pytest.fixture
 def csv_file(tmp_path):
     """A small single-location CHAP-format CSV (24 monthly periods)."""
     periods = [f"{2010 + i // 12}-{i % 12 + 1:02d}" for i in range(24)]
-    df = pd.DataFrame(
-        {
-            "time_period": periods,
-            "rainfall": np.arange(24, dtype=float),
-            "mean_temperature": 20.0,
-        }
+    return write_csv(
+        tmp_path / "real.csv", periods,
+        rainfall=np.arange(24, dtype=float), mean_temperature=20.0,
     )
-    path = tmp_path / "real.csv"
-    df.to_csv(path, index=False)
-    return path
 
 
 @pytest.fixture
 def multi_location_csv(tmp_path):
     """A CHAP-format CSV with two locations, 12 monthly periods each."""
     periods = [f"2010-{m + 1:02d}" for m in range(12)]
-    df = pd.DataFrame(
-        {
-            "time_period": periods * 2,
-            "rainfall": list(range(12)) + list(range(100, 112)),
-            "location": ["north"] * 12 + ["south"] * 12,
-        }
+    return write_csv(
+        tmp_path / "multi.csv", periods * 2,
+        rainfall=list(range(12)) + list(range(100, 112)),
+        location=["north"] * 12 + ["south"] * 12,
     )
-    path = tmp_path / "multi.csv"
-    df.to_csv(path, index=False)
-    return path
 
 
 def test_values_pass_through_unchanged(csv_file, rng):

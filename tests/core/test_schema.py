@@ -14,27 +14,7 @@ from dsl.core.config.schema import (
     validate_scenario,
 )
 
-
-def make_config_dict(**overrides) -> dict:
-    """A minimal valid scenario dict; tests tweak it via keyword overrides."""
-    data = {
-        "period": "weekly",
-        "n_total": 78,
-        "seed": 42,
-        "variables": [
-            {"name": "rainfall", "generate": "seasonal_spike"},
-            {"name": "mean_temperature", "generate": "seasonal_smooth"},
-        ],
-        "disease_cases": {
-            "population": 100_000,
-            "depends_on": [
-                {"variable": "rainfall", "lag": 3, "weight": 2.0},
-                {"variable": "mean_temperature", "lag": 3, "weight": 1.0},
-            ],
-        },
-    }
-    data.update(overrides)
-    return data
+from tests.conftest import scenario_dict as make_config_dict
 
 
 # ---------------------------------------------------------------- hard errors

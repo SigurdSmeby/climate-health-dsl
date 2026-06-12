@@ -4,28 +4,12 @@ import pandas as pd
 from dsl.core.config.schema import parse_config
 from dsl.core.pipeline.engine import run
 from dsl.core.pipeline.output import write_output
+from tests.conftest import scenario_dict
 
 
 def make_config(train_fraction=None):
-    data = {
-        "period": "weekly",
-        "n_total": 78,
-        "seed": 42,
-        "variables": [
-            {"name": "rainfall", "generate": "seasonal_spike"},
-            {"name": "mean_temperature", "generate": "seasonal_smooth"},
-        ],
-        "disease_cases": {
-            "population": 100_000,
-            "depends_on": [
-                {"variable": "rainfall", "lag": 3, "weight": 2.0},
-                {"variable": "mean_temperature", "lag": 3, "weight": 1.0},
-            ],
-        },
-    }
-    if train_fraction is not None:
-        data["train_fraction"] = train_fraction
-    return parse_config(data)
+    overrides = {} if train_fraction is None else {"train_fraction": train_fraction}
+    return parse_config(scenario_dict(**overrides))
 
 
 def test_writes_only_full_csv_without_train_fraction(tmp_path):
