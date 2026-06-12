@@ -5,7 +5,6 @@ from dsl.core.config.loader import load_yaml
 
 
 def test_loads_valid_yaml(tmp_path):
-    # tmp_path is a pytest built-in fixture: a fresh temporary directory per test.
     path = tmp_path / "scenario.yaml"
     path.write_text("period: weekly\nn_total: 78\n")
     data = load_yaml(path)

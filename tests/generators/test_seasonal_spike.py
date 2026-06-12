@@ -63,8 +63,8 @@ def test_explicit_center_beyond_one_cycle_wraps(rng):
 
 
 def test_monthly_default_reaches_its_peak(rng):
-    # With the default center, a monthly series must still actually
-    # reach baseline+spike_height somewhere (it previously topped out below).
+    # With the default center, a monthly series must reach
+    # baseline+spike_height somewhere.
     gen = SeasonalSpikeGenerator(noise=0)
     series = gen.generate(12, "monthly", rng)
     assert series.max() == pytest.approx(

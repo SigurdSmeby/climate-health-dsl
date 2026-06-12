@@ -127,7 +127,6 @@ def test_works_with_bundled_laos_data(rng):
     assert series[0] == pytest.approx(37.965)
 
 
-
 def test_from_csv_unsorted_periods_are_sorted(tmp_path, rng):
     # Rows out of time order must be sorted by period before slicing,
     # so values map to the right periods (not file order).
@@ -240,3 +239,24 @@ def test_from_csv_infinite_value_rejected(tmp_path, rng):
     gen = FromCsvGenerator(file=str(csv), column="rainfall")
     with pytest.raises(ValueError, match="finite|infinite|rainfall"):
         gen.generate(3, "monthly", rng)
+
+
+def test_from_csv_daily_consecutive_ok(tmp_path, rng):
+    # Daily data with no gaps passes (exercises the daily date-based check).
+    csv = write_csv(
+        tmp_path / "daily.csv", ["20100101", "20100102", "20100103"],
+        rainfall=[1.0, 2.0, 3.0],
+    )
+    gen = FromCsvGenerator(file=str(csv), column="rainfall")
+    assert list(gen.generate(3, "daily", rng)) == [1.0, 2.0, 3.0]
+
+
+def test_from_csv_daily_gap_rejected(tmp_path, rng):
+    # A missing day must be rejected (handles month/leap boundaries via dates).
+    csv = write_csv(
+        tmp_path / "dailygap.csv", ["20100101", "20100103"],
+        rainfall=[1.0, 3.0],
+    )
+    gen = FromCsvGenerator(file=str(csv), column="rainfall")
+    with pytest.raises(ValueError, match="gap|consecutive"):
+        gen.generate(2, "daily", rng)

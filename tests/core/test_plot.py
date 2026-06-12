@@ -61,6 +61,17 @@ def test_varying_population_is_plotted():
     assert "population" in _series_columns(df)
 
 
+def test_varying_population_plotted_without_location_column():
+    # A frame with no location column: population varies → plotted.
+    df = pd.DataFrame({
+        "time_period": ["2000-01", "2000-02", "2000-03"],
+        "rainfall": [1.0, 2.0, 3.0],
+        "disease_cases": [1.0, 2.0, 3.0],
+        "population": [100, 110, 120],
+    })
+    assert "population" in _series_columns(df)
+
+
 def test_constant_per_location_population_not_plotted():
     # Two locations with different but individually CONSTANT
     # populations must not get a population panel (it doesn't vary over time).

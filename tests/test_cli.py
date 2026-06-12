@@ -3,7 +3,7 @@ import pandas as pd
 import yaml
 
 from dsl.cli import main
-from tests.conftest import scenario_dict as base_scenario
+from tests.conftest import scenario_dict as base_scenario, write_csv
 
 EXAMPLE = "examples/basic_scenario.yaml"
 
@@ -120,6 +120,62 @@ def test_relative_from_csv_path_resolves_to_scenario_dir(tmp_path, monkeypatch):
     code = main(["run", str(exp / "scenario.yaml"), "-o", str(out)])
     assert code == 0
     assert (out / "simulated_data.csv").is_file()
+
+
+def test_relative_from_csv_population_path_resolves(tmp_path, monkeypatch):
+    # A relative from_csv path also resolves for a top-level generated
+    # POPULATION when launched from elsewhere.
+    exp = tmp_path / "experiment"
+    exp.mkdir()
+    write_csv(exp / "clim.csv", ["2010-01", "2010-02", "2010-03"],
+              rainfall=[1.0, 2.0, 3.0])
+    write_csv(exp / "pop.csv", ["2010-01", "2010-02", "2010-03"],
+              pop=[1000, 1100, 1200])
+    scenario = {
+        "period": "monthly", "n_total": 3, "start_period": "2010-01",
+        "variables": [{"name": "rainfall", "generate": "from_csv",
+                       "params": {"file": "clim.csv", "column": "rainfall"}}],
+        "disease_cases": {
+            "population": {"generate": "from_csv",
+                           "params": {"file": "pop.csv", "column": "pop"}},
+            "depends_on": [{"variable": "rainfall"}],
+        },
+    }
+    (exp / "scenario.yaml").write_text(yaml.safe_dump(scenario))
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "out"
+    code = main(["run", str(exp / "scenario.yaml"), "-o", str(out)])
+    assert code == 0
+    df = pd.read_csv(out / "simulated_data.csv")
+    assert df["population"].tolist() == [1000, 1100, 1200]
+
+
+def test_relative_from_csv_per_location_population_path_resolves(tmp_path, monkeypatch):
+    # A relative from_csv path resolves for a PER-LOCATION population too,
+    # when the scenario uses the locations mapping form.
+    exp = tmp_path / "experiment"
+    exp.mkdir()
+    write_csv(exp / "clim.csv", ["2010-01", "2010-02", "2010-03"],
+              rainfall=[1.0, 2.0, 3.0])
+    write_csv(exp / "pop.csv", ["2010-01", "2010-02", "2010-03"],
+              pop=[2000, 2100, 2200])
+    scenario = {
+        "period": "monthly", "n_total": 3, "start_period": "2010-01",
+        "locations": {
+            "north": {"population": {"generate": "from_csv",
+                                     "params": {"file": "pop.csv", "column": "pop"}}},
+        },
+        "variables": [{"name": "rainfall", "generate": "from_csv",
+                       "params": {"file": "clim.csv", "column": "rainfall"}}],
+        "disease_cases": {"depends_on": [{"variable": "rainfall"}]},
+    }
+    (exp / "scenario.yaml").write_text(yaml.safe_dump(scenario))
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "out"
+    code = main(["run", str(exp / "scenario.yaml"), "-o", str(out)])
+    assert code == 0
+    df = pd.read_csv(out / "simulated_data.csv")
+    assert df["population"].tolist() == [2000, 2100, 2200]
 
 
 def test_generation_error_is_clean_cli_error(tmp_path, capsys):
