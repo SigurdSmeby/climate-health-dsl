@@ -212,7 +212,11 @@ def _write_starter(path: Path, force: bool) -> int:
         )
         return 1
     path.write_text(STARTER_TEMPLATE)
-    print(f"Wrote a starter scenario to {path} — edit it, then: dsl run {path}")
+    print(
+        f"Wrote a starter scenario to {path}. Run it live with:\n"
+        f"  uv run dsl run {path} --plot --watch\n"
+        f"then edit the file and save to see the data update."
+    )
     return 0
 
 

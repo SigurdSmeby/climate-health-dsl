@@ -45,15 +45,15 @@ uv pip install -e ".[dev]"
 **1. Scaffold a starter.** Writes a small, commented scenario:
 
 ```bash
-dsl new my_scenario.yaml
+uv run dsl new my_scenario.yaml
 ```
 
-(Prefer to start from a finished example? `examples/` has several ready to run, e.g. `dsl run examples/basic_scenario.yaml`.)
+(Prefer to start from a finished example? `examples/` has several ready to run, e.g. `uv run dsl run examples/basic_scenario.yaml`.)
 
 **2. Run it and look.** `--plot` writes an interactive `plot.html`; `--watch` re-runs every time you save the file:
 
 ```bash
-dsl run my_scenario.yaml --plot --watch
+uv run dsl run my_scenario.yaml --plot --watch
 ```
 
 Together they open a browser tab served from `localhost` that **reloads itself** whenever you save the scenario — edit, save, watch the plot update live, no manual refresh. (Drop `--watch` for a one-shot run; it just writes `plot.html`.)
@@ -76,7 +76,7 @@ disease_cases:
     - { variable: mean_temperature, lag: 2 }   # ...and a second driver
 ```
 
-**5. Go real.** Swap a synthetic generator for `from_csv` to drive disease off *real* climate (a bundled three-province Laos sample lives in `examples/data/`):
+**5. Use real climate data.** Swap a synthetic generator for `from_csv` to drive disease off *real* climate (a bundled three-province Laos sample lives in `examples/data/`):
 
 ```yaml
 variables:
@@ -85,7 +85,13 @@ variables:
     params: { file: examples/data/laos_subset.csv, column: rainfall }
 ```
 
-The reference below documents every field; `examples/real_data_demo/` has five worked scenarios with pre-generated output to compare against.
+**6. Explore the worked examples.** `examples/` has ready-to-run scenarios, and `examples/real_data_demo/` has five fuller ones (real, synthetic, and mixed) — each with pre-generated output and a `README` explaining what it shows. A good next step after your first scenario:
+
+```bash
+uv run dsl run examples/real_data_demo/01_vietnam_multiprovince.yaml --plot
+```
+
+The reference below documents every field.
 
 ## Output files
 
