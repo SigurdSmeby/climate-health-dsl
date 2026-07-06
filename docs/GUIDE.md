@@ -157,7 +157,7 @@ A low baseline with a pronounced, smooth Gaussian spike peaking at the same poin
 |---|---|---|
 | `baseline` | `2.0` | The value far from the spike (dry-season level). |
 | `spike_height` | `20.0` | How far above the baseline the peak rises. |
-| `spike_center` | `26` | Period offset of the peak within the year (26 ≈ mid-year for weekly data). |
+| `spike_center` | mid-year | Period offset of the peak within the year. Unset → the middle of the year for the resolution (26 for weekly, 6 for monthly, etc.). |
 | `spike_width` | `4.0` | Width of the spike, in periods (> 0). |
 | `noise` | `0.5` | Std. dev. of added Gaussian noise; `0` makes the series fully deterministic. |
 | `clamp_min` | unset | Floor for the values — set `0` for quantities like rainfall that can't be negative. |
