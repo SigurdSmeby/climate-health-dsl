@@ -141,9 +141,21 @@ def _run_one_location(config: ScenarioConfig, location: str) -> pd.DataFrame:
                     params["source_location"] = location
         generator = _build_generator(spec.generate, params, spec.name)
         var_rng = _child_rng(seed, location, "variable", spec.name)
-        drivers[spec.name] = generator.generate(
-            config.n_total, config.period, var_rng
-        )
+        own = generator.generate(config.n_total, config.period, var_rng)
+        if spec.shared:
+            # Latent regional driver: a second component generated from a
+            # location-INDEPENDENT stream (same for every location), mixed in by
+            # `shared`. The sqrt weights keep the total variance ~constant, so
+            # turning sharing up doesn't just scale the series. shared=1 → the
+            # own component drops out and every location gets the same signal;
+            # shared=0 never reaches here (kept byte-identical to the old path).
+            shared_rng = _child_rng(seed, "shared", "variable", spec.name)
+            shared_series = generator.generate(
+                config.n_total, config.period, shared_rng
+            )
+            s = spec.shared
+            own = np.sqrt(1.0 - s) * own + np.sqrt(s) * shared_series
+        drivers[spec.name] = own
 
     # This location's population as a per-period array (its override or the
     # default; constant or a generated trajectory), threaded into the disease

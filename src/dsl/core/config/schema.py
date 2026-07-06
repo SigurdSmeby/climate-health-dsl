@@ -71,6 +71,11 @@ class VariableSpec(BaseModel):
     name: str = Field(min_length=1)
     generate: str
     params: dict = Field(default_factory=dict)
+    # Fraction of this variable's signal shared across all locations (a latent
+    # regional driver). 0/None → each location independent (default). 1 →
+    # identical across locations. In between → correlated. See the engine's
+    # variance-preserving mix.
+    shared: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
     def _name_not_blank(self) -> "VariableSpec":
