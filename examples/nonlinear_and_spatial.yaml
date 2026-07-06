@@ -1,0 +1,41 @@
+# Showcases the nonlinear / distributed-lag / spatial / extreme-event features.
+# Two provinces share a latent rainfall driver (a regional climate), rainfall
+# affects disease only above a threshold and over a spread of lags, and an
+# outbreak-shock covariate injects rare spikes.
+#
+#   uv run dsl run examples/nonlinear_and_spatial.yaml --plot
+#   uv run dsl run examples/nonlinear_and_spatial.yaml -o out/study --replicates 10
+period: weekly
+n_total: 156          # 3 years
+seed: 7
+train_fraction: 0.8
+locations: [north, south]
+
+variables:
+  - name: rainfall
+    generate: seasonal_spike
+    params: { spike_height: 30, clamp_min: 0 }
+    shared: 0.85        # 85% of the rainfall signal is a shared regional driver,
+                        # so north and south move together (a latent confounder)
+
+  - name: heatwaves     # rare extreme events, distinct from the seasonal shape
+    generate: outbreak_shocks
+    params: { baseline: 20, rate: 2.0, magnitude: 8, duration: 2 }
+
+disease_cases:
+  population: 300000
+  median_rate: 0.1
+  max_rate: 0.4
+  count_distribution: negative_binomial   # overdispersed, spikier counts
+  overdispersion: 8.0
+  depends_on:
+    - variable: rainfall
+      weight: 3.0
+      transforms:
+        # Disease responds to rainfall only above a threshold (nonlinear) ...
+        - { name: threshold, params: { mode: hinge, threshold: 5.0 } }
+        # ... and the effect is spread across the following few weeks (distributed lag).
+        - { name: distributed_lag, params: { weights: [0.4, 0.3, 0.2, 0.1] } }
+    - variable: heatwaves
+      lag: 1
+      weight: 1.5
