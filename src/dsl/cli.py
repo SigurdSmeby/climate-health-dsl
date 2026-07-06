@@ -218,14 +218,24 @@ def _write_starter(path: Path, force: bool) -> int:
     return 0
 
 
-def _run_once(scenario: str, out_dir: Path, plot: bool, plot_format: str) -> int:
+def _run_once(
+    scenario: str,
+    out_dir: Path,
+    plot: bool,
+    plot_format: str,
+    seed_override: int | None = None,
+) -> int:
     """Parse → generate → write (and optionally plot) one scenario.
 
     Returns a process exit code. Shared by the one-shot path and ``--watch``.
+    ``seed_override`` replaces the scenario's seed (used for replicates), so the
+    written metadata records the actual seed and stays reproducible.
     """
     # --- Parse + validate. Any hard error exits here, before generating. ---
     try:
         config = parse_config(_load_scenario_dict(scenario))
+        if seed_override is not None:
+            config = config.model_copy(update={"seed": seed_override})
     except (FileNotFoundError, ValueError, ValidationError) as exc:
         # Print to stderr (the conventional stream for errors) and return a
         # non-zero code so scripts and CI notice the failure.
@@ -438,6 +448,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="skip the continue prompt; always write a fresh auto-named folder",
     )
+    run_parser.add_argument(
+        "--replicates",
+        "-n",
+        type=int,
+        default=1,
+        help=(
+            "generate N replicates with seeds base, base+1, … into rep_00/, "
+            "rep_01/, … (each independently reproducible). Default 1 = a single "
+            "run written directly to the output folder."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.command == "new":
@@ -452,6 +473,29 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         out_dir = _resolve_out_dir(args.scenario, args.out_dir)
+
+    if args.replicates < 1:
+        print("error: --replicates must be >= 1", file=sys.stderr)
+        return 1
+    if args.replicates > 1:
+        if args.watch:
+            print("error: --watch cannot be combined with --replicates", file=sys.stderr)
+            return 1
+        # Read the base seed once so replicate i can use base + i.
+        try:
+            base_seed = parse_config(_load_scenario_dict(args.scenario)).seed
+        except (FileNotFoundError, ValueError, ValidationError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        for i in range(args.replicates):
+            rep_dir = out_dir / f"rep_{i:02d}"
+            code = _run_once(
+                args.scenario, rep_dir, args.plot, args.plot_format,
+                seed_override=base_seed + i,
+            )
+            if code != 0:
+                return code
+        return 0
 
     code = _run_once(args.scenario, out_dir, args.plot, args.plot_format)
     if code != 0 or not args.watch:
