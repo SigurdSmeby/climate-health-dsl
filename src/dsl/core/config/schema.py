@@ -79,6 +79,17 @@ class VariableSpec(BaseModel):
         return self
 
 
+class TransformSpec(BaseModel):
+    """A registry transform applied to a driver, mirroring the generator
+    envelope: ``name`` is looked up in the transform registry, ``params`` is
+    passed straight to it (each transform validates its own params)."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    name: str = Field(min_length=1)
+    params: dict = Field(default_factory=dict)
+
+
 class DependencySpec(BaseModel):
     """One entry under ``depends_on:`` — a driver of the disease signal."""
 
@@ -88,6 +99,9 @@ class DependencySpec(BaseModel):
     # ge=0: a negative lag would mean disease precedes its cause.
     lag: int = Field(default=0, ge=0)
     weight: float = 1.0
+    # Extra transforms applied after the causal lag, before standardize —
+    # this is what makes the transform registry usable from a scenario.
+    transforms: list[TransformSpec] = Field(default_factory=list)
 
 
 class DiseaseSpec(BaseModel):

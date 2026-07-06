@@ -39,7 +39,9 @@ def test_metadata_records_the_ground_truth():
     assert meta["start_period"] == "2010-01"
     assert meta["locations"] == ["oslo", "bergen"]
     deps = meta["disease_cases"]["depends_on"]
-    assert deps[0] == {"variable": "rainfall", "lag": 2, "weight": 1.5}
+    assert deps[0] == {
+        "variable": "rainfall", "lag": 2, "weight": 1.5, "transforms": [],
+    }
     assert meta["disease_cases"]["population"] == 1000
 
 
