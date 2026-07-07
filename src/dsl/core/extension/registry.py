@@ -31,6 +31,10 @@ class Registry:
 
         return decorator
 
+    def names(self) -> list[str]:
+        """All registered names, sorted — for listing/discovery."""
+        return sorted(self._items)
+
     def get(self, name: str) -> type:
         """Look up a registered class by name, with a helpful error if missing."""
         if name not in self._items:

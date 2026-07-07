@@ -33,6 +33,7 @@ uv run dsl run examples/basic_scenario.yaml        # or run a bundled example
 |---|---|
 | `dsl new [path]` | Write a commented starter scenario to edit (default `scenario.yaml`). |
 | `dsl run <scenario>` | Generate a dataset from a scenario YAML (or reproduce one from a `metadata.json`). |
+| `dsl list` | List the registered generators and transforms. |
 
 **`dsl new [path]`** — `-f`, `--force`: overwrite the file if it already exists.
 

@@ -11,6 +11,7 @@ exit code BEFORE anything is generated; warnings are printed to stderr
 (prefixed ``warning:``) and the run proceeds.
 """
 import argparse
+import difflib
 import functools
 import http.server
 import math
@@ -173,6 +174,9 @@ variables:
       spike_center: 7         # peak month of the rainy season (1-12)
       spike_height: 25        # how tall the wet-season peak is above baseline
       clamp_min: 0            # rainfall can't go negative
+    # shared: 0.8            # multi-location only: fraction of this signal shared
+                             #   across locations (a latent regional driver). Try
+                             #   it with `locations: [north, south]` at the top.
 
   # A second climate variable -- uncomment to add it (no code needed, just YAML).
   # 'seasonal_smooth' is a yearly sine wave, good for temperature.
@@ -196,6 +200,9 @@ disease_cases:
     - variable: rainfall
       lag: 2          # disease reacts 2 months after rainfall -- change and re-run
       weight: 1.0     # strength of this driver relative to the others
+      # transforms:   # reshape this driver (nonlinear / distributed-lag effects):
+      #   - { name: threshold, params: { mode: hinge, threshold: 5 } }
+      #   - { name: distributed_lag, params: { weights: [0.5, 0.3, 0.2] } }
     # Add a driver for each extra variable you enable above:
     # - variable: mean_temperature
     #   lag: 1
@@ -220,6 +227,53 @@ def _write_starter(path: Path, force: bool) -> int:
     return 0
 
 
+def _friendly_error(exc: ValidationError) -> str:
+    """Rewrite a Pydantic ValidationError into a message a scenario author can
+    act on. Turns the noisy ``extra_forbidden`` (a typo'd/unknown key) into
+    ``unknown field 'x' … did you mean 'y'?``, mirroring the generator-typo
+    message. Other error types keep Pydantic's own (already clear) text.
+    """
+    from dsl.core.config import schema as _schema
+
+    # Every field name the schema models accept — the suggestion pool.
+    valid: set[str] = set()
+    for obj in vars(_schema).values():
+        fields = getattr(obj, "model_fields", None)
+        if isinstance(fields, dict):
+            valid.update(fields)
+
+    lines = []
+    for err in exc.errors():
+        if err["type"] == "extra_forbidden" and err["loc"]:
+            key = str(err["loc"][-1])
+            where = ".".join(str(p) for p in err["loc"][:-1])
+            at = f" in {where}" if where else ""
+            near = difflib.get_close_matches(key, valid, n=1)
+            hint = f" — did you mean '{near[0]}'?" if near else ""
+            lines.append(f"unknown field '{key}'{at}{hint}")
+        else:
+            loc = ".".join(str(p) for p in err["loc"])
+            lines.append(f"{loc}: {err['msg']}" if loc else err["msg"])
+    return "; ".join(lines)
+
+
+def _list_blocks() -> int:
+    """Print the registered generators and transforms (names) for discovery."""
+    import dsl.generators  # noqa: F401  (import triggers registration)
+    import dsl.transforms  # noqa: F401
+    from dsl.core.extension.generator_base import generator_registry
+    from dsl.core.extension.transform_base import transform_registry
+
+    print("generators (variables -> generate:):")
+    for name in generator_registry.names():
+        print(f"  {name}")
+    print("transforms (depends_on[].transforms / series modifiers):")
+    for name in transform_registry.names():
+        print(f"  {name}")
+    print("\nParams for each: see docs/GUIDE.md.")
+    return 0
+
+
 def _run_once(
     scenario: str,
     out_dir: Path,
@@ -240,8 +294,10 @@ def _run_once(
             config = config.model_copy(update={"seed": seed_override})
     except (FileNotFoundError, ValueError, ValidationError) as exc:
         # Print to stderr (the conventional stream for errors) and return a
-        # non-zero code so scripts and CI notice the failure.
-        print(f"error: {exc}", file=sys.stderr)
+        # non-zero code so scripts and CI notice the failure. A ValidationError
+        # is rewritten into scenario-author-friendly text.
+        msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
+        print(f"error: {msg}", file=sys.stderr)
         return 1
 
     # Non-fatal warnings: inform and proceed.
@@ -413,6 +469,10 @@ def main(argv: list[str] | None = None) -> int:
         help="overwrite the file if it already exists",
     )
 
+    subparsers.add_parser(
+        "list", help="list the registered generators and transforms"
+    )
+
     run_parser = subparsers.add_parser("run", help="run a scenario file")
     run_parser.add_argument(
         "scenario",
@@ -463,6 +523,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "new":
         return _write_starter(Path(args.path), args.force)
 
+    if args.command == "list":
+        return _list_blocks()
+
     # Where to write. With no -o and no --new, offer to continue an existing run
     # rather than spawning out/<name>_1, _2, … An explicit -o always wins; --new
     # forces fresh auto-numbering; a non-interactive shell falls back to it too.
@@ -484,7 +547,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             base_seed = parse_config(_load_scenario_dict(args.scenario)).seed
         except (FileNotFoundError, ValueError, ValidationError) as exc:
-            print(f"error: {exc}", file=sys.stderr)
+            msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
+            print(f"error: {msg}", file=sys.stderr)
             return 1
         for i in range(args.replicates):
             rep_dir = out_dir / f"rep_{i:02d}"
