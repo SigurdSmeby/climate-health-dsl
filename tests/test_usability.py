@@ -63,6 +63,15 @@ def test_starter_mentions_transforms_and_shared(tmp_path, capsys):
     assert "shared" in text
 
 
+def test_new_message_does_not_assume_uv(tmp_path, capsys):
+    # A no-uv user must not be told to run `uv run …`; the hint should be the
+    # bare `dsl run` (with uv mentioned only as an option).
+    main(["new", str(tmp_path / "s.yaml")])
+    out = capsys.readouterr().out
+    assert "uv run dsl run" not in out
+    assert "dsl run" in out
+
+
 def test_starter_still_runs_clean(tmp_path, capsys):
     # The teaching comments must not break the scaffold: it still parses/runs
     # with no warnings (the commented blocks are inert).
