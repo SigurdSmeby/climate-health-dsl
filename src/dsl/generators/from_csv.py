@@ -7,6 +7,7 @@ Hard rule: the generator never invents data. If the CSV holds fewer periods
 than the scenario asks for, that is an error — real data is never wrapped,
 repeated, or extrapolated.
 """
+import functools
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,14 @@ _LABEL_SHAPE = {
     "daily": r"^\d{8}$",
     "yearly": r"^\d{4}$",
 }
+
+
+@functools.lru_cache(maxsize=8)
+def _read_csv(path: str, mtime: float) -> pd.DataFrame:
+    """One parse per file: the engine re-reads the same CSV for every
+    location (and again for locations_in). mtime in the key busts the cache
+    when the file changes under --watch. Callers must not mutate the result."""
+    return pd.read_csv(path)
 
 
 @register_generator("from_csv")
@@ -45,10 +54,12 @@ class FromCsvGenerator(VariableGenerator):
         if not path.is_file():
             return []
         try:
-            col = pd.read_csv(path, usecols=["location"])["location"]
-        except (ValueError, pd.errors.EmptyDataError):
+            df = _read_csv(str(path), path.stat().st_mtime)
+        except pd.errors.EmptyDataError:
             return []
-        return list(dict.fromkeys(col.tolist()))  # distinct, order-preserving
+        if "location" not in df.columns:
+            return []
+        return list(dict.fromkeys(df["location"].tolist()))  # distinct, ordered
 
     def __init__(
         self,
@@ -70,7 +81,7 @@ class FromCsvGenerator(VariableGenerator):
     ) -> np.ndarray:
         """Return the first ``n_periods`` real values. ``rng`` is unused."""
         try:
-            df = pd.read_csv(self.path)
+            df = _read_csv(str(self.path), self.path.stat().st_mtime)
         except pd.errors.EmptyDataError as exc:
             raise ValueError(
                 f"from_csv: {self.path.name} is empty (no columns to read)."

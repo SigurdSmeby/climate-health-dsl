@@ -46,6 +46,12 @@ def _build_generator(name: str, params: dict, variable: str = None):
         ) from exc
 
 
+def _inject_start_period(params: dict, start_period: "str | None") -> None:
+    """Align a from_csv source to the scenario calendar, unless it set its own."""
+    if start_period is not None and "start_period" not in params:
+        params["start_period"] = start_period
+
+
 def _resolve_population(
     source: "int | PopulationSpec",
     n_periods: int,
@@ -63,13 +69,8 @@ def _resolve_population(
     if isinstance(source, int):
         return np.full(n_periods, source, dtype=int)
     params = dict(source.params)
-    # Align a from_csv population to the scenario calendar.
-    if (
-        source.generate == "from_csv"
-        and start_period is not None
-        and "start_period" not in params
-    ):
-        params["start_period"] = start_period
+    if source.generate == "from_csv":
+        _inject_start_period(params, start_period)
     series = _build_generator(source.generate, params).generate(
         n_periods, period, rng
     )
@@ -88,22 +89,24 @@ def run(config: ScenarioConfig) -> pd.DataFrame:
     and columns: ``time_period``, ``location``, one column per YAML variable
     (in declaration order), ``disease_cases``, and ``population``.
     """
+    shared_cache: dict[str, np.ndarray] = {}
     location_frames = [
-        _run_one_location(config, location) for location in config.locations
+        _run_one_location(config, location, shared_cache)
+        for location in config.locations
     ]
     return pd.concat(location_frames, ignore_index=True)
 
 
 def _generate_variable(
-    config: ScenarioConfig, spec, location: str
+    config: ScenarioConfig,
+    spec,
+    location: str,
+    shared_cache: dict[str, np.ndarray],
 ) -> np.ndarray:
     """Generate one variable's series for one location."""
     params = dict(spec.params)
     if spec.generate == "from_csv":
-        # Align real data to the scenario calendar, unless the variable set
-        # its own start_period.
-        if config.start_period is not None and "start_period" not in params:
-            params["start_period"] = config.start_period
+        _inject_start_period(params, config.start_period)
         # With no source_location and a multi-location CSV, give THIS output
         # location its own matching rows.
         if "source_location" not in params:
@@ -130,19 +133,29 @@ def _generate_variable(
         # INDEPENDENT stream, mixed in by `shared`. The sqrt weights keep
         # total variance ~constant. shared=1 → every location identical;
         # shared=0 never reaches here (byte-identical to the plain path).
-        shared_rng = _child_rng(config.seed, "shared", "variable", spec.name)
-        shared_series = generator.generate(
-            config.n_total, config.period, shared_rng
-        )
+        shared_series = shared_cache.get(spec.name)
+        if shared_series is None:
+            shared_rng = _child_rng(config.seed, "shared", "variable", spec.name)
+            shared_series = generator.generate(
+                config.n_total, config.period, shared_rng
+            )
+            # Identical for every location, so compute once — except from_csv,
+            # whose params (source_location) vary per location.
+            if spec.generate != "from_csv":
+                shared_cache[spec.name] = shared_series
         s = spec.shared
         own = np.sqrt(1.0 - s) * own + np.sqrt(s) * shared_series
     return own
 
 
-def _run_one_location(config: ScenarioConfig, location: str) -> pd.DataFrame:
+def _run_one_location(
+    config: ScenarioConfig,
+    location: str,
+    shared_cache: dict[str, np.ndarray],
+) -> pd.DataFrame:
     """Generate the full series for a single named location."""
     drivers = {
-        spec.name: _generate_variable(config, spec, location)
+        spec.name: _generate_variable(config, spec, location, shared_cache)
         for spec in config.variables
     }
 

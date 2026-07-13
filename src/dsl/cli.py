@@ -21,8 +21,13 @@ from dsl.core.config.loader import load_yaml
 from dsl.core.config.schema import parse_config, validate_scenario
 from dsl.core.pipeline.chap_check import validate_chap
 from dsl.core.pipeline.engine import run as run_engine
-from dsl.core.pipeline.metadata import write_metadata
-from dsl.core.pipeline.output import write_output
+from dsl.core.pipeline.metadata import METADATA_FILENAME, write_metadata
+from dsl.core.pipeline.output import (
+    FULL_FILENAME,
+    TEST_FILENAME,
+    TRAIN_FILENAME,
+    write_output,
+)
 from dsl.core.pipeline.plot import plot_dataset
 from dsl.watch import watch_loop
 
@@ -222,12 +227,23 @@ def _friendly_error(exc: ValidationError) -> str:
     Pydantic's own text."""
     from dsl.core.config import schema as _schema
 
-    # Every field name the schema models accept — the suggestion pool.
-    valid: set[str] = set()
+    # Suggestion pool scoped to the section the typo occurred in: the last
+    # string component before the bad key names the enclosing model.
+    model_for = {
+        None: _schema.ScenarioConfig,
+        "variables": _schema.VariableSpec,
+        "disease_cases": _schema.DiseaseSpec,
+        "depends_on": _schema.DependencySpec,
+        "transforms": _schema.TransformSpec,
+        "locations": _schema.LocationSpec,
+        "population": _schema.PopulationSpec,
+    }
+    # Fallback pool (union discriminators etc. in loc): every field name.
+    all_fields: set[str] = set()
     for obj in vars(_schema).values():
         fields = getattr(obj, "model_fields", None)
         if isinstance(fields, dict):
-            valid.update(fields)
+            all_fields.update(fields)
 
     lines = []
     for err in exc.errors():
@@ -235,6 +251,12 @@ def _friendly_error(exc: ValidationError) -> str:
             key = str(err["loc"][-1])
             where = ".".join(str(p) for p in err["loc"][:-1])
             at = f" in {where}" if where else ""
+            parent = next(
+                (p for p in reversed(err["loc"][:-1]) if isinstance(p, str)),
+                None,
+            )
+            model = model_for.get(parent)
+            valid = set(model.model_fields) if model else all_fields
             near = difflib.get_close_matches(key, valid, n=1)
             hint = f" — did you mean '{near[0]}'?" if near else ""
             lines.append(f"unknown field '{key}'{at}{hint}")
@@ -405,6 +427,13 @@ def _run_replicates(args, out_dir: Path) -> int:
         msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
         print(f"error: {msg}", file=sys.stderr)
         return 1
+    # A reused folder may hold a previous single run's files; remove them so
+    # the folder doesn't pair a stale dataset with the rep_NN/ dirs.
+    for name in (FULL_FILENAME, TRAIN_FILENAME, TEST_FILENAME, METADATA_FILENAME):
+        (out_dir / name).unlink(missing_ok=True)
+    if out_dir.is_dir():
+        for stale_plot in out_dir.glob("plot.*"):
+            stale_plot.unlink()
     for i in range(args.replicates):
         code = _run_once(
             args.scenario, out_dir / f"rep_{i:02d}", args.plot, args.plot_format,

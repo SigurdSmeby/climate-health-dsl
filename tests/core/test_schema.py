@@ -463,3 +463,17 @@ def test_n_total_below_one_seasonal_cycle_warns():
     data = make_config_dict(n_total=20)
     warnings = validate_scenario(parse_config(data))
     assert any("n_total" in w for w in warnings)
+
+
+def test_transform_lag_covering_series_raises():
+    """Lag added by transforms counts toward the lag-sanity check: a
+    distributed_lag kernel spanning the whole series would blank every row."""
+    data = make_config_dict(n_total=10)
+    data["disease_cases"]["depends_on"] = [{
+        "variable": "rainfall",
+        "lag": 5,
+        "transforms": [{"name": "distributed_lag",
+                        "params": {"weights": [1.0] * 6}}],
+    }]
+    with pytest.raises(ValidationError, match="warm-up"):
+        parse_config(data)

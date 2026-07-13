@@ -64,3 +64,15 @@ def test_replicate_is_reproducible_from_its_metadata(tmp_path):
     orig = pd.read_csv(out / "rep_01" / "simulated_data.csv")
     again = pd.read_csv(repro / "simulated_data.csv")
     assert orig.equals(again)
+
+
+def test_replicates_remove_stale_single_run_files(tmp_path):
+    """Reusing a single-run folder for replicates must not leave the old
+    top-level dataset beside the rep_NN/ dirs (it belongs to no replicate)."""
+    out = tmp_path / "out"
+    assert main(["run", EXAMPLE, "-o", str(out)]) == 0
+    assert (out / "simulated_data.csv").is_file()
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 0
+    assert not (out / "simulated_data.csv").exists()
+    assert not (out / "metadata.json").exists()
+    assert (out / "rep_00" / "simulated_data.csv").is_file()

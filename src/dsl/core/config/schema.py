@@ -12,9 +12,12 @@ Validation is two-tier:
 Generator-specific parameters are deliberately NOT modelled here: the schema
 validates each variable's envelope (name / generate / params) and each
 generator validates its own params, so this file does not grow when
-generators are added.
+generators are added. Two pragmatic name-based exceptions look inside params:
+the lag-adding transforms (``_transform_lag``) and the from_csv
+multi-location warning in ``validate_scenario``.
 """
 import math
+from collections import Counter
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -24,6 +27,22 @@ from dsl.core.pipeline.periods import format_period, parse_period, periods_per_y
 # Every model: extra="forbid" rejects typo'd keys; allow_inf_nan=False rejects
 # NaN/Inf in float fields (a non-finite weight would corrupt the output).
 _STRICT = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+
+def _transform_lag(transforms: "list[TransformSpec]") -> int:
+    """Extra warm-up periods a dependency's transforms add on top of its lag.
+
+    ponytail: knows 'lag' and 'distributed_lag' by name; grow a
+    Transform.warmup API if a third lag-adding transform appears.
+    """
+    extra = 0
+    for tf in transforms:
+        if tf.name == "lag":
+            extra += int(tf.params.get("n", 0) or 0)
+        elif tf.name == "distributed_lag":
+            weights = tf.params.get("weights") or []
+            extra += max(len(weights) - 1, 0)
+    return extra
 
 
 class PopulationSpec(BaseModel):
@@ -182,8 +201,9 @@ class ScenarioConfig(BaseModel):
         self._check_start_period()
         self._check_locations()
         self._check_train_fraction()
-        self._check_variables()
-        self._check_dependencies()
+        defined = [v.name for v in self.variables]
+        self._check_variables(defined)
+        self._check_dependencies(defined)
         return self
 
     def _check_start_period(self) -> None:
@@ -253,10 +273,9 @@ class ScenarioConfig(BaseModel):
                 f"(train={n_train}, test={self.n_total - n_train})."
             )
 
-    def _check_variables(self) -> None:
+    def _check_variables(self, defined: list[str]) -> None:
         """Variable names become output columns: no clashes with built-in
         columns (silent overwrite) or each other (silent drop)."""
-        defined = [v.name for v in self.variables]
         reserved = {"time_period", "location", "disease_cases", "population"}
         clashes = sorted(reserved.intersection(defined))
         if clashes:
@@ -264,16 +283,15 @@ class ScenarioConfig(BaseModel):
                 f"variable names may not be reserved column names: {clashes}. "
                 f"Reserved: {sorted(reserved)}."
             )
-        duplicates = sorted({n for n in defined if defined.count(n) > 1})
+        duplicates = sorted(n for n, c in Counter(defined).items() if c > 1)
         if duplicates:
             raise ValueError(
                 f"variables contains duplicate names: {duplicates}."
             )
 
-    def _check_dependencies(self) -> None:
-        """Every dependency names a declared variable, with a lag that can
-        actually appear in the data."""
-        defined = [v.name for v in self.variables]
+    def _check_dependencies(self, defined: list[str]) -> None:
+        """Every dependency names a declared variable, with a lag (including
+        lag added by its transforms) that can actually appear in the data."""
         for dep in self.disease_cases.depends_on:
             if dep.variable not in defined:
                 raise ValueError(
@@ -285,6 +303,14 @@ class ScenarioConfig(BaseModel):
                     f"depends_on '{dep.variable}' has lag {dep.lag}, but "
                     f"n_total is {self.n_total}; the lag must be smaller than "
                     f"the series length for the relationship to appear."
+                )
+            warmup = dep.lag + _transform_lag(dep.transforms)
+            if warmup >= self.n_total:
+                raise ValueError(
+                    f"depends_on '{dep.variable}' blanks {warmup} warm-up "
+                    f"periods (lag {dep.lag} plus lag added by its "
+                    f"transforms), but n_total is {self.n_total}; every "
+                    f"disease_cases value would be NaN."
                 )
 
     def population_for(self, location: str) -> "int | PopulationSpec":
@@ -355,7 +381,10 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
     # target is warm-up NaN — nothing to learn from.
     if config.train_fraction is not None and config.disease_cases.depends_on:
         n_train = math.floor(config.n_total * config.train_fraction)
-        max_lag = max(d.lag for d in config.disease_cases.depends_on)
+        max_lag = max(
+            d.lag + _transform_lag(d.transforms)
+            for d in config.disease_cases.depends_on
+        )
         if max_lag >= n_train:
             warnings.append(
                 f"max dependency lag ({max_lag}) covers the whole training "
