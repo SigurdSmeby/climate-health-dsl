@@ -1,44 +1,31 @@
-"""Defines what every variable generator must look like, plus their registry.
+"""Base class and registry for variable generators.
 
 A *generator* CREATES a variable's time series from nothing — parameters,
-the time axis, and randomness. (A *transform*, by contrast, modifies a
-series that already exists; see ``transform_base.py``.)
+the time axis, and randomness. (A *transform* modifies an existing series;
+see ``transform_base.py``.)
 """
 from abc import ABC, abstractmethod
 
 import numpy as np
 
-from .registry import Registry  # same folder (core/extension/), so relative
+from .registry import Registry
 
-# The single registry instance every generator file registers itself into.
 generator_registry = Registry("generator")
-register_generator = generator_registry.register  # convenience aliases
+register_generator = generator_registry.register
 get_generator = generator_registry.get
 
 
 class VariableGenerator(ABC):
-    """Base class for anything that CREATES a variable's time series.
-
-    ABC stands for "abstract base class": a class that cannot be
-    instantiated itself and exists only to declare methods subclasses MUST
-    implement. That guarantee is what lets the engine call ``.generate()``
-    on any registered generator without knowing which one it is.
-    """
+    """Base class for anything that creates a variable's time series."""
 
     @abstractmethod
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
-        """Return an array of length ``n_periods`` (the variable's values).
+        """Return an array of length ``n_periods``.
 
-        Parameters
-        ----------
-        n_periods:
-            How many time steps to produce.
-        period:
-            The resolution ("daily"/"weekly"/"monthly"/"yearly"), so the
-            generator can scale seasonality via ``periods_per_year``.
-        rng:
-            The single seeded random generator threaded through the whole
-            run — all randomness must come from it, for reproducibility.
+        ``period`` is the resolution ("daily"/"weekly"/...), so seasonality
+        can scale via ``periods_per_year``. All randomness must come from
+        ``rng`` (the seeded generator threaded through the run) so output
+        is reproducible.
         """

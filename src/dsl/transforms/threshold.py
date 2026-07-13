@@ -1,12 +1,8 @@
 """Nonlinear threshold response: reshape a driver so its effect is nonlinear.
 
-Real climate-disease links are rarely linear (the distributed-lag-nonlinear-
-model literature): an effect may appear only past a rainfall/temperature
-threshold, switch on/off, or grow with distance from an optimum. This lets a
-scenario plant such a relationship as known ground truth, so you can test
-whether a forecaster recovers a nonlinearity — not just a straight weight.
-
-Applied per-dependency (after the causal lag, before standardize) via the
+Real climate-disease links are rarely linear: an effect may appear only past
+a threshold, switch on/off, or grow with distance from an optimum. Applied
+per-dependency (after the causal lag, before standardize) via the
 ``transforms:`` list on a ``depends_on`` entry.
 """
 import numpy as np
@@ -16,7 +12,7 @@ from dsl.core.extension.transform_base import Transform, register_transform
 _MODES = ("hinge", "step", "quadratic")
 
 
-@register_transform("threshold")  # this string is what you write in YAML
+@register_transform("threshold")
 class ThresholdTransform(Transform):
     """Reshape a series nonlinearly around ``threshold``.
 
@@ -33,16 +29,12 @@ class ThresholdTransform(Transform):
         self.threshold = threshold
 
     def apply(self, series: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-        """Return a reshaped copy. ``rng`` unused (deterministic). NaN preserved."""
-        x = series.astype(float)  # copy + NaN-capable; NaN flows through each op
+        x = series.astype(float)  # copy; NaN flows through each op
         if self.mode == "hinge":
             return np.maximum(0.0, x - self.threshold)
         if self.mode == "step":
-            # NaN >= t is False → 0.0; a missing input carries no signal, which
-            # matches how the disease model treats a 0-effect period. Keep NaN
-            # explicit so the row is still blanked, not fabricated.
+            # Keep NaN explicit so a missing input still blanks the row.
             out = np.where(x >= self.threshold, 1.0, 0.0)
             out[np.isnan(x)] = np.nan
             return out
-        # quadratic
-        return (x - self.threshold) ** 2
+        return (x - self.threshold) ** 2  # quadratic

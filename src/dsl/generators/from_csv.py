@@ -1,13 +1,11 @@
 """Real-data-backed covariates: read a variable's values from a CHAP CSV.
 
-Instead of synthesizing a series, this generator takes it from a real
-dataset (e.g. real Laos rainfall), while the disease signal is still
-generated synthetically on top — a "semi-synthetic" experiment: realistic
-weather, controlled cause→effect.
+Semi-synthetic experiments: realistic weather from a real dataset, with the
+disease signal still generated synthetically on top.
 
-Hard rule: the generator never invents data. If the CSV holds fewer
-periods than the scenario asks for, that is an error — real data is never
-wrapped, repeated, or extrapolated beyond its available dates.
+Hard rule: the generator never invents data. If the CSV holds fewer periods
+than the scenario asks for, that is an error — real data is never wrapped,
+repeated, or extrapolated.
 """
 from pathlib import Path
 
@@ -17,10 +15,8 @@ import pandas as pd
 from dsl.core.extension.generator_base import VariableGenerator, register_generator
 from dsl.core.pipeline.periods import parse_period, periods_per_year
 
-# What a period label looks like per resolution, used to catch a scenario
-# whose resolution does not match the source data (e.g. weekly scenario,
-# monthly CSV). Checked on the first label only — cheap and catches the
-# realistic mistake.
+# Expected label shape per resolution — catches a scenario whose resolution
+# doesn't match the source data (e.g. weekly scenario, monthly CSV).
 _LABEL_SHAPE = {
     "monthly": r"^\d{4}-\d{2}$",
     "weekly": r"^\d{4}-W\d{2}$",
@@ -29,17 +25,21 @@ _LABEL_SHAPE = {
 }
 
 
-@register_generator("from_csv")  # this string is what you write in YAML
+@register_generator("from_csv")
 class FromCsvGenerator(VariableGenerator):
-    """Reads a column from a CHAP-format CSV instead of synthesizing it."""
+    """Reads a column from a CHAP-format CSV instead of synthesizing it.
+
+    Params: ``file`` (the CSV path), ``column`` (which column to read),
+    ``source_location`` (required when the CSV has several locations),
+    ``start_period`` (label to start reading from; default: the first row).
+    """
 
     @staticmethod
     def locations_in(file: str) -> list[str]:
-        """The distinct ``location`` values in a CSV (empty if no such column).
+        """Distinct ``location`` values in a CSV (empty if none/missing file).
 
-        Lets the engine decide whether to auto-map each output location to its
-        own rows. Reads only the ``location`` column, and tolerates a missing
-        file (returns empty — generation surfaces that error later).
+        Lets the engine decide whether to auto-map each output location to
+        its own rows; a missing file surfaces its error later, at generation.
         """
         path = Path(file)
         if not path.is_file():
@@ -47,7 +47,7 @@ class FromCsvGenerator(VariableGenerator):
         try:
             col = pd.read_csv(path, usecols=["location"])["location"]
         except (ValueError, pd.errors.EmptyDataError):
-            return []  # no location column / empty file
+            return []
         return list(dict.fromkeys(col.tolist()))  # distinct, order-preserving
 
     def __init__(
@@ -57,22 +57,6 @@ class FromCsvGenerator(VariableGenerator):
         source_location: str | None = None,
         start_period: str | None = None,
     ):
-        """Store and validate the YAML ``params:`` for this variable.
-
-        Parameters
-        ----------
-        file:
-            Path to the CSV (CHAP format: a ``time_period`` column plus
-            data columns; a ``location`` column if multi-location).
-        column:
-            Which column to use as this variable's values.
-        source_location:
-            Which location's rows to use. Required when the CSV contains
-            more than one location.
-        start_period:
-            A ``time_period`` label to start reading from (e.g. "2011-01").
-            Defaults to the first row.
-        """
         path = Path(file)
         if not path.is_file():
             raise ValueError(f"from_csv: file not found: {file}")
@@ -107,35 +91,13 @@ class FromCsvGenerator(VariableGenerator):
             df = self._order_by_period(df, period)
             df = self._apply_start_period(df)
         elif self.start_period is not None:
-            # Without a time_period column there is nothing to align to, so a
-            # start_period can't be honored — fail loudly rather than ignore it.
+            # Nothing to align to — fail loudly rather than ignore it.
             raise ValueError(
                 f"from_csv: start_period '{self.start_period}' was set, but "
                 f"{self.path.name} has no 'time_period' column to align to."
             )
 
-        # Coerce to float with a clear error for non-numeric content (text,
-        # thousands separators, ...) instead of a raw numpy ValueError.
-        values = pd.to_numeric(df[self.column], errors="coerce").to_numpy(dtype=float)
-        original = df[self.column]
-        introduced_nan = values != values  # NaN != NaN
-        was_blank = original.isna().to_numpy()
-        bad = introduced_nan & ~was_blank
-        if bad.any():
-            example = original.to_numpy()[bad][0]
-            raise ValueError(
-                f"from_csv: column '{self.column}' in {self.path.name} has a "
-                f"non-numeric value ({example!r}); covariate columns must be "
-                f"numeric."
-            )
-
-        # Reject infinities — numeric, but not a valid covariate value (and
-        # CHAP would treat them as data). NaN (a blank cell) is allowed.
-        if np.isinf(values).any():
-            raise ValueError(
-                f"from_csv: column '{self.column}' in {self.path.name} has a "
-                f"non-finite (infinite) value; covariate values must be finite."
-            )
+        values = self._numeric_values(df)
 
         if len(values) < n_periods:
             raise ValueError(
@@ -145,14 +107,36 @@ class FromCsvGenerator(VariableGenerator):
             )
         return values[:n_periods]
 
-    def _order_by_period(self, df: pd.DataFrame, period: str) -> pd.DataFrame:
-        """Sort rows by time_period, reject duplicates, and require no gaps.
+    def _numeric_values(self, df: pd.DataFrame) -> np.ndarray:
+        """Coerce the column to float; reject non-numeric text and infinities.
 
-        Real CSV exports are often unsorted; reading in file order would map
-        values to the wrong periods. Duplicate periods are ambiguous and gaps
-        (a missing month) would silently relabel later values onto earlier
-        slots — both are errors. Ordering uses the parsed calendar position,
-        not string order, so labels are validated as real dates here too.
+        NaN (a blank cell) is allowed — CHAP masks missing values itself.
+        """
+        original = df[self.column]
+        values = pd.to_numeric(original, errors="coerce").to_numpy(dtype=float)
+        introduced_nan = values != values  # NaN != NaN
+        bad = introduced_nan & ~original.isna().to_numpy()
+        if bad.any():
+            example = original.to_numpy()[bad][0]
+            raise ValueError(
+                f"from_csv: column '{self.column}' in {self.path.name} has a "
+                f"non-numeric value ({example!r}); covariate columns must be "
+                f"numeric."
+            )
+        if np.isinf(values).any():
+            raise ValueError(
+                f"from_csv: column '{self.column}' in {self.path.name} has a "
+                f"non-finite (infinite) value; covariate values must be finite."
+            )
+        return values
+
+    def _order_by_period(self, df: pd.DataFrame, period: str) -> pd.DataFrame:
+        """Sort rows chronologically; reject duplicates and gaps.
+
+        Real CSV exports are often unsorted; duplicates are ambiguous and a
+        gap would silently relabel later values onto earlier slots. Sorting
+        uses the parsed calendar position, which also validates the labels
+        as real dates.
         """
         labels = df["time_period"].astype(str)
         dupes = labels[labels.duplicated()].unique()
@@ -161,9 +145,6 @@ class FromCsvGenerator(VariableGenerator):
                 f"from_csv: {self.path.name} has duplicate time_period values: "
                 f"{sorted(dupes)}."
             )
-        # Map each label to an absolute period index — also validates the
-        # calendar (2010-00 / 2010-13 / 20100230 raise) — so sorting by it is
-        # chronological.
         ppy = periods_per_year(period)
 
         def absolute_index(label: str) -> int:
@@ -175,8 +156,8 @@ class FromCsvGenerator(VariableGenerator):
             "_order", kind="stable"
         )
         ordered = df["_order"].to_numpy()
-        # Consecutive = each step is +1. Daily's year*366 base jumps at year
-        # ends, so check daily consecutiveness from real dates instead.
+        # Daily's year*366 base jumps at year ends, so daily consecutiveness
+        # is checked from real dates instead of index steps.
         if period == "daily":
             self._check_daily_consecutive(df["time_period"].astype(str).tolist())
         else:

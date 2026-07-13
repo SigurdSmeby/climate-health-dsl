@@ -1,18 +1,20 @@
 """A flat, non-seasonal series — a constant level plus optional noise.
 
-Useful as a CONTROL or DECOY covariate: a variable with no seasonal signal,
-so a scenario can test whether a model correctly ignores an irrelevant
-driver (or whether it's fooled into using one). Unlike the seasonal
-generators, successive years do NOT repeat.
+Useful as a control or decoy covariate: a scenario can test whether a model
+correctly ignores an irrelevant driver.
 """
 import numpy as np
 
 from dsl.core.extension.generator_base import VariableGenerator, register_generator
 
 
-@register_generator("flat")  # this string is what you write in YAML
+@register_generator("flat")
 class FlatGenerator(VariableGenerator):
-    """A constant ``level`` with optional Gaussian noise — no seasonality."""
+    """A constant ``level`` with optional Gaussian noise — no seasonality.
+
+    Params: ``level`` (the constant), ``noise`` (Gaussian std, 0 → flat line),
+    ``clamp_min`` (optional floor, e.g. 0).
+    """
 
     def __init__(
         self,
@@ -20,17 +22,6 @@ class FlatGenerator(VariableGenerator):
         noise: float = 1.0,
         clamp_min: float | None = None,
     ):
-        """Store and validate the YAML ``params:`` for this variable.
-
-        Parameters
-        ----------
-        level:
-            The constant value the series sits at.
-        noise:
-            Standard deviation of additive Gaussian noise (0 → a flat line).
-        clamp_min:
-            If set, values are floored at this minimum (e.g. 0).
-        """
         if noise < 0:
             raise ValueError(f"noise must be >= 0, got {noise}")
         self.level = level
@@ -40,7 +31,6 @@ class FlatGenerator(VariableGenerator):
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
-        """Return the flat series, length ``n_periods``."""
         series = np.full(n_periods, float(self.level))
         if self.noise > 0:
             series = series + rng.normal(0.0, self.noise, size=n_periods)

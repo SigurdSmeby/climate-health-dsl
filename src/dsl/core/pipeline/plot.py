@@ -1,12 +1,8 @@
 """Plot a generated dataset for visual inspection.
 
-Reading 100+ rows of CSV is no way to sanity-check a scenario; a chart of
-the covariates and disease_cases over time makes a mistake (wrong lag,
-flat signal, missing season) obvious at a glance. Output is either an
-interactive HTML file (zoom / hover / toggle locations) or a static image
-(PNG/SVG/PDF) for embedding in a report.
-
-This module is the one place plotting decisions live, alongside output.py.
+A chart of the covariates and disease_cases over time makes a mistake (wrong
+lag, flat signal, missing season) obvious at a glance. Output is interactive
+HTML or a static image (PNG/SVG/PDF, rendered by kaleido).
 """
 from pathlib import Path
 
@@ -14,24 +10,25 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Identifier columns that are never their own panel (time_period is the x
-# axis; location splits the lines). population is handled separately: it gets
-# a panel only when it varies over time (growth), not when it's constant.
+# Identifier columns that are never their own panel. population is special:
+# it gets a panel only when it varies over time (growth), not when constant.
 _NON_SERIES = ("time_period", "location", "population")
 
-# Which file extensions we can write, and how. HTML is interactive; the rest
-# are static images rendered by kaleido.
 _IMAGE_EXTENSIONS = (".png", ".svg", ".pdf", ".jpg", ".jpeg")
+
+# Fixed qualitative palette; each location is pinned to one entry so it has
+# the SAME colour in every panel.
+_PALETTE = (
+    "#636efa", "#ef553b", "#00cc96", "#ab63fa", "#ffa15a",
+    "#19d3f3", "#ff6692", "#b6e880", "#ff97ff", "#fecb52",
+)
 
 
 def _series_columns(df: pd.DataFrame) -> list[str]:
-    """Pick which columns get a panel: every covariate plus disease_cases,
-    and population ONLY when it varies over time (a growth trajectory is
-    worth a panel; a constant population is not)."""
+    """Columns that get a panel: covariates, disease_cases, and population
+    only when it varies within at least one location (a growth trajectory
+    is worth a panel; different constants across locations are not)."""
     columns = [c for c in df.columns if c not in _NON_SERIES]
-    # Population is plotted only when it varies OVER TIME — i.e. within at
-    # least one location. Different constant populations across locations
-    # (each flat) is not "time-varying" and should not get a panel.
     if "population" in df.columns:
         if "location" in df.columns:
             varies = df.groupby("location")["population"].nunique().gt(1).any()
@@ -49,25 +46,10 @@ def plot_dataset(
 ) -> None:
     """Write a faceted time-series plot of ``df`` to ``out_path``.
 
-    One stacked panel per variable (covariates and ``disease_cases``), with
-    a line per location. The file type is taken from ``out_path``'s
-    extension: ``.html`` is interactive, ``.png``/``.svg``/``.pdf`` are
-    static images.
-
-    Parameters
-    ----------
-    df:
-        A generated dataset (as the engine produces it).
-    out_path:
-        Where to write; its extension selects the format.
-    train_split:
-        If given, draw a dashed vertical line at this period index to mark
-        the train/test boundary.
-
-    Raises
-    ------
-    ValueError
-        If ``out_path`` has an unsupported extension.
+    One stacked panel per variable, a line per location. The extension
+    selects the format (.html interactive, image otherwise). If
+    ``train_split`` is given, a dashed vertical line marks the train/test
+    boundary at that period index.
     """
     out_path = Path(out_path)
     suffix = out_path.suffix.lower()
@@ -83,24 +65,13 @@ def plot_dataset(
     if suffix == ".html":
         fig.write_html(out_path)
     else:
-        # Needs kaleido (a project dependency) to rasterize.
         fig.write_image(out_path)
 
 
-# A fixed qualitative palette; each location is pinned to one entry so it has
-# the SAME colour in every panel (makes lines easy to follow across panels).
-_PALETTE = (
-    "#636efa", "#ef553b", "#00cc96", "#ab63fa", "#ffa15a",
-    "#19d3f3", "#ff6692", "#b6e880", "#ff97ff", "#fecb52",
-)
-
-
 def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure:
-    """Build the faceted figure: one panel per series, one line per location,
-    with each location pinned to a single colour across all panels."""
+    """One panel per series, one line per location, colours pinned per location."""
     series_columns = _series_columns(df)
     locations = list(df["location"].unique()) if "location" in df.columns else [None]
-    # Map each location to a fixed colour (cycling if there are many).
     colour_for = {
         loc: _PALETTE[i % len(_PALETTE)] for i, loc in enumerate(locations)
     }
@@ -123,11 +94,11 @@ def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure
                     y=block[column],
                     mode="lines",
                     name=str(loc),
-                    line_color=colour_for[loc],  # same colour in every panel
+                    line_color=colour_for[loc],
                     text=block["time_period"] if "time_period" in block else None,
                     legendgroup=str(loc),
-                    # Only the first row contributes to the legend, so each
-                    # location appears once rather than once per panel.
+                    # Legend only from the first row, so each location
+                    # appears once rather than once per panel.
                     showlegend=(row == 1 and loc is not None),
                 ),
                 row=row,
@@ -135,7 +106,6 @@ def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure
             )
 
     if train_split is not None:
-        # A dashed line on every panel marks where training data ends.
         for row in range(1, len(series_columns) + 1):
             fig.add_vline(
                 x=train_split,

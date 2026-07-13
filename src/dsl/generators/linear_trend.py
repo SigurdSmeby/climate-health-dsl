@@ -1,18 +1,21 @@
 """A linear trend — a value that rises or falls steadily over time.
 
-Models slow drift that real series often carry: population growth, gradual
-warming, urbanization, changing reporting completeness. Useful as a
-confounder (a trend that is NOT seasonal but still correlates with anything
-else trending) when testing whether a model separates trend from signal.
+Models slow drift real series carry (population growth, gradual warming);
+useful as a non-seasonal confounder when testing whether a model separates
+trend from signal.
 """
 import numpy as np
 
 from dsl.core.extension.generator_base import VariableGenerator, register_generator
 
 
-@register_generator("linear_trend")  # this string is what you write in YAML
+@register_generator("linear_trend")
 class LinearTrendGenerator(VariableGenerator):
-    """A straight line ``start + slope * t`` with optional Gaussian noise."""
+    """A straight line ``start + slope * t`` with optional Gaussian noise.
+
+    Params: ``start`` (value at period 0), ``slope`` (change per period),
+    ``noise`` (Gaussian std), ``clamp_min`` (optional floor).
+    """
 
     def __init__(
         self,
@@ -21,19 +24,6 @@ class LinearTrendGenerator(VariableGenerator):
         noise: float = 0.0,
         clamp_min: float | None = None,
     ):
-        """Store and validate the YAML ``params:`` for this variable.
-
-        Parameters
-        ----------
-        start:
-            The value at period 0.
-        slope:
-            How much the value changes each period (negative falls).
-        noise:
-            Standard deviation of additive Gaussian noise (0 → a clean line).
-        clamp_min:
-            If set, values are floored at this minimum (e.g. 0).
-        """
         if noise < 0:
             raise ValueError(f"noise must be >= 0, got {noise}")
         self.start = start
@@ -44,7 +34,6 @@ class LinearTrendGenerator(VariableGenerator):
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
-        """Return the trend series, length ``n_periods``."""
         t = np.arange(n_periods)
         series = self.start + self.slope * t
         if self.noise > 0:

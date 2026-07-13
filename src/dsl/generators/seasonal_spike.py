@@ -1,8 +1,7 @@
 """A variable with a low baseline and a pronounced seasonal spike.
 
-Models a "rainy season" shape: flat most of the year, with a smooth
-Gaussian-shaped bump that peaks at a configurable point in the yearly cycle
-and repeats every year. Used for variables like rainfall.
+A "rainy season" shape: flat most of the year, with a Gaussian-shaped bump
+that peaks at a configurable point in the yearly cycle and repeats annually.
 """
 import numpy as np
 
@@ -10,9 +9,16 @@ from dsl.core.extension.generator_base import VariableGenerator, register_genera
 from dsl.core.pipeline.periods import periods_per_year
 
 
-@register_generator("seasonal_spike")  # this string is what you write in YAML
+@register_generator("seasonal_spike")
 class SeasonalSpikeGenerator(VariableGenerator):
-    """Low baseline plus a yearly Gaussian-shaped spike, plus optional noise."""
+    """Low baseline plus a yearly Gaussian-shaped spike, plus optional noise.
+
+    Params: ``baseline`` (dry-season level), ``spike_height`` (peak above
+    baseline), ``spike_center`` (period offset of the peak within the yearly
+    cycle, e.g. 6 for July in monthly data; wraps past one cycle; None →
+    mid-year at any resolution), ``spike_width`` (Gaussian std in periods),
+    ``noise`` (Gaussian std), ``clamp_min`` (optional floor, e.g. 0 for rain).
+    """
 
     def __init__(
         self,
@@ -23,29 +29,6 @@ class SeasonalSpikeGenerator(VariableGenerator):
         noise: float = 0.5,
         clamp_min: float | None = None,
     ):
-        """Store and validate the YAML ``params:`` for this variable.
-
-        Parameters
-        ----------
-        baseline:
-            The value far away from the spike (the "dry season" level).
-        spike_height:
-            How far above the baseline the peak rises.
-        spike_center:
-            The period offset of the peak within the yearly cycle (e.g. 26
-            for mid-year in weekly data, 6 for July in monthly data). Values
-            beyond one cycle wrap (24 on monthly data == month 0). The
-            default (``None``) is mid-year at any resolution — 26 for weekly,
-            6 for monthly — so a monthly series peaks correctly without tuning.
-        spike_width:
-            The standard deviation of the Gaussian bump, in periods. Bigger
-            means a broader rainy season. Must be > 0.
-        noise:
-            Standard deviation of additive Gaussian noise (0 disables it).
-        clamp_min:
-            If set, values are floored at this minimum — e.g. 0 for
-            rainfall, which can never be negative however large the noise.
-        """
         if spike_width <= 0:
             raise ValueError(f"spike_width must be > 0, got {spike_width}")
         if noise < 0:
@@ -60,19 +43,13 @@ class SeasonalSpikeGenerator(VariableGenerator):
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
-        """Return the spiky seasonal series, length ``n_periods``."""
-        ppy = periods_per_year(period)  # 52 for weekly, 12 for monthly, ...
-        t = np.arange(n_periods)
-        # Position within the current year, so the spike repeats annually.
-        pos = t % ppy
-        # The peak's position within the year. None → mid-year (works at any
-        # resolution); an explicit value beyond one cycle wraps via % ppy.
+        ppy = periods_per_year(period)
+        pos = np.arange(n_periods) % ppy  # position within the current year
         center = (ppy // 2 if self.spike_center is None else self.spike_center) % ppy
-        # Circular distance to the spike center: week 51 is only 2 weeks
-        # away from a week-1 peak, not 50, because the seasons wrap around.
+        # Circular distance to the peak: week 51 is 2 weeks from a week-1
+        # peak, not 50 — seasons wrap around the year boundary.
         raw = np.abs(pos - center)
         dist = np.minimum(raw, ppy - raw)
-        # A Gaussian bump: exp(-d²/2σ²) is 1 at the center, ~0 far away.
         spike = self.spike_height * np.exp(-0.5 * (dist / self.spike_width) ** 2)
         series = self.baseline + spike
         if self.noise > 0:

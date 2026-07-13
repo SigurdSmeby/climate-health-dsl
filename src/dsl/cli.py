@@ -6,19 +6,13 @@ Usage:
     dsl run scenario.yaml              # auto-named folder under out/
     dsl run out/foo/metadata.json      # reproduce a previous run
 
-Hard validation errors stop the run with a clear message and a non-zero
-exit code BEFORE anything is generated; warnings are printed to stderr
-(prefixed ``warning:``) and the run proceeds.
+Hard validation errors stop the run with a non-zero exit code BEFORE
+anything is generated; warnings go to stderr and the run proceeds.
 """
 import argparse
 import difflib
-import functools
-import http.server
 import math
 import sys
-import threading
-import time
-import webbrowser
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -30,14 +24,14 @@ from dsl.core.pipeline.engine import run as run_engine
 from dsl.core.pipeline.metadata import write_metadata
 from dsl.core.pipeline.output import write_output
 from dsl.core.pipeline.plot import plot_dataset
+from dsl.watch import watch_loop
 
 
 def _load_scenario_dict(path: str) -> dict:
     """Load a scenario dict from a YAML scenario OR a metadata.json sidecar.
 
-    ``load_yaml`` parses both (JSON is valid YAML). A metadata file wraps the
-    real scenario under a ``"scenario"`` key — unwrap it so a dataset can be
-    reproduced from its own ``metadata.json``.
+    ``load_yaml`` parses both (JSON is valid YAML); a metadata file wraps the
+    real scenario under a ``"scenario"`` key, so unwrap it.
     """
     data = load_yaml(path)
     if "scenario" in data and isinstance(data["scenario"], dict):
@@ -52,7 +46,7 @@ def _resolve_from_csv_paths(scenario: dict, base_dir: Path) -> None:
     """Rewrite relative from_csv `file` params to be relative to base_dir.
 
     Edits the dict in place. Absolute paths and paths that already exist
-    relative to the cwd are left alone (the latter keeps old behavior).
+    relative to the cwd are left alone.
     """
 
     def fix(params: dict) -> None:
@@ -69,7 +63,7 @@ def _resolve_from_csv_paths(scenario: dict, base_dir: Path) -> None:
     for var in scenario.get("variables", []):
         if isinstance(var, dict) and var.get("generate") == "from_csv":
             fix(var.get("params", {}))
-    # Population can also be a from_csv generator (top-level and per-location).
+    # Population can also be from_csv (top-level and per-location).
     disease = scenario.get("disease_cases", {})
     pop = disease.get("population")
     if isinstance(pop, dict) and pop.get("generate") == "from_csv":
@@ -85,12 +79,10 @@ def _resolve_from_csv_paths(scenario: dict, base_dir: Path) -> None:
 def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
     """Decide where to write, never overwriting a previous run by default.
 
-    If ``out_arg`` is given, use it directly (the user's explicit choice,
-    overwrite allowed). Otherwise write into ``out/<name>/`` where ``name``
-    is the input's stem — or, for a ``metadata.json`` sidecar, its parent
-    folder name, so reproducing ``out/foo/metadata.json`` yields ``out/foo``-
-    style names rather than ``out/metadata``. The first run is unnumbered;
-    if it already exists, the lowest free ``out/<name>_<n>`` (n from 1) wins.
+    An explicit ``out_arg`` is used directly (overwrite allowed). Otherwise
+    write into ``out/<name>/`` — for a metadata.json input, ``name`` is its
+    parent folder. The first run is unnumbered; after that the lowest free
+    ``out/<name>_<n>`` wins.
     """
     if out_arg is not None:
         return Path(out_arg)
@@ -108,10 +100,7 @@ def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
 
 
 def _scenario_runs(scenario: str) -> list[Path]:
-    """Existing out/ folders belonging to ``scenario`` (its base + _N siblings).
-
-    Sorted: the base ``out/<name>`` first, then ``_1``, ``_2``, … numerically.
-    """
+    """Existing out/ folders for ``scenario``: the base first, then _1, _2, …"""
     name = Path(scenario).stem
     out = Path("out")
     if not out.is_dir():
@@ -130,9 +119,8 @@ def _scenario_runs(scenario: str) -> list[Path]:
 def _prompt_continue(scenario: str) -> Path | None:
     """Ask whether to continue an existing run folder or start a new one.
 
-    Returns the chosen folder, or ``None`` to start a new (auto-named) run.
-    Used by ``dsl run`` when neither ``-o`` nor ``--new`` is given; falls back
-    to ``None`` when there's nothing to continue or there's no interactive TTY.
+    Returns the chosen folder, or ``None`` for a new auto-named run. Falls
+    back to ``None`` with nothing to continue or no interactive TTY.
     """
     runs = _scenario_runs(scenario)
     if not runs or not sys.stdin.isatty():
@@ -155,9 +143,8 @@ def _prompt_continue(scenario: str) -> Path | None:
     return None  # "n", empty, or anything else → a new run
 
 
-# A minimal, valid starter scenario `dsl new` writes for the user to edit.
-# Kept simpler than examples/basic_scenario.yaml (monthly, one driver) and
-# commented so the file itself teaches; it must parse and run with no warnings.
+# The starter scenario `dsl new` writes. Commented so the file itself
+# teaches; it must parse and run with no warnings.
 STARTER_TEMPLATE = """\
 # A starter scenario. Run it, open the plot, then change a value and re-run:
 #   dsl run scenario.yaml --plot --watch   (re-runs every time you save)
@@ -229,11 +216,10 @@ def _write_starter(path: Path, force: bool) -> int:
 
 
 def _friendly_error(exc: ValidationError) -> str:
-    """Rewrite a Pydantic ValidationError into a message a scenario author can
-    act on. Turns the noisy ``extra_forbidden`` (a typo'd/unknown key) into
-    ``unknown field 'x' … did you mean 'y'?``, mirroring the generator-typo
-    message. Other error types keep Pydantic's own (already clear) text.
-    """
+    """Rewrite a Pydantic ValidationError into a message a scenario author
+    can act on: ``extra_forbidden`` (a typo'd key) becomes
+    ``unknown field 'x' … did you mean 'y'?``; other error types keep
+    Pydantic's own text."""
     from dsl.core.config import schema as _schema
 
     # Every field name the schema models accept — the suggestion pool.
@@ -259,7 +245,7 @@ def _friendly_error(exc: ValidationError) -> str:
 
 
 def _list_blocks() -> int:
-    """Print the registered generators and transforms (names) for discovery."""
+    """Print the registered generators and transforms for discovery."""
     import dsl.generators  # noqa: F401  (import triggers registration)
     import dsl.transforms  # noqa: F401
     from dsl.core.extension.generator_base import generator_registry
@@ -285,49 +271,42 @@ def _run_once(
     """Parse → generate → write (and optionally plot) one scenario.
 
     Returns a process exit code. Shared by the one-shot path and ``--watch``.
-    ``seed_override`` replaces the scenario's seed (used for replicates), so the
-    written metadata records the actual seed and stays reproducible.
+    ``seed_override`` replaces the scenario's seed (used for replicates), so
+    the written metadata records the actual seed.
     """
-    # --- Parse + validate. Any hard error exits here, before generating. ---
+    # Parse + validate. Any hard error exits here, before generating.
     try:
         config = parse_config(_load_scenario_dict(scenario))
         if seed_override is not None:
             config = config.model_copy(update={"seed": seed_override})
     except (FileNotFoundError, ValueError, ValidationError) as exc:
-        # Print to stderr (the conventional stream for errors) and return a
-        # non-zero code so scripts and CI notice the failure. A ValidationError
-        # is rewritten into scenario-author-friendly text.
         msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
         print(f"error: {msg}", file=sys.stderr)
         return 1
 
-    # Non-fatal warnings: inform and proceed.
     for warning in validate_scenario(config):
         print(f"warning: {warning}", file=sys.stderr)
 
-    # --- Generate, check CHAP compatibility, write. ---
-    # Generation/output can fail on input the schema can't catch (a bad
-    # generator param, a malformed from_csv source). Surface those as clean
-    # CLI errors; let genuine programming bugs propagate.
+    # Generation can fail on input the schema can't catch (a bad generator
+    # param, a malformed from_csv source). Surface those as clean CLI errors;
+    # let genuine programming bugs propagate.
     try:
         df = run_engine(config)
     except (ValueError, FileNotFoundError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    # CHAP-compatibility findings are advisory: print them and proceed.
+    # CHAP-compatibility findings are advisory: print and proceed.
     for finding in validate_chap(df):
         print(f"warning: {finding}", file=sys.stderr)
 
     write_output(df, config, out_dir)
-    # The ground-truth sidecar: records the resolved scenario so the dataset
-    # is self-describing and reproducible.
-    write_metadata(config, out_dir)
+    write_metadata(config, out_dir)  # the ground-truth sidecar
     print(f"Wrote {len(df)} rows to {out_dir}/")
 
     if plot:
-        # The train/test boundary, as a period index, so the plot can mark it
-        # (same floor() rule the output split uses).
+        # Train/test boundary as a period index (same floor() rule the
+        # output split uses), so the plot can mark it.
         split = (
             math.floor(config.n_total * config.train_fraction)
             if config.train_fraction is not None
@@ -339,119 +318,11 @@ def _run_once(
     return 0
 
 
-def _changed(path: str, last_mtime: float) -> tuple[bool, float]:
-    """Has ``path``'s mtime advanced past ``last_mtime``? Returns (changed, mtime).
-
-    A missing file (mid-save by some editors) counts as unchanged.
-    """
-    try:
-        mtime = Path(path).stat().st_mtime
-    except FileNotFoundError:
-        return False, last_mtime
-    return mtime > last_mtime, mtime
-
-
-# Injected into plot.html under --watch: poll a version the server bumps on each
-# re-run and reload only when it actually changes (so the page doesn't flicker
-# or reset zoom/pan between edits).
-_RELOAD_SCRIPT = """
-<script>
-(function () {
-  let last = null;
-  setInterval(async function () {
-    try {
-      const v = await (await fetch("/__plot_version__", {cache: "no-store"})).text();
-      if (last !== null && v !== last) location.reload();
-      last = v;
-    } catch (e) { /* server gone (watch stopped): stop trying */ }
-  }, 700);
-})();
-</script>
-"""
-
-
-def _inject_reload(html_path: Path) -> None:
-    """Append the live-reload script to a written plot.html (idempotent)."""
-    html = html_path.read_text()
-    if "__plot_version__" not in html:
-        html = html.replace("</body>", _RELOAD_SCRIPT + "</body>", 1)
-        html_path.write_text(html)
-
-
-def _serve(out_dir: Path, version: list[int]) -> "http.server.HTTPServer":
-    """Serve ``out_dir`` on a free localhost port; expose the reload version.
-
-    ``version`` is a one-element list shared with the watch loop — the handler
-    reads ``version[0]`` so a re-run can bump it without restarting the server.
-    """
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802 (stdlib's required name)
-            if self.path == "/__plot_version__":
-                body = str(version[0]).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-                return
-            super().do_GET()
-
-        def log_message(self, *args):  # silence per-request logging
-            pass
-
-    handler = functools.partial(Handler, directory=str(out_dir))
-    server = http.server.HTTPServer(("127.0.0.1", 0), handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server
-
-
-def _watch_loop(
-    scenario: str, out_dir: Path, plot: bool, plot_format: str
-) -> int:
-    """Re-run ``scenario`` whenever its file is saved, until interrupted.
-
-    With an HTML plot, also serve it on localhost and live-reload the browser
-    on each successful re-run; otherwise just regenerate the files in place.
-    """
-    last_mtime = Path(scenario).stat().st_mtime
-    serve = plot and plot_format == "html"
-    server = None
-    version = [0]
-    if serve:
-        plot_path = out_dir / "plot.html"
-        _inject_reload(plot_path)
-        server = _serve(out_dir, version)
-        url = f"http://127.0.0.1:{server.server_address[1]}/plot.html"
-        webbrowser.open(url)
-        print(f"serving plot at {url} — it reloads on every save.")
-    print("watching for changes — edit the scenario and save, or Ctrl-C to stop.")
-    try:
-        while True:
-            time.sleep(0.5)
-            changed, last_mtime = _changed(scenario, last_mtime)
-            if changed and _run_once(scenario, out_dir, plot, plot_format) == 0:
-                if serve:
-                    _inject_reload(out_dir / "plot.html")
-                    version[0] += 1  # tells the open page to reload
-    except KeyboardInterrupt:
-        print("\nstopped watching.")
-        return 0
-    finally:
-        if server is not None:
-            server.shutdown()
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Entry point for the console script. Returns the process exit code.
-
-    ``argv`` defaults to the real command line; tests pass a list instead
-    so they can invoke the CLI in-process.
-    """
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dsl",
         description="Generate a synthetic climate-health dataset from a YAML scenario.",
     )
-    # Subcommands ("run", "new") leave room for future verbs like "validate".
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     new_parser = subparsers.add_parser(
@@ -519,7 +390,38 @@ def main(argv: list[str] | None = None) -> int:
             "run written directly to the output folder."
         ),
     )
-    args = parser.parse_args(argv)
+    return parser
+
+
+def _run_replicates(args, out_dir: Path) -> int:
+    """Run the scenario N times with seeds base, base+1, … into rep_NN/ dirs."""
+    if args.watch:
+        print("error: --watch cannot be combined with --replicates", file=sys.stderr)
+        return 1
+    # Read the base seed once so replicate i can use base + i.
+    try:
+        base_seed = parse_config(_load_scenario_dict(args.scenario)).seed
+    except (FileNotFoundError, ValueError, ValidationError) as exc:
+        msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
+        print(f"error: {msg}", file=sys.stderr)
+        return 1
+    for i in range(args.replicates):
+        code = _run_once(
+            args.scenario, out_dir / f"rep_{i:02d}", args.plot, args.plot_format,
+            seed_override=base_seed + i,
+        )
+        if code != 0:
+            return code
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point for the console script. Returns the process exit code.
+
+    ``argv`` defaults to the real command line; tests pass a list to invoke
+    the CLI in-process.
+    """
+    args = _build_parser().parse_args(argv)
 
     if args.command == "new":
         return _write_starter(Path(args.path), args.force)
@@ -527,9 +429,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "list":
         return _list_blocks()
 
-    # Where to write. With no -o and no --new, offer to continue an existing run
-    # rather than spawning out/<name>_1, _2, … An explicit -o always wins; --new
-    # forces fresh auto-numbering; a non-interactive shell falls back to it too.
+    # Where to write. With no -o and no --new, offer to continue an existing
+    # run rather than spawning out/<name>_1, _2, … An explicit -o always
+    # wins; a non-interactive shell falls back to auto-numbering too.
     if args.out_dir is None and not args.new:
         out_dir = _prompt_continue(args.scenario) or _resolve_out_dir(
             args.scenario, None
@@ -541,35 +443,14 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --replicates must be >= 1", file=sys.stderr)
         return 1
     if args.replicates > 1:
-        if args.watch:
-            print("error: --watch cannot be combined with --replicates", file=sys.stderr)
-            return 1
-        # Read the base seed once so replicate i can use base + i.
-        try:
-            base_seed = parse_config(_load_scenario_dict(args.scenario)).seed
-        except (FileNotFoundError, ValueError, ValidationError) as exc:
-            msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
-            print(f"error: {msg}", file=sys.stderr)
-            return 1
-        for i in range(args.replicates):
-            rep_dir = out_dir / f"rep_{i:02d}"
-            code = _run_once(
-                args.scenario, rep_dir, args.plot, args.plot_format,
-                seed_override=base_seed + i,
-            )
-            if code != 0:
-                return code
-        return 0
+        return _run_replicates(args, out_dir)
 
     code = _run_once(args.scenario, out_dir, args.plot, args.plot_format)
     if code != 0 or not args.watch:
         return code
-    # --watch keeps the same out_dir so each save overwrites in place (the
-    # browser re-reads plot.html). A first-run failure already returned above.
-    return _watch_loop(args.scenario, out_dir, args.plot, args.plot_format)
+    # --watch keeps the same out_dir so each save overwrites in place.
+    return watch_loop(args.scenario, out_dir, args.plot, args.plot_format, _run_once)
 
 
-# Allows `python -m dsl.cli` / `python src/dsl/cli.py` during development;
-# the installed `dsl` command calls main() via the pyproject entry point.
 if __name__ == "__main__":
     sys.exit(main())
