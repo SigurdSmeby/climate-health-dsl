@@ -16,6 +16,7 @@ All randomness comes from the passed seeded ``rng``, so output is reproducible.
 import numpy as np
 
 from dsl.core.config.schema import DiseaseSpec
+from dsl.core.extension.transform_base import get_transform
 from dsl.core.pipeline.periods import periods_per_year
 from dsl.transforms.lag import LagTransform
 from dsl.transforms.missing import MissingTransform
@@ -117,8 +118,13 @@ def build_disease_cases(
     for dep in spec.depends_on:
         if dep.weight == 0:
             continue
-        lagged = LagTransform(n=dep.lag).apply(drivers[dep.variable], rng)
-        eta = eta + dep.weight * _standardize(lagged)
+        series = LagTransform(n=dep.lag).apply(drivers[dep.variable], rng)
+        # Apply any registry transforms named in the YAML, in order, after the
+        # causal lag and before standardize (same mechanism the engine uses for
+        # generators: get_transform(name)(**params)).
+        for tf in dep.transforms:
+            series = get_transform(tf.name)(**tf.params).apply(series, rng)
+        eta = eta + dep.weight * _standardize(series)
 
     # 3. Optional autoregressive component: a random walk (cumulative sum of
     #    white noise), giving the signal memory of its own past.

@@ -71,7 +71,12 @@ def build_metadata(config: ScenarioConfig) -> dict:
             "count_distribution": config.disease_cases.count_distribution,
             "overdispersion": config.disease_cases.overdispersion,
             "depends_on": [
-                {"variable": d.variable, "lag": d.lag, "weight": d.weight}
+                {
+                    "variable": d.variable, "lag": d.lag, "weight": d.weight,
+                    "transforms": [
+                        {"name": t.name, "params": t.params} for t in d.transforms
+                    ],
+                }
                 for d in config.disease_cases.depends_on
             ],
         },
