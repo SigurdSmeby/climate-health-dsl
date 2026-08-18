@@ -22,6 +22,7 @@ raises; the CLI prints them as warnings, or refuses to write with
 ``--strict-chap``.
 """
 import datetime
+import itertools
 import re
 
 import numpy as np
@@ -103,7 +104,7 @@ def _check_periods(df: pd.DataFrame) -> list[str]:
     if resolution == "weekly_range":
         return findings
     for location, sequence in groups.items():
-        for current, following in zip(sequence, sequence[1:], strict=False):
+        for current, following in itertools.pairwise(sequence):
             if not _consecutive(current, following, resolution):
                 findings.append(
                     f"time periods for location '{location}' are not "
@@ -137,11 +138,11 @@ def _weekly_consecutive(current: str, following: str) -> bool:
     """
     cy, cw = int(current[:4]), int(current[6:8])
     fy, fw = int(following[:4]), int(following[6:8])
-    if fy == cy and fw == cw + 1:
-        return True  # same year, next week
-    if fy == cy + 1 and fw == 1 and cw in (52, 53):
-        return True  # year rollover (flat-52 from W52, or ISO from W52/W53)
-    return False
+    # same year, next week — or year rollover (flat-52 from W52, or ISO from
+    # W52/W53)
+    return (fy == cy and fw == cw + 1) or (
+        fy == cy + 1 and fw == 1 and cw in (52, 53)
+    )
 
 
 def _period_start_date(label: str, resolution: str) -> "datetime.date":
@@ -151,7 +152,8 @@ def _period_start_date(label: str, resolution: str) -> "datetime.date":
     ``_weekly_consecutive`` instead.
     """
     if resolution == "daily":
-        return datetime.datetime.strptime(label, "%Y%m%d").date()
+        # Date-only label, no timezone semantics involved.
+        return datetime.datetime.strptime(label, "%Y%m%d").date()  # noqa: DTZ007
     if resolution == "monthly":
         year, month = int(label[:4]), int(label[5:7])
         return datetime.date(year, month, 1)

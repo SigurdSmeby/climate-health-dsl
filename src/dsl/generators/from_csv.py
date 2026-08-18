@@ -118,7 +118,7 @@ class FromCsvGenerator(VariableGenerator):
         # thousands separators, ...) instead of a raw numpy ValueError.
         values = pd.to_numeric(df[self.column], errors="coerce").to_numpy(dtype=float)
         original = df[self.column]
-        introduced_nan = values != values  # NaN != NaN
+        introduced_nan = np.isnan(values)
         was_blank = original.isna().to_numpy()
         bad = introduced_nan & ~was_blank
         if bad.any():
@@ -195,9 +195,14 @@ class FromCsvGenerator(VariableGenerator):
     def _check_daily_consecutive(labels: list[str]) -> None:
         """Daily gap check via real dates (handles month/year/leap boundaries)."""
         import datetime
+        import itertools
 
-        dates = [datetime.datetime.strptime(d, "%Y%m%d").date() for d in labels]
-        for a, b in zip(dates, dates[1:], strict=False):
+        # Date-only labels, no timezone semantics involved.
+        dates = [
+            datetime.datetime.strptime(d, "%Y%m%d").date()  # noqa: DTZ007
+            for d in labels
+        ]
+        for a, b in itertools.pairwise(dates):
             if (b - a).days != 1:
                 raise ValueError(
                     f"from_csv: daily data has a gap between "

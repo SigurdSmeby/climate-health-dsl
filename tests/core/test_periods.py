@@ -3,7 +3,6 @@ import pytest
 
 from dsl.core.pipeline.periods import format_period, parse_period, periods_per_year
 
-
 # ------------------------------------------------------------ periods_per_year
 
 

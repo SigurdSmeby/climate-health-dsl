@@ -13,9 +13,7 @@ from dsl.core.config.schema import (
     parse_config,
     validate_scenario,
 )
-
 from tests.conftest import scenario_dict as make_config_dict
-
 
 # ---------------------------------------------------------------- hard errors
 

@@ -140,9 +140,7 @@ def _prompt_continue(scenario: str) -> Path | None:
     for i, d in enumerate(runs, 1):
         print(f"  {i}) {d}")
     print("Continue one of these, or start a new run?")
-    print("  [1-{n}] continue · [n] new · (tip: pass --new to skip this)".format(
-        n=len(runs)
-    ))
+    print(f"  [1-{len(runs)}] continue · [n] new · (tip: pass --new to skip this)")
     try:
         choice = input("> ").strip().lower()
     except EOFError:
@@ -318,7 +316,7 @@ def _serve(out_dir: Path, version: list[int]) -> "http.server.HTTPServer":
     reads ``version[0]`` so a re-run can bump it without restarting the server.
     """
     class Handler(http.server.SimpleHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802 (stdlib's required name)
+        def do_GET(self):
             if self.path == "/__plot_version__":
                 body = str(version[0]).encode()
                 self.send_response(200)
@@ -362,10 +360,13 @@ def _watch_loop(
         while True:
             time.sleep(0.5)
             changed, last_mtime = _changed(scenario, last_mtime)
-            if changed and _run_once(scenario, out_dir, plot, plot_format) == 0:
-                if serve:
-                    _inject_reload(out_dir / "plot.html")
-                    version[0] += 1  # tells the open page to reload
+            if (
+                changed
+                and _run_once(scenario, out_dir, plot, plot_format) == 0
+                and serve
+            ):
+                _inject_reload(out_dir / "plot.html")
+                version[0] += 1  # tells the open page to reload
     except KeyboardInterrupt:
         print("\nstopped watching.")
         return 0
