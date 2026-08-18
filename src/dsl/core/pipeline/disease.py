@@ -16,8 +16,8 @@ All randomness comes from the passed seeded ``rng``, so output is reproducible.
 import numpy as np
 
 from dsl.core.config.schema import DiseaseSpec
-from dsl.core.pipeline.periods import periods_per_year
 from dsl.core.extension.transform_base import get_transform
+from dsl.core.pipeline.periods import periods_per_year
 from dsl.transforms.lag import LagTransform
 from dsl.transforms.missing import MissingTransform
 

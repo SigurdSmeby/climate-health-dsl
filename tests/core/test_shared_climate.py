@@ -77,3 +77,54 @@ def test_shared_recorded_in_metadata():
     meta = build_metadata(_cfg(shared=0.8))
     var = meta["scenario"]["variables"][0]
     assert var.get("shared") == 0.8
+
+
+def test_shared_location_name_rejected():
+    # "shared" is the internal RNG key for the shared-driver stream; a
+    # location literally named "shared" would collide with it.
+    with pytest.raises(ValueError, match="shared"):
+        _cfg(locations=("shared", "other"))
+
+
+def _multi_location_csv(tmp_path):
+    from tests.conftest import write_csv
+
+    periods = [f"2010-{m + 1:02d}" for m in range(12)]
+    return write_csv(
+        tmp_path / "multi.csv", periods * 2,
+        rainfall=list(range(12)) + list(range(100, 112)),
+        location=["north"] * 12 + ["south"] * 12,
+    )
+
+
+def _from_csv_shared_config(csv_path, locations, source_location=None):
+    params = {"file": str(csv_path), "column": "rainfall"}
+    if source_location is not None:
+        params["source_location"] = source_location
+    var = {"name": "rainfall", "generate": "from_csv", "params": params, "shared": 1.0}
+    return ScenarioConfig(
+        period="monthly", n_total=12, seed=0, locations=list(locations),
+        variables=[var],
+        disease_cases={"population": 100000, "median_rate": 0.1, "max_rate": 0.3,
+                       "depends_on": [{"variable": "rainfall", "weight": 1.0}]},
+    )
+
+
+def test_from_csv_shared_without_source_location_is_ambiguous(tmp_path):
+    # Regression: no source_location + a multi-location CSV means there's no
+    # well-defined location-independent series to share — must raise, not
+    # silently reuse each location's own auto-matched rows as "shared".
+    csv_path = _multi_location_csv(tmp_path)
+    config = _from_csv_shared_config(csv_path, ["north", "south"])
+    with pytest.raises(ValueError, match="source_location"):
+        run(config)
+
+
+def test_from_csv_shared_with_source_location_is_location_independent(tmp_path):
+    csv_path = _multi_location_csv(tmp_path)
+    config = _from_csv_shared_config(csv_path, ["north", "south"], source_location="north")
+    r = _rainfall_by_location(run(config))
+    # shared=1.0 → every location gets the SAME series (north's data), not
+    # each location's own auto-matched rows.
+    assert np.allclose(r["north"], r["south"])
+    assert np.allclose(r["north"], np.arange(12, dtype=float))

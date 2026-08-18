@@ -27,7 +27,7 @@ class _ScaleTransform(Transform):
 def _spec(**kw):
     from dsl.core.config.schema import DiseaseSpec
 
-    base = dict(population=100_000, depends_on=[], median_rate=0.1, max_rate=0.3)
+    base = {"population": 100_000, "depends_on": [], "median_rate": 0.1, "max_rate": 0.3}
     base.update(kw)
     return DiseaseSpec(**base)
 
