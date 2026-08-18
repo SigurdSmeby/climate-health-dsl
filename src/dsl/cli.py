@@ -403,7 +403,7 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
     if out_dir.is_dir():
         for stale_rep in out_dir.glob("rep_*"):
             suffix = stale_rep.name.removeprefix("rep_")
-            if stale_rep.is_dir() and suffix.isdigit() and int(suffix) > args.replicates:
+            if stale_rep.is_dir() and suffix.isdigit() and int(suffix) >= args.replicates:
                 shutil.rmtree(stale_rep)
     for i in range(args.replicates):
         code = _run_once(

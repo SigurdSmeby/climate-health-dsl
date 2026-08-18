@@ -64,3 +64,16 @@ def test_replicate_is_reproducible_from_its_metadata(tmp_path):
     orig = pd.read_csv(out / "rep_01" / "simulated_data.csv")
     again = pd.read_csv(repro / "simulated_data.csv")
     assert orig.equals(again)
+
+
+def test_stale_replicate_folders_are_cleared(tmp_path):
+    # Regression: a reused -o folder from a LARGER --replicates run must not
+    # leave stale rep_NN/ dirs behind when re-run with fewer replicates.
+    out = tmp_path / "out"
+    main(["run", EXAMPLE, "-o", str(out), "--replicates", "5"])
+    assert (out / "rep_04").is_dir()
+    main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"])
+    assert (out / "rep_00").is_dir()
+    assert (out / "rep_01").is_dir()
+    assert not (out / "rep_02").exists()
+    assert not (out / "rep_04").exists()
