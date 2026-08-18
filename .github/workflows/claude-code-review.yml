@@ -39,12 +39,19 @@ jobs:
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: |
-            /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+            Do these two steps, in order, every time — step 2 is REQUIRED
+            regardless of what step 1 finds, do not skip it:
 
-            If that review found no findings to post, leave one top-level PR
-            comment saying so (e.g. "Looks good to me — no issues found."),
-            via `gh pr comment ${{ github.event.pull_request.number }} --body "..."`,
-            so every run leaves visible evidence it ran.
+            1. Run `/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}`.
+
+            2. Check whether step 1 posted any inline comments. If it posted
+               zero inline comments (no findings), you MUST run:
+               `gh pr comment ${{ github.event.pull_request.number }} --body "Looks good to me — no issues found."`
+               This step is mandatory whenever step 1 found nothing — it is
+               not optional and not implied by step 1 alone. Every run of
+               this workflow must leave at least one comment on the PR,
+               either inline findings from step 1 or the fallback from
+               step 2.
           claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*)"'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
