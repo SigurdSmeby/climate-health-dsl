@@ -14,6 +14,7 @@ import argparse
 import functools
 import http.server
 import math
+import shutil
 import sys
 import threading
 import time
@@ -228,8 +229,8 @@ def _run_once(
     """Parse → generate → write (and optionally plot) one scenario.
 
     Returns a process exit code. Shared by the one-shot path and ``--watch``.
-    ``seed_override`` replaces the scenario's seed (used for replicates), so the
-    written metadata records the actual seed and stays reproducible.
+    ``seed_override`` replaces the scenario's seed (used for replicates), so
+    the written metadata records the actual seed.
     """
     # --- Parse + validate. Any hard error exits here, before generating. ---
     try:
@@ -385,6 +386,35 @@ def _watch_loop(
             server.shutdown()
 
 
+def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
+    """Run the scenario N times with seeds base, base+1, … into rep_NN/ dirs."""
+    if args.watch:
+        print("error: --watch cannot be combined with --replicates", file=sys.stderr)
+        return 1
+    # Read the base seed once so replicate i can use base + i.
+    try:
+        base_seed = parse_config(_load_scenario_dict(args.scenario)).seed
+    except (FileNotFoundError, ValueError, ValidationError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    # A reused folder may hold MORE rep_NN/ dirs than this run writes (e.g. a
+    # previous --replicates 5, now --replicates 2) — clear the ones this run
+    # won't overwrite so no stale replicate is left mixed in with fresh ones.
+    if out_dir.is_dir():
+        for stale_rep in out_dir.glob("rep_*"):
+            suffix = stale_rep.name.removeprefix("rep_")
+            if stale_rep.is_dir() and suffix.isdigit() and int(suffix) > args.replicates:
+                shutil.rmtree(stale_rep)
+    for i in range(args.replicates):
+        code = _run_once(
+            args.scenario, out_dir / f"rep_{i:02d}", args.plot, args.plot_format,
+            seed_override=base_seed + i,
+        )
+        if code != 0:
+            return code
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the console script. Returns the process exit code.
 
@@ -478,24 +508,7 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --replicates must be >= 1", file=sys.stderr)
         return 1
     if args.replicates > 1:
-        if args.watch:
-            print("error: --watch cannot be combined with --replicates", file=sys.stderr)
-            return 1
-        # Read the base seed once so replicate i can use base + i.
-        try:
-            base_seed = parse_config(_load_scenario_dict(args.scenario)).seed
-        except (FileNotFoundError, ValueError, ValidationError) as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        for i in range(args.replicates):
-            rep_dir = out_dir / f"rep_{i:02d}"
-            code = _run_once(
-                args.scenario, rep_dir, args.plot, args.plot_format,
-                seed_override=base_seed + i,
-            )
-            if code != 0:
-                return code
-        return 0
+        return _run_replicates(args, out_dir)
 
     code = _run_once(args.scenario, out_dir, args.plot, args.plot_format)
     if code != 0 or not args.watch:

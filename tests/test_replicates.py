@@ -5,7 +5,6 @@ full dataset + metadata (independently reproducible). N=1 is the single-run
 default. TDD: written before the CLI flag exists.
 """
 import pandas as pd
-import yaml
 
 from dsl.cli import main
 
