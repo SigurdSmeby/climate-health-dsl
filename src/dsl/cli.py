@@ -14,6 +14,7 @@ import argparse
 import functools
 import http.server
 import math
+import shutil
 import sys
 import threading
 import time
@@ -23,7 +24,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from dsl.core.config.loader import load_yaml
-from dsl.core.config.schema import parse_config, validate_scenario
+from dsl.core.config.schema import ScenarioConfig, parse_config, validate_scenario
 from dsl.core.pipeline.chap_check import validate_chap
 from dsl.core.pipeline.engine import run as run_engine
 from dsl.core.pipeline.metadata import write_metadata
@@ -106,6 +107,19 @@ def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
     return Path("out") / f"{name}_{n}"
 
 
+def _numbered_dir_suffix(entry: Path, prefix: str) -> int | None:
+    """The integer suffix of ``entry`` if its name is ``<prefix><digits>``.
+
+    Returns ``None`` if ``entry`` isn't a directory or its name doesn't match
+    (a non-numeric or missing suffix). Shared by ``_scenario_runs`` (``out/
+    <name>_<N>`` siblings) and the replicate cleanup (``rep_NN`` dirs).
+    """
+    if not entry.is_dir() or not entry.name.startswith(prefix):
+        return None
+    suffix = entry.name[len(prefix) :]
+    return int(suffix) if suffix.isdigit() else None
+
+
 def _scenario_runs(scenario: str) -> list[Path]:
     """Existing out/ folders belonging to ``scenario`` (its base + _N siblings).
 
@@ -118,10 +132,9 @@ def _scenario_runs(scenario: str) -> list[Path]:
     runs = [out / name] if (out / name).is_dir() else []
     numbered = []
     for d in out.iterdir():
-        if d.is_dir() and d.name.startswith(f"{name}_"):
-            suffix = d.name[len(name) + 1 :]
-            if suffix.isdigit():
-                numbered.append((int(suffix), d))
+        n = _numbered_dir_suffix(d, f"{name}_")
+        if n is not None:
+            numbered.append((n, d))
     runs += [d for _, d in sorted(numbered)]
     return runs
 
@@ -218,14 +231,44 @@ def _write_starter(path: Path, force: bool) -> int:
     return 0
 
 
-def _run_once(scenario: str, out_dir: Path, plot: bool, plot_format: str) -> int:
+def _load_and_parse(scenario: str, seed_override: int | None = None) -> ScenarioConfig:
+    """Load + validate a scenario file. Raises on any hard error.
+
+    ``seed_override`` replaces the parsed seed (used for replicates), so the
+    written metadata records the actual seed. Shared by ``_run_once`` and
+    ``_run_replicates`` so both report parse/validation errors identically.
+    """
+    config = parse_config(_load_scenario_dict(scenario))
+    if seed_override is not None:
+        # model_copy skips validation (it's meant to be cheap) and, unlike
+        # model_dump()+model_validate(), correctly preserves
+        # location_overrides (excluded from dumps). So check the one
+        # constraint that matters — ScenarioConfig.seed is `ge=0` — by hand
+        # instead of a full re-validate.
+        if seed_override < 0:
+            raise ValueError(f"seed_override must be >= 0, got {seed_override}.")
+        config = config.model_copy(update={"seed": seed_override})
+    return config
+
+
+def _run_once(
+    scenario: str,
+    out_dir: Path,
+    plot: bool,
+    plot_format: str,
+    seed_override: int | None = None,
+    config: ScenarioConfig | None = None,
+) -> int:
     """Parse → generate → write (and optionally plot) one scenario.
 
     Returns a process exit code. Shared by the one-shot path and ``--watch``.
+    Pass an already-parsed ``config`` (e.g. from a replicate loop that parsed
+    once and only varies the seed) to skip re-parsing ``scenario`` from disk.
     """
     # --- Parse + validate. Any hard error exits here, before generating. ---
     try:
-        config = parse_config(_load_scenario_dict(scenario))
+        if config is None:
+            config = _load_and_parse(scenario, seed_override)
     except (FileNotFoundError, ValueError, ValidationError) as exc:
         # Print to stderr (the conventional stream for errors) and return a
         # non-zero code so scripts and CI notice the failure.
@@ -375,6 +418,38 @@ def _watch_loop(
             server.shutdown()
 
 
+def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
+    """Run the scenario N times with seeds base, base+1, … into rep_NN/ dirs."""
+    if args.watch:
+        print("error: --watch cannot be combined with --replicates", file=sys.stderr)
+        return 1
+    # Parse once — every replicate is the same scenario, differing only by
+    # seed, so there's no need to re-read and re-validate the file per
+    # replicate (or, for a from_csv-backed scenario, re-read its CSV source).
+    try:
+        base_config = _load_and_parse(args.scenario)
+    except (FileNotFoundError, ValueError, ValidationError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    base_seed = base_config.seed
+    # A reused folder may hold MORE rep_NN/ dirs than this run writes (e.g. a
+    # previous --replicates 5, now --replicates 2) — clear the ones this run
+    # won't overwrite so no stale replicate is left mixed in with fresh ones.
+    if out_dir.is_dir():
+        for stale_rep in out_dir.iterdir():
+            n = _numbered_dir_suffix(stale_rep, "rep_")
+            if n is not None and n >= args.replicates:
+                shutil.rmtree(stale_rep)
+    for i in range(args.replicates):
+        code = _run_once(
+            args.scenario, out_dir / f"rep_{i:02d}", args.plot, args.plot_format,
+            config=base_config.model_copy(update={"seed": base_seed + i}),
+        )
+        if code != 0:
+            return code
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the console script. Returns the process exit code.
 
@@ -438,10 +513,26 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="skip the continue prompt; always write a fresh auto-named folder",
     )
+    run_parser.add_argument(
+        "--replicates",
+        "-n",
+        type=int,
+        default=1,
+        help=(
+            "generate N replicates with seeds base, base+1, … into rep_00/, "
+            "rep_01/, … (each independently reproducible). Default 1 = a single "
+            "run written directly to the output folder."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.command == "new":
         return _write_starter(Path(args.path), args.force)
+
+    # Cheap flag validation before anything interactive/side-effecting below.
+    if args.replicates < 1:
+        print("error: --replicates must be >= 1", file=sys.stderr)
+        return 1
 
     # Where to write. With no -o and no --new, offer to continue an existing run
     # rather than spawning out/<name>_1, _2, … An explicit -o always wins; --new
@@ -452,6 +543,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         out_dir = _resolve_out_dir(args.scenario, args.out_dir)
+
+    if args.replicates > 1:
+        return _run_replicates(args, out_dir)
 
     code = _run_once(args.scenario, out_dir, args.plot, args.plot_format)
     if code != 0 or not args.watch:
