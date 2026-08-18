@@ -15,7 +15,8 @@ from dsl.cli import (
     _serve,
     main,
 )
-from tests.conftest import scenario_dict as base_scenario, write_csv
+from tests.conftest import scenario_dict as base_scenario
+from tests.conftest import write_csv
 
 EXAMPLE = "examples/basic_scenario.yaml"
 

@@ -12,7 +12,7 @@ import pandas as pd
 # Importing the extension packages is what triggers auto-discovery: every
 # generator/transform module runs its @register decorator on import. Without
 # these two lines the registries would be empty.
-import dsl.generators  # noqa: F401
+import dsl.generators
 import dsl.transforms  # noqa: F401
 from dsl.core.config.schema import PopulationSpec, ScenarioConfig
 from dsl.core.extension.generator_base import get_generator
@@ -41,7 +41,7 @@ def _child_rng(seed: int, *keys: str) -> np.random.Generator:
     return np.random.default_rng(np.random.SeedSequence(entropy))
 
 
-def _build_generator(name: str, params: dict, variable: str = None):
+def _build_generator(name: str, params: dict, variable: str | None = None):
     """Instantiate a generator, turning an unexpected-param TypeError into a
     clear message naming the variable, generator, and bad param."""
     try:

@@ -11,9 +11,9 @@ and the tool version.
 import json
 from pathlib import Path
 
-from dsl import __version__
 from pydantic import BaseModel
 
+from dsl import __version__
 from dsl.core.config.schema import ScenarioConfig
 
 METADATA_FILENAME = "metadata.json"

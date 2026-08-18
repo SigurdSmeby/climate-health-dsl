@@ -124,7 +124,7 @@ def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure
                     mode="lines",
                     name=str(loc),
                     line_color=colour_for[loc],  # same colour in every panel
-                    text=block["time_period"] if "time_period" in block else None,
+                    text=block.get("time_period", None),
                     legendgroup=str(loc),
                     # Only the first row contributes to the legend, so each
                     # location appears once rather than once per panel.
