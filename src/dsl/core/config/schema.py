@@ -382,7 +382,7 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
 
         n_train = math.floor(config.n_total * config.train_fraction)
         max_lag = max(d.lag for d in config.disease_cases.depends_on)
-        if max_lag >= n_train:
+        if max_lag > n_train:
             warnings.append(
                 f"max dependency lag ({max_lag}) covers the whole training "
                 f"split ({n_train} periods); train.csv will have no observed "
