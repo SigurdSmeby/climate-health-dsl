@@ -66,6 +66,14 @@ def test_replicate_is_reproducible_from_its_metadata(tmp_path):
     assert orig.equals(again)
 
 
+def test_replicates_zero_is_rejected(tmp_path, capsys):
+    out = tmp_path / "out"
+    code = main(["run", EXAMPLE, "-o", str(out), "--replicates", "0"])
+    assert code == 1
+    assert "must be >= 1" in capsys.readouterr().err
+    assert not out.exists()
+
+
 def test_stale_replicate_folders_are_cleared(tmp_path):
     # Regression: a reused -o folder from a LARGER --replicates run must not
     # leave stale rep_NN/ dirs behind when re-run with fewer replicates.
