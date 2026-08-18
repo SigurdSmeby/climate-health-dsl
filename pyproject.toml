@@ -7,7 +7,7 @@ authors = [{ name = "Sigurd Smeby", email = "sigurd.smeby@proton.me" }]
 dependencies = ["pydantic>=2", "pyyaml", "numpy", "pandas", "plotly", "kaleido"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov"]
+dev = ["pytest", "pytest-cov", "ruff==0.15.21"]
 
 [project.scripts]
 dsl = "dsl.cli:main"
