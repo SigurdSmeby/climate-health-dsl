@@ -1,16 +1,15 @@
 """Block missingness: blank contiguous runs, simulating reporting outages.
 
-The ``missing`` transform drops points independently (MCAR). Real surveillance
-gaps are usually contiguous — a facility offline for weeks, a system migration —
-so a model that interpolates single points still faces a hard stretch of
-nothing. This blanks ``n_blocks`` runs of length ``block_len`` at random starts.
+Unlike ``missing`` (independent points), real surveillance gaps are usually
+contiguous — a facility offline for weeks — so a model that interpolates
+single points still faces a hard stretch of nothing.
 """
 import numpy as np
 
 from dsl.core.extension.transform_base import Transform, register_transform
 
 
-@register_transform("block_missing")  # this string is what you write in YAML
+@register_transform("block_missing")
 class BlockMissingTransform(Transform):
     """Blank ``n_blocks`` contiguous runs of length ``block_len`` to NaN."""
 
@@ -23,14 +22,12 @@ class BlockMissingTransform(Transform):
         self.block_len = block_len
 
     def apply(self, series: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-        """Return a copy with ``n_blocks`` contiguous runs blanked. Blocks may
-        overlap or touch (fewer effective NaNs); a block near the end is clipped
-        at the boundary rather than wrapping."""
+        """Blocks may overlap (fewer effective NaNs); a block near the end is
+        clipped at the boundary rather than wrapping."""
         result = series.astype(float)  # copy + NaN-capable
         n = len(result)
         if self.n_blocks == 0 or n == 0:
             return result
-        # Start anywhere a full-or-partial block fits; clip at the end.
         starts = rng.integers(0, n, size=self.n_blocks)
         for s in starts:
             result[s : s + self.block_len] = np.nan
