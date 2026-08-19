@@ -35,8 +35,7 @@ def test_multiple_blocks(rng):
 def test_block_clipped_at_end(rng):
     # A block starting near the end must not error, just blank to the boundary.
     series = np.arange(10.0)
-    result = BlockMissingTransform(
-        n_blocks=1, block_len=8).apply(series, np.random.default_rng(0))
+    result = BlockMissingTransform(n_blocks=1, block_len=8).apply(series, rng)
     assert np.isnan(result).sum() >= 1
 
 
@@ -60,6 +59,16 @@ def test_invalid_params_rejected():
         BlockMissingTransform(n_blocks=-1, block_len=5)
     with pytest.raises(ValueError, match="block_len"):
         BlockMissingTransform(n_blocks=1, block_len=0)
+
+
+def test_non_int_params_rejected():
+    # A YAML decimal (block_len: 4.5) must be a clean ValueError here, not a
+    # cryptic numpy TypeError deep inside apply() (rng.integers()'s size=
+    # and slice indexing both require real ints).
+    with pytest.raises(ValueError, match="n_blocks"):
+        BlockMissingTransform(n_blocks=1.0, block_len=4)
+    with pytest.raises(ValueError, match="block_len"):
+        BlockMissingTransform(n_blocks=1, block_len=4.5)
 
 
 def test_registered_and_reachable():
