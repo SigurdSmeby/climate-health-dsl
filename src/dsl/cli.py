@@ -11,6 +11,7 @@ exit code BEFORE anything is generated; warnings are printed to stderr
 (prefixed ``warning:``) and the run proceeds.
 """
 import argparse
+import difflib
 import functools
 import http.server
 import math
@@ -184,6 +185,9 @@ variables:
       spike_center: 7         # peak month of the rainy season (1-12)
       spike_height: 25        # how tall the wet-season peak is above baseline
       clamp_min: 0            # rainfall can't go negative
+    # shared: 0.8            # multi-location only: fraction of this signal shared
+                             #   across locations (a latent regional driver). Try
+                             #   it with `locations: [north, south]` at the top.
 
   # A second climate variable -- uncomment to add it (no code needed, just YAML).
   # 'seasonal_smooth' is a yearly sine wave, good for temperature.
@@ -207,6 +211,9 @@ disease_cases:
     - variable: rainfall
       lag: 2          # disease reacts 2 months after rainfall -- change and re-run
       weight: 1.0     # strength of this driver relative to the others
+      # transforms:   # reshape this driver (nonlinear / distributed-lag effects):
+      #   - { name: threshold, params: { mode: hinge, threshold: 5 } }
+      #   - { name: distributed_lag, params: { weights: [0.5, 0.3, 0.2] } }
     # Add a driver for each extra variable you enable above:
     # - variable: mean_temperature
     #   lag: 1
@@ -225,9 +232,94 @@ def _write_starter(path: Path, force: bool) -> int:
     path.write_text(STARTER_TEMPLATE)
     print(
         f"Wrote a starter scenario to {path}. Run it live with:\n"
-        f"  uv run dsl run {path} --plot --watch\n"
-        f"then edit the file and save to see the data update."
+        f"  dsl run {path} --plot --watch\n"
+        f"then edit the file and save to see the data update. "
+        f"(Prefix with 'uv run' if you use uv.)"
     )
+    return 0
+
+
+def _friendly_error(exc: ValidationError) -> str:
+    """Rewrite a Pydantic ValidationError into a message a scenario author can
+    act on. Turns the noisy ``extra_forbidden`` (a typo'd/unknown key) into
+    ``unknown field 'x' … did you mean 'y'?``, scoped to the near-miss pool of
+    the model the typo is actually in (mirroring the generator-typo message).
+    Other error types keep Pydantic's own (already clear) text.
+    """
+    import typing
+
+    from pydantic import BaseModel
+
+    from dsl.core.config import schema as _schema
+
+    def _nested_model_fields(annotation) -> set[str] | None:
+        """If ``annotation`` is (possibly via list[]/dict[str, ]/X|None) a
+        BaseModel subclass, that model's field names; else None."""
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            return set(annotation.model_fields)
+        for arg in typing.get_args(annotation):
+            found = _nested_model_fields(arg)
+            if found is not None:
+                return found
+        return None
+
+    # field name (as it appears in err["loc"]) -> the NESTED model's own
+    # field pool. e.g. "location_overrides" -> LocationSpec's fields (the
+    # dict[str, LocationSpec] field's value type), so a typo inside a
+    # location override only gets suggestions from what LocationSpec
+    # accepts, not the field's own containing model's fields.
+    model_for: dict[str, set[str]] = {}
+    all_fields: set[str] = set()
+    for obj in vars(_schema).values():
+        fields = getattr(obj, "model_fields", None)
+        if not isinstance(fields, dict):
+            continue
+        all_fields.update(fields)
+        for field_name, field_info in fields.items():
+            nested = _nested_model_fields(field_info.annotation)
+            if nested is not None:
+                model_for[field_name] = nested
+
+    lines = []
+    for err in exc.errors():
+        if err["type"] == "extra_forbidden" and err["loc"]:
+            key = str(err["loc"][-1])
+            where = ".".join(str(p) for p in err["loc"][:-1])
+            at = f" in {where}" if where else ""
+            # The nearest enclosing model: the first loc segment (scanning
+            # from the key backwards) that's an actual field name we know a
+            # model for — NOT just the first string, which for e.g.
+            # ('location_overrides', 'north', 'populaton') would wrongly
+            # match the location name 'north' before reaching
+            # 'location_overrides'.
+            pool = all_fields
+            for segment in reversed(err["loc"][:-1]):
+                if isinstance(segment, str) and segment in model_for:
+                    pool = model_for[segment]
+                    break
+            near = difflib.get_close_matches(key, pool, n=1)
+            hint = f" — did you mean '{near[0]}'?" if near else ""
+            lines.append(f"unknown field '{key}'{at}{hint}")
+        else:
+            loc = ".".join(str(p) for p in err["loc"])
+            lines.append(f"{loc}: {err['msg']}" if loc else err["msg"])
+    return "; ".join(lines)
+
+
+def _list_blocks() -> int:
+    """Print the registered generators and transforms (names) for discovery."""
+    import dsl.generators  # import triggers registration
+    import dsl.transforms  # noqa: F401
+    from dsl.core.extension.generator_base import generator_registry
+    from dsl.core.extension.transform_base import transform_registry
+
+    print("generators (variables -> generate:):")
+    for name in generator_registry.names():
+        print(f"  {name}")
+    print("transforms (depends_on[].transforms / series modifiers):")
+    for name in transform_registry.names():
+        print(f"  {name}")
+    print("\nParams for each: see docs/GUIDE.md.")
     return 0
 
 
@@ -271,8 +363,10 @@ def _run_once(
             config = _load_and_parse(scenario, seed_override)
     except (FileNotFoundError, ValueError, ValidationError) as exc:
         # Print to stderr (the conventional stream for errors) and return a
-        # non-zero code so scripts and CI notice the failure.
-        print(f"error: {exc}", file=sys.stderr)
+        # non-zero code so scripts and CI notice the failure. A ValidationError
+        # is rewritten into scenario-author-friendly text.
+        msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
+        print(f"error: {msg}", file=sys.stderr)
         return 1
 
     # Non-fatal warnings: inform and proceed.
@@ -429,7 +523,8 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
     try:
         base_config = _load_and_parse(args.scenario)
     except (FileNotFoundError, ValueError, ValidationError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
+        print(f"error: {msg}", file=sys.stderr)
         return 1
     base_seed = base_config.seed
     # A reused folder may hold MORE rep_NN/ dirs than this run writes (e.g. a
@@ -477,6 +572,10 @@ def main(argv: list[str] | None = None) -> int:
         "--force",
         action="store_true",
         help="overwrite the file if it already exists",
+    )
+
+    subparsers.add_parser(
+        "list", help="list the registered generators and transforms"
     )
 
     run_parser = subparsers.add_parser("run", help="run a scenario file")
@@ -528,6 +627,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "new":
         return _write_starter(Path(args.path), args.force)
+
+    if args.command == "list":
+        return _list_blocks()
 
     # Cheap flag validation before anything interactive/side-effecting below.
     if args.replicates < 1:

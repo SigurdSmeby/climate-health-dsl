@@ -4,7 +4,13 @@ version = "1.7.1"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Sigurd Smeby", email = "sigurd.smeby@proton.me" }]
-dependencies = ["pydantic>=2", "pyyaml", "numpy", "pandas", "plotly", "kaleido"]
+# kaleido==0.2.1: 1.x dropped bundled Chromium and needs a system Chrome for
+# static (png/svg/pdf) plots; 0.2.1 ships its own, so --plot-format works out of
+# the box. Pinned exactly because the later 0.2.1.post1 only has an armv7l wheel
+# (no x86_64), which would break `uv sync` on most machines.
+dependencies = [
+    "pydantic>=2", "pyyaml", "numpy", "pandas", "plotly", "kaleido==0.2.1",
+]
 
 [project.optional-dependencies]
 dev = [

@@ -23,6 +23,10 @@ class Registry:
 
         return decorator
 
+    def names(self) -> list[str]:
+        """All registered names, sorted — for listing/discovery."""
+        return sorted(self._items)
+
     def get(self, name: str) -> type:
         if name not in self._items:
             raise KeyError(
