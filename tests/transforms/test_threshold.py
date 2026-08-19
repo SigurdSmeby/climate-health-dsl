@@ -40,6 +40,23 @@ def test_nan_preserved(rng):
     assert result[1] == 10.0
 
 
+def test_nan_preserved_step(rng):
+    # step needs its own hand-written NaN mask (np.where's >= comparison
+    # resolves NaN to the else-branch, not NaN) — covered separately from
+    # hinge/quadratic, which get NaN propagation for free from numpy math.
+    series = np.array([np.nan, 20.0])
+    result = ThresholdTransform(mode="step", threshold=10.0).apply(series, rng)
+    assert np.isnan(result[0])
+    assert result[1] == 1.0
+
+
+def test_nan_preserved_quadratic(rng):
+    series = np.array([np.nan, 20.0])
+    result = ThresholdTransform(mode="quadratic", threshold=10.0).apply(series, rng)
+    assert np.isnan(result[0])
+    assert result[1] == 100.0
+
+
 def test_does_not_modify_input(rng):
     series = np.array([0.0, 20.0])
     original = series.copy()
