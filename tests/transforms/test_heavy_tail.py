@@ -64,6 +64,20 @@ def test_invalid_params_rejected():
         HeavyTailTransform(df=0)
 
 
+def test_nan_or_inf_params_rejected():
+    # NaN fails every comparison (`NaN < 0` is False, same as a valid value),
+    # so a plain `scale < 0` check would silently accept it and corrupt the
+    # whole output series in apply() instead of raising here.
+    with pytest.raises(ValueError, match="scale"):
+        HeavyTailTransform(scale=float("nan"))
+    with pytest.raises(ValueError, match="scale"):
+        HeavyTailTransform(scale=float("inf"))
+    with pytest.raises(ValueError, match="df"):
+        HeavyTailTransform(df=float("nan"))
+    with pytest.raises(ValueError, match="df"):
+        HeavyTailTransform(df=float("inf"))
+
+
 def test_registered_and_reachable():
     from dsl.core.extension.transform_base import get_transform
 
