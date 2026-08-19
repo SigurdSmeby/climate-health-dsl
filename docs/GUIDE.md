@@ -227,6 +227,13 @@ A real multi-location sample is bundled at `examples/data/laos_subset.csv` (thre
 
 Note: reproducing a `from_csv` run from its `metadata.json` re-reads the source CSV by path, so byte-identical reproduction requires that file to be unchanged.
 
+**CHAP validation warnings.** Every run checks its output against CHAP's dataset rules before writing; a violation prints a `warning:` and the run still completes. The synthetic generators always produce CHAP-valid output — these only arise from `from_csv` data with gaps or an unexpected shape:
+
+- Required columns: `time_period`, `location`, `disease_cases` (`population` is optional; covariate columns may have any name).
+- `time_period` must be in a resolution CHAP's own parser accepts.
+- Periods should be consecutive and identical across locations (advisory — CHAP can auto-fill a gap, but a mismatch often signals a real problem in the source data).
+- No `NaN` in covariate columns (`NaN` in `disease_cases` is fine — CHAP treats those as masked/missing case counts).
+
 ## Transforms
 
 A transform modifies a series that already exists. They're applied to a driver inside a `depends_on` entry, via its `transforms` list, **after** the causal lag and **before** standardization — this is how you plant a *nonlinear* or *distributed-lag* relationship instead of a plain linear weight:
