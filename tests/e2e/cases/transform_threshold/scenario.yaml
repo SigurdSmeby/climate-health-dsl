@@ -1,0 +1,19 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv, metadata.json]
+  reproduce: true
+
+period: weekly
+n_total: 104
+seed: 0
+variables:
+  - {name: rainfall, generate: seasonal_spike}
+disease_cases:
+  population: 500000
+  median_rate: 0.1
+  max_rate: 0.4
+  depends_on:
+    - variable: rainfall
+      weight: 3.0
+      transforms:
+        - {name: threshold, params: {mode: hinge, threshold: 1.0}}

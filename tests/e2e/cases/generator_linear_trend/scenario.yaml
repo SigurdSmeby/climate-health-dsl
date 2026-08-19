@@ -1,0 +1,12 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv]
+
+period: monthly
+n_total: 24
+seed: 1
+variables:
+  - {name: growth, generate: linear_trend, params: {start: 10, slope: 0.5}}
+disease_cases:
+  population: 50000
+  depends_on: [{variable: growth, lag: 0, weight: 1.0}]

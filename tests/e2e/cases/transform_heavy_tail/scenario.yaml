@@ -1,0 +1,17 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv, metadata.json]
+  reproduce: true
+
+period: weekly
+n_total: 104
+seed: 0
+variables:
+  - {name: rainfall, generate: seasonal_spike}
+disease_cases:
+  population: 300000
+  depends_on:
+    - variable: rainfall
+      weight: 1.0
+      transforms:
+        - {name: heavy_tail, params: {scale: 2.0, df: 3.0}}

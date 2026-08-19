@@ -1,0 +1,15 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv]
+  columns:
+    # noise: 0 -> the generator is exactly constant at `level`
+    baseline: [50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50]
+
+period: monthly
+n_total: 24
+seed: 1
+variables:
+  - {name: baseline, generate: flat, params: {level: 50, noise: 0}}
+disease_cases:
+  population: 50000
+  depends_on: [{variable: baseline, lag: 0, weight: 1.0}]

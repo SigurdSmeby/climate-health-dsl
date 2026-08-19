@@ -1,0 +1,12 @@
+_expect:
+  exit_code: 1
+  files_absent: [simulated_data.csv]
+  stderr_contains: "rainfal"
+
+period: weekly
+n_total: 20
+variables:
+  - {name: rainfall, generate: seasonal_spike}
+disease_cases:
+  population: 1000
+  depends_on: [{variable: rainfal, lag: 3}]  # typo, dangling reference

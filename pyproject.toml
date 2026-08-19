@@ -30,3 +30,10 @@ build-backend = "hatchling.build"
 testpaths = ["tests"]
 addopts = "-q"
 pythonpath = ["."]
+filterwarnings = [
+    # kaleido==0.2.1 is pinned deliberately (see the dependency comment above);
+    # these DeprecationWarnings come from kaleido's own internals, not our code.
+    # (?s) makes `.` match the leading newline these messages start with.
+    "ignore:(?s).*[Kk]aleido.*:DeprecationWarning",
+    "ignore:setDaemon\\(\\) is deprecated:DeprecationWarning",
+]
