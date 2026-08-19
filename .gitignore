@@ -29,6 +29,7 @@ graphify-out/
 .DS_Store
 .vscode/
 .claude/
+CLAUDE.md
 
 # Local-only notes and scratch (see ignore/core-system-guide/ for local docs)
 *.log
