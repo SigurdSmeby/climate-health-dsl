@@ -55,7 +55,9 @@ disease_cases:
 variables:
   - name: rainfall
     generate: from_csv
-    params: { file: examples/data/laos_subset.csv, column: rainfall }
+    # laos_subset.csv holds three provinces; source_location picks one (or set
+    # locations: [Bokeo, ...] at the top to match the CSV names).
+    params: { file: examples/data/laos_subset.csv, column: rainfall, source_location: Bokeo }
 ```
 
 **6. Generate replicates.** To show your evaluation isn't a fluke of one seed, generate several with `--replicates`:
