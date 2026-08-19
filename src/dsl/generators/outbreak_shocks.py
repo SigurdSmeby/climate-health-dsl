@@ -30,8 +30,8 @@ class OutbreakShocksGenerator(VariableGenerator):
     ):
         if rate < 0:
             raise ValueError(f"rate must be >= 0, got {rate}")
-        if duration < 1:
-            raise ValueError(f"duration must be >= 1, got {duration}")
+        if not isinstance(duration, int) or duration < 1:
+            raise ValueError(f"duration must be an int >= 1, got {duration!r}")
         if noise < 0:
             raise ValueError(f"noise must be >= 0, got {noise}")
         if magnitude <= 0:

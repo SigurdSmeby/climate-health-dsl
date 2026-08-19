@@ -56,6 +56,14 @@ def test_negative_rate_rejected():
         OutbreakShocksGenerator(rate=-1.0)
 
 
+def test_non_int_duration_rejected():
+    # A YAML decimal (duration: 2.5) must be a clean ValueError here, not a
+    # cryptic numpy TypeError from slice indexing in generate() (same class
+    # of bug already fixed for block_missing's block_len).
+    with pytest.raises(ValueError, match="duration"):
+        OutbreakShocksGenerator(duration=2.5)
+
+
 def test_negative_noise_rejected():
     # Matches the pattern every sibling generator follows (seasonal_spike,
     # seasonal_smooth, flat, linear_trend). Without this, a negative noise
