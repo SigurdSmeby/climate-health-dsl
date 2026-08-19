@@ -1,0 +1,14 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv]
+
+period: weekly
+n_total: 104
+seed: 3
+variables:
+  - name: rainfall
+    generate: outbreak_shocks
+    params: {baseline: 5, noise: 1, rate: 2, magnitude: 20, duration: 2, clamp_min: 0}
+disease_cases:
+  population: 200000
+  depends_on: [{variable: rainfall, lag: 1, weight: 1.0}]

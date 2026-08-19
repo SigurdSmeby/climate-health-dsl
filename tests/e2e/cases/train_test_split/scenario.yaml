@@ -1,0 +1,14 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv, train.csv, test.csv, metadata.json]
+
+period: monthly
+n_total: 36
+seed: 42
+train_fraction: 0.8
+variables:
+  - name: rainfall
+    generate: seasonal_spike
+disease_cases:
+  population: 100000
+  depends_on: [{variable: rainfall, lag: 1, weight: 1.0}]

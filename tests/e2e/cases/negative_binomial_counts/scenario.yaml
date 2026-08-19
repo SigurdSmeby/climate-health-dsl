@@ -1,0 +1,16 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv]
+  column_all:
+    disease_cases: non_negative_int
+
+period: monthly
+n_total: 36
+seed: 5
+variables:
+  - {name: rainfall, generate: seasonal_spike}
+disease_cases:
+  population: 100000
+  count_distribution: negative_binomial
+  overdispersion: 2.0
+  depends_on: [{variable: rainfall, lag: 1, weight: 1.0}]

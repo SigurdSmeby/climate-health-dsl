@@ -1,0 +1,17 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv, metadata.json]
+  column_exists: [location]
+  reproduce: true
+
+period: weekly
+n_total: 104
+seed: 0
+locations: [north, south]
+variables:
+  - {name: rainfall, generate: seasonal_smooth, params: {noise: 3.0}, shared: 0.9}
+disease_cases:
+  population: 200000
+  median_rate: 0.1
+  max_rate: 0.3
+  depends_on: [{variable: rainfall, weight: 1.5}]

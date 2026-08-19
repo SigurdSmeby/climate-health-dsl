@@ -1,0 +1,15 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv]
+  columns:
+    # linear_trend, no noise: population[i] = start + slope*i
+    population: [10000, 10100, 10200, 10300, 10400, 10500, 10600, 10700, 10800, 10900, 11000, 11100]
+
+period: monthly
+n_total: 12
+seed: 5
+variables:
+  - {name: rainfall, generate: seasonal_spike}
+disease_cases:
+  population: {generate: linear_trend, params: {start: 10000, slope: 100}}
+  depends_on: [{variable: rainfall, lag: 1, weight: 1.0}]

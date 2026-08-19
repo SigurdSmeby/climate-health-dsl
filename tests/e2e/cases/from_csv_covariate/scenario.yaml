@@ -1,0 +1,14 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv]
+
+period: monthly
+n_total: 6
+start_period: "2010-01"
+variables:
+  - name: rainfall
+    generate: from_csv
+    params: {file: real_rain.csv, column: rainfall}
+disease_cases:
+  population: 1000
+  depends_on: [{variable: rainfall, lag: 1}]

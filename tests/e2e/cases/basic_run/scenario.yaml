@@ -1,0 +1,22 @@
+_expect:
+  exit_code: 0
+  files_exist: [simulated_data.csv, metadata.json]
+  reproduce: true
+
+period: monthly
+n_total: 36
+seed: 42
+variables:
+  - name: rainfall
+    generate: seasonal_spike
+  - name: mean_temperature
+    generate: seasonal_smooth
+disease_cases:
+  population: 100000
+  depends_on:
+    - variable: rainfall
+      lag: 3
+      weight: 1.0
+    - variable: mean_temperature
+      lag: 3
+      weight: 1.0

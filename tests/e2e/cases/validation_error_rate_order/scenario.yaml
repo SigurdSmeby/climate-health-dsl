@@ -1,0 +1,14 @@
+_expect:
+  exit_code: 1
+  files_absent: [simulated_data.csv]
+  stderr_contains: "must be smaller than max_rate"
+
+period: weekly
+n_total: 52
+variables:
+  - {name: rain, generate: seasonal_spike}
+disease_cases:
+  population: 1000
+  median_rate: 0.5
+  max_rate: 0.3
+  depends_on: [{variable: rain}]
