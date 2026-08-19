@@ -1,12 +1,8 @@
 """Rare outbreak shocks: a low baseline punctuated by sudden sharp spikes.
 
-Models extreme events — a heavy-rain week, a heatwave — that trigger an
-outbreak, the rare-event case forecasters handle poorly. Distinct from
-``seasonal_spike``, which is a smooth bump that repeats every year: here shocks
-are rare and their timing is random (Poisson), so no two years look alike.
-
-Use it as a driver whose spikes propagate into disease, or as the disease-like
-shape itself.
+Models extreme events — a heavy-rain week, a heatwave — the rare-event case
+forecasters handle poorly. Unlike ``seasonal_spike`` (a smooth yearly bump),
+shock timing is random (Poisson), so no two years look alike.
 """
 import numpy as np
 
@@ -14,9 +10,14 @@ from dsl.core.extension.generator_base import VariableGenerator, register_genera
 from dsl.core.pipeline.periods import periods_per_year
 
 
-@register_generator("outbreak_shocks")  # this string is what you write in YAML
+@register_generator("outbreak_shocks")
 class OutbreakShocksGenerator(VariableGenerator):
-    """A ``baseline`` (+noise) with rare shocks of size ``magnitude``."""
+    """A ``baseline`` (+noise) with rare shocks of size ``magnitude``.
+
+    Params: ``baseline`` (quiet-period level), ``noise`` (Gaussian std),
+    ``rate`` (expected shocks per year), ``magnitude`` (rise above baseline),
+    ``duration`` (periods each shock lasts), ``clamp_min`` (optional floor).
+    """
 
     def __init__(
         self,
@@ -27,16 +28,6 @@ class OutbreakShocksGenerator(VariableGenerator):
         duration: int = 1,
         clamp_min: float | None = None,
     ):
-        """
-        Parameters
-        ----------
-        baseline: the quiet-period level the series sits at.
-        noise: Gaussian noise std on the baseline (0 → flat between shocks).
-        rate: expected number of shock events per year (Poisson mean).
-        magnitude: how far above baseline each shock rises.
-        duration: how many consecutive periods each shock elevates.
-        clamp_min: optional floor (e.g. 0).
-        """
         if rate < 0:
             raise ValueError(f"rate must be >= 0, got {rate}")
         if duration < 1:
@@ -57,9 +48,8 @@ class OutbreakShocksGenerator(VariableGenerator):
 
         if self.rate > 0 and self.magnitude != 0:
             ppy = periods_per_year(period)
-            # Expected total events over the whole span, drawn as one Poisson;
-            # each event's start is uniform over the timeline. This keeps the
-            # per-year rate at `rate` regardless of series length.
+            # One Poisson draw for the whole span, starts uniform over the
+            # timeline — keeps the per-year rate constant at any length.
             expected = self.rate * n_periods / ppy
             n_events = rng.poisson(expected)
             starts = rng.integers(0, n_periods, size=n_events)
