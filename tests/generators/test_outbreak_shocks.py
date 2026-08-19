@@ -56,6 +56,46 @@ def test_negative_rate_rejected():
         OutbreakShocksGenerator(rate=-1.0)
 
 
+def test_negative_noise_rejected():
+    # Matches the pattern every sibling generator follows (seasonal_spike,
+    # seasonal_smooth, flat, linear_trend). Without this, a negative noise
+    # silently produced NO noise at all (generate() only applies it when
+    # self.noise > 0), hiding a config typo instead of raising.
+    with pytest.raises(ValueError, match="noise"):
+        OutbreakShocksGenerator(noise=-1.0)
+
+
+def test_non_positive_magnitude_rejected():
+    # The docstring documents magnitude as "rise above baseline"; a
+    # non-positive value would either no-op or produce an undocumented dip.
+    with pytest.raises(ValueError, match="magnitude"):
+        OutbreakShocksGenerator(magnitude=0.0)
+    with pytest.raises(ValueError, match="magnitude"):
+        OutbreakShocksGenerator(magnitude=-30.0)
+
+
+def test_overlapping_shocks_do_not_stack():
+    # Two shock windows landing close together must cap at one magnitude per
+    # period (np.maximum), not sum to 2x — "rise above baseline" is a single
+    # magnitude, regardless of how many events happen to coincide.
+    # A stub rng forces two known, overlapping shock starts, rather than
+    # relying on a lucky seed draw.
+    class _TwoOverlappingStartsRng:
+        def normal(self, *a, **k):
+            return np.zeros(k.get("size", 0))
+
+        def poisson(self, expected):
+            return 2
+
+        def integers(self, low, high, size=None):
+            return np.array([2, 4])  # windows [2,5) and [4,7) overlap
+
+    series = OutbreakShocksGenerator(
+        baseline=0.0, noise=0.0, rate=1.0, magnitude=20.0, duration=3,
+    ).generate(10, "weekly", _TwoOverlappingStartsRng())
+    assert series.max() == 20.0  # not 40.0
+
+
 def test_registered_and_reachable():
     from dsl.core.extension.generator_base import get_generator
 

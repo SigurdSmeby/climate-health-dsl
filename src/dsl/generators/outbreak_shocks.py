@@ -32,6 +32,10 @@ class OutbreakShocksGenerator(VariableGenerator):
             raise ValueError(f"rate must be >= 0, got {rate}")
         if duration < 1:
             raise ValueError(f"duration must be >= 1, got {duration}")
+        if noise < 0:
+            raise ValueError(f"noise must be >= 0, got {noise}")
+        if magnitude <= 0:
+            raise ValueError(f"magnitude must be > 0, got {magnitude}")
         self.baseline = baseline
         self.noise = noise
         self.rate = rate
@@ -46,15 +50,24 @@ class OutbreakShocksGenerator(VariableGenerator):
         if self.noise > 0:
             series = series + rng.normal(0.0, self.noise, size=n_periods)
 
-        if self.rate > 0 and self.magnitude != 0:
+        if self.rate > 0:
             ppy = periods_per_year(period)
             # One Poisson draw for the whole span, starts uniform over the
             # timeline — keeps the per-year rate constant at any length.
             expected = self.rate * n_periods / ppy
             n_events = rng.poisson(expected)
             starts = rng.integers(0, n_periods, size=n_events)
+            # Shock windows drawn independently can overlap; build a single
+            # shock layer with np.maximum (not +=) so an overlap caps at one
+            # magnitude per period, matching the "rise above baseline"
+            # contract rather than letting overlapping events stack
+            # unboundedly.
+            shock = np.zeros(n_periods)
             for s in starts:
-                series[s : s + self.duration] += self.magnitude
+                shock[s : s + self.duration] = np.maximum(
+                    shock[s : s + self.duration], self.magnitude
+                )
+            series = series + shock
 
         if self.clamp_min is not None:
             series = np.maximum(series, self.clamp_min)
