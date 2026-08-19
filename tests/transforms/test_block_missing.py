@@ -16,9 +16,24 @@ def test_no_blocks_is_identity(rng):
     assert np.array_equal(result, series)
 
 
-def test_blanks_a_contiguous_run(rng):
+class _FixedStartRng:
+    """Stub with just enough of the Generator API: always draws start=10.
+
+    Deterministic regardless of numpy's actual RNG stream (unlike seeding a
+    real Generator, whose draw for a given seed isn't a stable contract this
+    test should depend on) — 10 is far enough from either boundary that the
+    block below never clips.
+    """
+
+    def integers(self, low, high, size=None):
+        return np.full(size, 10)
+
+
+def test_blanks_a_contiguous_run():
     series = np.arange(50.0)
-    result = BlockMissingTransform(n_blocks=1, block_len=6).apply(series, rng)
+    result = BlockMissingTransform(n_blocks=1, block_len=6).apply(
+        series, _FixedStartRng()
+    )
     nan_idx = np.where(np.isnan(result))[0]
     assert len(nan_idx) == 6
     # Contiguous: the blanked indices form one unbroken run.
