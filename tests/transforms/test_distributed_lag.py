@@ -57,6 +57,32 @@ def test_empty_weights_rejected():
         DistributedLagTransform(weights=[])
 
 
+def test_non_iterable_weights_rejected():
+    # A YAML author writing `weights: 4` instead of `weights: [4]` must get a
+    # clear error, not a cryptic TypeError from len() deep inside apply().
+    with pytest.raises(ValueError, match="weights"):
+        DistributedLagTransform(weights=4)
+
+
+def test_non_numeric_weight_rejected():
+    with pytest.raises(ValueError, match="weights"):
+        DistributedLagTransform(weights=[0.5, "oops"])
+
+
+def test_non_finite_weight_rejected():
+    with pytest.raises(ValueError, match="weights"):
+        DistributedLagTransform(weights=[0.5, float("nan")])
+    with pytest.raises(ValueError, match="weights"):
+        DistributedLagTransform(weights=[0.5, float("inf")])
+
+
+def test_bool_weight_rejected():
+    # bool is a subclass of int in Python; a stray `true`/`false` in YAML
+    # weights must not silently become 1.0/0.0.
+    with pytest.raises(ValueError, match="weights"):
+        DistributedLagTransform(weights=[0.5, True])
+
+
 def test_registered_and_reachable():
     from dsl.core.extension.transform_base import get_transform
 
@@ -83,7 +109,9 @@ def test_planted_kernel_is_recoverable():
     counts = build_disease_cases(
         {"rainfall": driver}, spec, np.random.default_rng(0), n, "weekly",
     )
-    # Disease in the 4-period window after the event exceeds the quiet baseline.
-    window = np.nanmean(counts[41:45])
+    # Disease in the 4-period window starting at the event (weight[0] is the
+    # strongest response, at the SAME index as the event itself) exceeds the
+    # quiet baseline.
+    window = np.nanmean(counts[40:44])
     baseline = np.nanmean(counts[60:100])
     assert window > baseline
