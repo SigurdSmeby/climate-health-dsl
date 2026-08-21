@@ -13,23 +13,17 @@ import yaml
 def load_yaml(path: str | Path) -> dict:
     """Read a YAML file from disk and return its contents as a dict.
 
-    Parameters
-    ----------
-    path:
-        Path to the scenario file.
+    Args:
+        path: Path to the scenario file (str or Path object).
 
-    Returns
-    -------
-    dict
-        The parsed YAML mapping, ready to be validated by ``parse_config``.
+    Returns:
+        A dict parsed from the YAML file, ready to be validated by
+        parse_config(). Example: {"period": "monthly", "n_total": 36, ...}
 
-    Raises
-    ------
-    FileNotFoundError
-        If the file does not exist.
-    ValueError
-        If the file is not valid YAML, or its top level is not a mapping
-        (e.g. the file contains just a list or a bare string).
+    Errors Caught (raised to caller):
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the file is not valid YAML, or its top level is not
+            a mapping (e.g. the file contains just a list or a bare string).
     """
     path = Path(path)  # accept both strings and Path objects
     if not path.is_file():
