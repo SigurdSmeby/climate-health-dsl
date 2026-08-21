@@ -24,32 +24,26 @@ _PALETTE = (
 )
 
 
-def _series_columns(df: pd.DataFrame) -> list[str]:
-    """Columns that get a panel: covariates, disease_cases, and population
-    only when it varies within at least one location (a growth trajectory
-    is worth a panel; different constants across locations are not)."""
-    columns = [c for c in df.columns if c not in _NON_SERIES]
-    if "population" in df.columns:
-        if "location" in df.columns:
-            varies = df.groupby("location")["population"].nunique().gt(1).any()
-        else:
-            varies = df["population"].nunique() > 1
-        if varies:
-            columns.append("population")
-    return columns
-
-
 def plot_dataset(
     df: pd.DataFrame,
     out_path: str | Path,
     train_split: int | None = None,
 ) -> None:
-    """Write a faceted time-series plot of ``df`` to ``out_path``.
+    """Write a faceted time-series plot to disk.
 
-    One stacked panel per variable, a line per location. The extension
-    selects the format (.html interactive, image otherwise). If
-    ``train_split`` is given, a dashed vertical line marks the train/test
-    boundary at that period index.
+    Create one stacked panel per variable (covariates + disease_cases, plus
+    population if it varies), with one line per location. Output format:
+    .html (interactive) or a static image, chosen by out_path's extension.
+
+    Args:
+        df: The output DataFrame.
+        out_path: Path to write (e.g., "out/demo/plot.html").
+        train_split: If given, the train/test boundary as a period index —
+            drawn as a dashed vertical line on every panel.
+
+    Errors Caught (raised to caller):
+        ValueError: If the file extension is not .html or a supported image
+            format (.png, .svg, .pdf, .jpg, .jpeg).
     """
     out_path = Path(out_path)
     suffix = out_path.suffix.lower()
@@ -60,21 +54,39 @@ def plot_dataset(
         )
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Step 1: Build the figure.
     fig = _build_figure(df, train_split)
+    # Now fig = a plotly Figure with one stacked subplot per series column
 
+    # Step 2: Write to disk in the requested format.
     if suffix == ".html":
         fig.write_html(out_path)
     else:
         fig.write_image(out_path)
+    # Now out_path contains the plot
 
 
 def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure:
-    """One panel per series, one line per location, colours pinned per location."""
+    """Build the faceted figure: one panel per series, one line per location.
+
+    Colours are pinned per location so a location keeps the same colour in
+    every panel.
+
+    Args:
+        df: The output DataFrame.
+        train_split: If given, the train/test boundary as a period index.
+
+    Returns:
+        A plotly Figure with len(_series_columns(df)) stacked subplots.
+    """
+    # Step 1: Decide which columns get their own panel, and which colour
+    # each location gets (same colour in every panel).
     series_columns = _series_columns(df)
     locations = list(df["location"].unique()) if "location" in df.columns else [None]
     colour_for = {
         loc: _PALETTE[i % len(_PALETTE)] for i, loc in enumerate(locations)
     }
+    # Now colour_for = {"north": "#636efa", "south": "#ef553b", ...}
 
     fig = make_subplots(
         rows=len(series_columns),
@@ -83,6 +95,7 @@ def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure
         subplot_titles=series_columns,
     )
 
+    # Step 2: Add one line per (panel, location).
     for row, column in enumerate(series_columns, start=1):
         for loc in locations:
             block = df[df["location"] == loc] if loc is not None else df
@@ -104,7 +117,9 @@ def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure
                 row=row,
                 col=1,
             )
+    # Now fig has len(series_columns) * len(locations) traces
 
+    # Step 3: Mark the train/test boundary on every panel, if given.
     if train_split is not None:
         for row in range(1, len(series_columns) + 1):
             fig.add_vline(
@@ -121,3 +136,29 @@ def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure
         showlegend=len(locations) > 1,
     )
     return fig
+
+
+def _series_columns(df: pd.DataFrame) -> list[str]:
+    """Decide which columns get their own panel.
+
+    Covariates and disease_cases always get a panel. population gets one
+    only when it varies within at least one location (a growth trajectory
+    is worth a panel; different constants across locations are not).
+
+    Args:
+        df: The output DataFrame.
+
+    Returns:
+        Column names to plot, in df's column order.
+        Example: ["rainfall", "humidity", "disease_cases"], or with
+        ["rainfall", "disease_cases", "population"] if population grows.
+    """
+    columns = [c for c in df.columns if c not in _NON_SERIES]
+    if "population" in df.columns:
+        if "location" in df.columns:
+            varies = df.groupby("location")["population"].nunique().gt(1).any()
+        else:
+            varies = df["population"].nunique() > 1
+        if varies:
+            columns.append("population")
+    return columns
