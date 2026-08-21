@@ -39,6 +39,17 @@ def _load_scenario_dict(path: str) -> dict:
     ``load_yaml`` parses both (JSON is valid YAML). A metadata file wraps the
     real scenario under a ``"scenario"`` key — unwrap it so a dataset can be
     reproduced from its own ``metadata.json``.
+
+    Args:
+        path: Path to a scenario YAML file or a metadata.json sidecar.
+
+    Returns:
+        A dict ready for parse_config(), with any relative from_csv paths
+        resolved against the scenario file's directory.
+
+    Errors Caught (raised to caller):
+        FileNotFoundError: If the file doesn't exist.
+        ValueError: If the file is not valid YAML/JSON.
     """
     data = load_yaml(path)
     if "scenario" in data and isinstance(data["scenario"], dict):
@@ -54,6 +65,10 @@ def _resolve_from_csv_paths(scenario: dict, base_dir: Path) -> None:
 
     Edits the dict in place. Absolute paths and paths that already exist
     relative to the cwd are left alone (the latter keeps old behavior).
+
+    Args:
+        scenario: The scenario dict, as loaded from YAML (mutated in place).
+        base_dir: Directory to resolve relative from_csv `file` params against.
     """
 
     def fix(params: dict) -> None:
@@ -92,6 +107,14 @@ def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
     folder name, so reproducing ``out/foo/metadata.json`` yields ``out/foo``-
     style names rather than ``out/metadata``. The first run is unnumbered;
     if it already exists, the lowest free ``out/<name>_<n>`` (n from 1) wins.
+
+    Args:
+        input_path: Path to the scenario YAML or metadata.json being run.
+        out_arg: The user's explicit -o/--out-dir value, or None.
+
+    Returns:
+        The output directory path to write into.
+        Example: Path("out/scenario") or Path("out/scenario_2").
     """
     if out_arg is not None:
         return Path(out_arg)
@@ -111,9 +134,16 @@ def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
 def _numbered_dir_suffix(entry: Path, prefix: str) -> int | None:
     """The integer suffix of ``entry`` if its name is ``<prefix><digits>``.
 
-    Returns ``None`` if ``entry`` isn't a directory or its name doesn't match
-    (a non-numeric or missing suffix). Shared by ``_scenario_runs`` (``out/
-    <name>_<N>`` siblings) and the replicate cleanup (``rep_NN`` dirs).
+    Shared by ``_scenario_runs`` (``out/<name>_<N>`` siblings) and the
+    replicate cleanup (``rep_NN`` dirs).
+
+    Args:
+        entry: A candidate directory entry.
+        prefix: The expected name prefix (e.g. "scenario_" or "rep_").
+
+    Returns:
+        The trailing integer, or None if ``entry`` isn't a directory or its
+        name doesn't match (a non-numeric or missing suffix).
     """
     if not entry.is_dir() or not entry.name.startswith(prefix):
         return None
@@ -124,7 +154,12 @@ def _numbered_dir_suffix(entry: Path, prefix: str) -> int | None:
 def _scenario_runs(scenario: str) -> list[Path]:
     """Existing out/ folders belonging to ``scenario`` (its base + _N siblings).
 
-    Sorted: the base ``out/<name>`` first, then ``_1``, ``_2``, … numerically.
+    Args:
+        scenario: Path to the scenario file (only its stem is used).
+
+    Returns:
+        Existing run directories, sorted: base ``out/<name>`` first, then
+        ``_1``, ``_2``, … numerically. Empty list if out/ doesn't exist.
     """
     name = Path(scenario).stem
     out = Path("out")
@@ -143,9 +178,15 @@ def _scenario_runs(scenario: str) -> list[Path]:
 def _prompt_continue(scenario: str) -> Path | None:
     """Ask whether to continue an existing run folder or start a new one.
 
-    Returns the chosen folder, or ``None`` to start a new (auto-named) run.
-    Used by ``dsl run`` when neither ``-o`` nor ``--new`` is given; falls back
-    to ``None`` when there's nothing to continue or there's no interactive TTY.
+    Used by ``dsl run`` when neither ``-o`` nor ``--new`` is given.
+
+    Args:
+        scenario: Path to the scenario file (used to find existing runs).
+
+    Returns:
+        The chosen folder to continue (and overwrite), or None to start a
+        new auto-named run. None when there's nothing to continue, there's
+        no interactive TTY, or the user picks "new"/anything but a number.
     """
     runs = _scenario_runs(scenario)
     if not runs or not sys.stdin.isatty():
@@ -222,7 +263,15 @@ disease_cases:
 
 
 def _write_starter(path: Path, force: bool) -> int:
-    """Write the starter scenario to ``path``. Refuse to clobber unless forced."""
+    """Write the starter scenario to ``path``. Refuse to clobber unless forced.
+
+    Args:
+        path: Where to write the starter scenario.
+        force: If True, overwrite an existing file at path.
+
+    Returns:
+        Exit code: 0 on success, 1 if path exists and force is False.
+    """
     if path.exists() and not force:
         print(
             f"error: {path} already exists (use --force to overwrite)",
@@ -245,6 +294,13 @@ def _friendly_error(exc: ValidationError) -> str:
     ``unknown field 'x' … did you mean 'y'?``, scoped to the near-miss pool of
     the model the typo is actually in (mirroring the generator-typo message).
     Other error types keep Pydantic's own (already clear) text.
+
+    Args:
+        exc: The ValidationError raised by pydantic during parsing.
+
+    Returns:
+        A single string with one "; "-joined line per error.
+        Example: "unknown field 'periode' — did you mean 'period'?"
     """
     import typing
 
@@ -307,7 +363,11 @@ def _friendly_error(exc: ValidationError) -> str:
 
 
 def _list_blocks() -> int:
-    """Print the registered generators and transforms (names) for discovery."""
+    """Print the registered generators and transforms (names) for discovery.
+
+    Returns:
+        Exit code: always 0.
+    """
     import dsl.generators  # import triggers registration
     import dsl.transforms  # noqa: F401
     from dsl.core.extension.generator_base import generator_registry
@@ -326,9 +386,22 @@ def _list_blocks() -> int:
 def _load_and_parse(scenario: str, seed_override: int | None = None) -> ScenarioConfig:
     """Load + validate a scenario file. Raises on any hard error.
 
-    ``seed_override`` replaces the parsed seed (used for replicates), so the
-    written metadata records the actual seed. Shared by ``_run_once`` and
-    ``_run_replicates`` so both report parse/validation errors identically.
+    Shared by ``_run_once`` and ``_run_replicates`` so both report
+    parse/validation errors identically.
+
+    Args:
+        scenario: Path to the scenario YAML file or metadata.json.
+        seed_override: If given, replaces the parsed seed (used for
+            replicates), so the written metadata records the actual seed.
+
+    Returns:
+        A validated ScenarioConfig.
+
+    Errors Caught (raised to caller):
+        FileNotFoundError: If the scenario file doesn't exist.
+        ValueError: If seed_override is negative, or the scenario is invalid
+            in a way pydantic doesn't catch.
+        ValidationError: If pydantic validation fails.
     """
     config = parse_config(_load_scenario_dict(scenario))
     if seed_override is not None:
@@ -353,9 +426,28 @@ def _run_once(
 ) -> int:
     """Parse → generate → write (and optionally plot) one scenario.
 
-    Returns a process exit code. Shared by the one-shot path and ``--watch``.
-    Pass an already-parsed ``config`` (e.g. from a replicate loop that parsed
-    once and only varies the seed) to skip re-parsing ``scenario`` from disk.
+    Shared by the one-shot path and ``--watch``.
+
+    Args:
+        scenario: Path to the scenario YAML file or metadata.json.
+        out_dir: Directory to write simulated_data.csv, metadata.json, and
+            (if plot) the plot file into.
+        plot: Whether to also write a plot of the dataset.
+        plot_format: Plot file format (e.g. "html", "png").
+        seed_override: Passed to _load_and_parse when config is None.
+        config: An already-parsed ScenarioConfig (e.g. from a replicate loop
+            that parsed once and only varies the seed), to skip re-parsing
+            ``scenario`` from disk.
+
+    Returns:
+        Exit code: 0 on success, 1 if parsing/validation or generation fails.
+
+    Errors Caught (logged to stderr):
+        FileNotFoundError: If the scenario file doesn't exist.
+        ValueError: If the scenario is invalid, or generation hits a bad
+            generator param or malformed from_csv source.
+        ValidationError: If pydantic validation fails.
+        KeyError: If a generator name is not registered.
     """
     # --- Parse + validate. Any hard error exits here, before generating. ---
     try:
@@ -408,9 +500,17 @@ def _run_once(
 
 
 def _changed(path: str, last_mtime: float) -> tuple[bool, float]:
-    """Has ``path``'s mtime advanced past ``last_mtime``? Returns (changed, mtime).
+    """Has ``path``'s mtime advanced past ``last_mtime``?
 
     A missing file (mid-save by some editors) counts as unchanged.
+
+    Args:
+        path: File to check.
+        last_mtime: The mtime last observed.
+
+    Returns:
+        (changed, mtime): whether it changed, and the current mtime to
+        remember for the next check (unchanged from last_mtime if missing).
     """
     try:
         mtime = Path(path).stat().st_mtime
@@ -439,7 +539,11 @@ _RELOAD_SCRIPT = """
 
 
 def _inject_reload(html_path: Path) -> None:
-    """Append the live-reload script to a written plot.html (idempotent)."""
+    """Append the live-reload script to a written plot.html (idempotent).
+
+    Args:
+        html_path: Path to the plot.html file to patch in place.
+    """
     html = html_path.read_text()
     if "__plot_version__" not in html:
         html = html.replace("</body>", _RELOAD_SCRIPT + "</body>", 1)
@@ -451,6 +555,14 @@ def _serve(out_dir: Path, version: list[int]) -> "http.server.HTTPServer":
 
     ``version`` is a one-element list shared with the watch loop — the handler
     reads ``version[0]`` so a re-run can bump it without restarting the server.
+
+    Args:
+        out_dir: Directory to serve as static files (contains plot.html).
+        version: One-element list; version[0] is polled by the injected
+            reload script and bumped by the watch loop after each re-run.
+
+    Returns:
+        The running HTTPServer (already serving in a daemon thread).
     """
     class Handler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
@@ -480,6 +592,15 @@ def _watch_loop(
 
     With an HTML plot, also serve it on localhost and live-reload the browser
     on each successful re-run; otherwise just regenerate the files in place.
+
+    Args:
+        scenario: Path to the scenario YAML file being watched.
+        out_dir: Directory each re-run writes into (overwritten in place).
+        plot: Whether to also write (and, if html, serve) a plot.
+        plot_format: Plot file format (e.g. "html", "png").
+
+    Returns:
+        Exit code: 0 (Ctrl-C is the normal way to stop watching).
     """
     last_mtime = Path(scenario).stat().st_mtime
     serve = plot and plot_format == "html"
@@ -513,7 +634,21 @@ def _watch_loop(
 
 
 def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
-    """Run the scenario N times with seeds base, base+1, … into rep_NN/ dirs."""
+    """Run the scenario N times with seeds base, base+1, … into rep_NN/ dirs.
+
+    Args:
+        args: Parsed CLI args (scenario, replicates, plot, plot_format, watch).
+        out_dir: Parent directory; each replicate writes into out_dir/rep_NN/.
+
+    Returns:
+        Exit code: 0 if all replicates succeed, 1 on the first failure
+        (--watch combined with --replicates is also a failure).
+
+    Errors Caught (logged to stderr):
+        FileNotFoundError: If the scenario file doesn't exist.
+        ValueError: If the scenario is invalid.
+        ValidationError: If pydantic validation fails.
+    """
     if args.watch:
         print("error: --watch cannot be combined with --replicates", file=sys.stderr)
         return 1
@@ -546,10 +681,16 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point for the console script. Returns the process exit code.
+    """Entry point for the console script.
 
     ``argv`` defaults to the real command line; tests pass a list instead
     so they can invoke the CLI in-process.
+
+    Args:
+        argv: Command-line arguments (defaults to sys.argv[1:]).
+
+    Returns:
+        Exit code: 0 on success, 1 on error.
     """
     parser = argparse.ArgumentParser(
         prog="dsl",
