@@ -29,22 +29,8 @@ from dsl.core.pipeline.periods import format_period, parse_period, periods_per_y
 _STRICT = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
-def _transform_lag(transforms: "list[TransformSpec]") -> int:
-    """Extra warm-up periods a dependency's transforms add on top of its lag.
-
-    ponytail: knows 'lag' and 'distributed_lag' by name; grow a
-    Transform.warmup API if a third lag-adding transform appears.
-    """
-    extra = 0
-    for tf in transforms:
-        if tf.name == "lag":
-            extra += int(tf.params.get("n", 0) or 0)
-        elif tf.name == "distributed_lag":
-            weights = tf.params.get("weights") or []
-            extra += max(len(weights) - 1, 0)
-    return extra
-
-
+# Classes first (data-driven module exception): they are the main point of
+# this file, so they come before the helper/public functions that use them.
 class PopulationSpec(BaseModel):
     """A generator that produces the ``population`` series over time.
 
@@ -90,6 +76,14 @@ class VariableSpec(BaseModel):
 
     @model_validator(mode="after")
     def _name_not_blank(self) -> "VariableSpec":
+        """Reject a name that is empty or only whitespace.
+
+        Returns:
+            self, unchanged, if the name is non-blank.
+
+        Errors Caught (raised to caller):
+            ValueError: If name.strip() is empty.
+        """
         if not self.name.strip():
             raise ValueError("variable name must not be blank.")
         return self
@@ -141,6 +135,15 @@ class DiseaseSpec(BaseModel):
 
     @model_validator(mode="after")
     def _check_rates(self) -> "DiseaseSpec":
+        """Cross-field checks a single Field() range can't express.
+
+        Returns:
+            self, unchanged, if both checks pass.
+
+        Errors Caught (raised to caller):
+            ValueError: If median_rate >= max_rate (the sigmoid shift is
+                undefined outside (0, 1)), or population is a fixed int < 1.
+        """
         # The model shifts its sigmoid by logit(median_rate / max_rate),
         # only defined for a ratio strictly between 0 and 1.
         if self.median_rate >= self.max_rate:
@@ -183,7 +186,19 @@ class ScenarioConfig(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _normalize_locations(cls, data: object) -> object:
-        """Accept either a name list or a name→overrides mapping."""
+        """Accept either a name list or a name -> overrides mapping.
+
+        Args:
+            data: The raw dict from YAML (before Pydantic parses fields),
+                or a non-dict which is passed through unchanged.
+
+        Returns:
+            data, with a mapping-form "locations" rewritten to a plain name
+            list plus a new "location_overrides" key holding the mapping.
+
+        Errors Caught (raised to caller):
+            ValueError: If "locations" is an empty mapping.
+        """
         if not isinstance(data, dict):
             return data
         locations = data.get("locations")
@@ -197,7 +212,14 @@ class ScenarioConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_cross_section(self) -> "ScenarioConfig":
-        """Hard errors that span multiple fields, one helper per concern."""
+        """Hard errors that span multiple fields, one helper per concern.
+
+        Returns:
+            self, unchanged, if every check passes.
+
+        Errors Caught (raised to caller):
+            ValueError: From any of the _check_* helpers below.
+        """
         self._check_start_period()
         self._check_locations()
         self._check_train_fraction()
@@ -207,8 +229,15 @@ class ScenarioConfig(BaseModel):
         return self
 
     def _check_start_period(self) -> None:
-        """start_period must be valid for the resolution, and the whole range
-        must fit the 4-digit calendar (year <= 9999)."""
+        """Check start_period is valid for the resolution and fits the calendar.
+
+        The whole n_total-period range must land within the 4-digit
+        calendar (year <= 9999).
+
+        Errors Caught (raised to caller):
+            ValueError: If start_period doesn't parse for this period type,
+                or the period range runs past year 9999.
+        """
         if self.start_period is None:
             return
         try:
@@ -232,7 +261,14 @@ class ScenarioConfig(BaseModel):
             )
 
     def _check_locations(self) -> None:
-        """Location names unique and non-blank; every location has a population."""
+        """Check location names are usable and every location has a population.
+
+        Errors Caught (raised to caller):
+            ValueError: If locations has duplicates, a blank name, the
+                reserved name "shared", an override population < 1, or a
+                location with no population source at all (neither its own
+                override nor the disease_cases.population fallback).
+        """
         if len(set(self.locations)) != len(self.locations):
             raise ValueError(
                 f"locations contains duplicate names: {self.locations}."
@@ -271,7 +307,12 @@ class ScenarioConfig(BaseModel):
                 )
 
     def _check_train_fraction(self) -> None:
-        """Both train and test partitions must be non-empty."""
+        """Check both the train and test partitions end up non-empty.
+
+        Errors Caught (raised to caller):
+            ValueError: If train_fraction with n_total gives an empty train
+                or test split.
+        """
         if self.train_fraction is None:
             return
         n_train = math.floor(self.n_total * self.train_fraction)
@@ -283,8 +324,19 @@ class ScenarioConfig(BaseModel):
             )
 
     def _check_variables(self, defined: list[str]) -> None:
-        """Variable names become output columns: no clashes with built-in
-        columns (silent overwrite) or each other (silent drop)."""
+        """Check variable names won't clash with each other or built-in columns.
+
+        Variable names become output columns: a clash with a built-in
+        column would silently overwrite it, and a duplicate variable name
+        would silently drop one.
+
+        Args:
+            defined: The declared variable names, in YAML order.
+
+        Errors Caught (raised to caller):
+            ValueError: If a name is reserved (time_period, location,
+                disease_cases, population) or duplicated.
+        """
         reserved = {"time_period", "location", "disease_cases", "population"}
         clashes = sorted(reserved.intersection(defined))
         if clashes:
@@ -299,8 +351,19 @@ class ScenarioConfig(BaseModel):
             )
 
     def _check_dependencies(self, defined: list[str]) -> None:
-        """Every dependency names a declared variable, with a lag (including
-        lag added by its transforms) that can actually appear in the data."""
+        """Check every dependency is resolvable and its lag fits the series.
+
+        Every dependency must name a declared variable, with a lag
+        (including lag added by its transforms) small enough that some
+        non-warm-up data can actually appear.
+
+        Args:
+            defined: The declared variable names, in YAML order.
+
+        Errors Caught (raised to caller):
+            ValueError: If a dependency names an undeclared variable, or its
+                lag (with transform warm-up) reaches or exceeds n_total.
+        """
         for dep in self.disease_cases.depends_on:
             if dep.variable not in defined:
                 raise ValueError(
@@ -323,26 +386,77 @@ class ScenarioConfig(BaseModel):
                 )
 
     def population_for(self, location: str) -> "int | PopulationSpec":
-        """The population SOURCE for ``location``: its own override if the
-        mapping form set one, else ``disease_cases.population``. The single
-        place the engine asks "what is the population here?"."""
+        """Resolve the population source for a location.
+
+        The single place the engine asks "what is the population here?".
+
+        Args:
+            location: The location name.
+
+        Returns:
+            The location's own override if the mapping form set one, else
+            disease_cases.population (the scenario-wide fallback).
+        """
         override = self.location_overrides.get(location)
         if override is not None and override.population is not None:
             return override.population
         return self.disease_cases.population
 
 
+# Helper functions after the classes.
+def _transform_lag(transforms: "list[TransformSpec]") -> int:
+    """Sum the extra warm-up periods a dependency's transforms add.
+
+    ponytail: knows 'lag' and 'distributed_lag' by name; grow a
+    Transform.warmup API if a third lag-adding transform appears.
+
+    Args:
+        transforms: The dependency's transforms list, in application order.
+
+    Returns:
+        Total extra warm-up periods, on top of the dependency's own lag.
+        Example: 2 for [{name: distributed_lag, params: {weights: [.5,.3,.2]}}].
+    """
+    extra = 0
+    for tf in transforms:
+        if tf.name == "lag":
+            extra += int(tf.params.get("n", 0) or 0)
+        elif tf.name == "distributed_lag":
+            weights = tf.params.get("weights") or []
+            extra += max(len(weights) - 1, 0)
+    return extra
+
+
+# Public functions last.
 def parse_config(data: dict) -> ScenarioConfig:
     """Validate a raw scenario dict into a ScenarioConfig.
 
-    Raises ``pydantic.ValidationError`` with field-specific messages on any
-    hard error.
+    Args:
+        data: The raw dict from YAML.
+
+    Returns:
+        A validated ScenarioConfig object.
+
+    Errors Caught (raised to caller):
+        ValidationError: If any field fails validation, with field-specific
+            messages.
     """
     return ScenarioConfig(**data)
 
 
 def validate_scenario(config: ScenarioConfig) -> list[str]:
-    """Return warnings for suspicious-but-legal scenarios. Never raises."""
+    """Soft validation: return warnings for suspicious-but-legal scenarios.
+
+    These warnings do not stop execution — the CLI prints them and proceeds.
+
+    Args:
+        config: A validated ScenarioConfig.
+
+    Returns:
+        A list of warning messages (empty if no issues found).
+        Example: ["variable 'rainfall' is declared but no disease_cases "
+        "dependency uses it (decoy/confounder, or a mistake?)"]
+    """
     warnings: list[str] = []
 
     # Orphan variables may be an intentional decoy/confounder → warning only.
