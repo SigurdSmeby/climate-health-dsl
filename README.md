@@ -1,8 +1,8 @@
 # DSL — synthetic climate-health data
 
-A YAML-based DSL for generating synthetic climate-health datasets. A scenario file declares how climate variables relate to disease (lags, weights, nonlinearities, missing data), and the tool generates a dataset embedding those relationships — so you can check how well a forecasting model recovers a *known* ground truth.
+A YAML-based DSL for generating synthetic climate-health datasets. A scenario file declares how climate variables (e.g. rainfall, temperature) relate to disease case counts — how many periods later disease reacts, how strongly, and how noisy or incomplete the data is. The tool then generates a dataset that actually embeds those relationships, so a forecasting model's output can be checked against the *exact*, known relationship you wrote — the "ground truth" — instead of an unknown real-world one.
 
-Output is formatted for [CHAP](https://chap.dhis2.org/), but is plain CSV.
+Output is plain CSV, formatted for [CHAP](https://chap.dhis2.org/) (a disease forecasting platform) but usable with anything that reads a CSV.
 
 **New here?** The [tutorial](docs/TUTORIAL.md) walks from install to a real-data experiment. This page is the quick reference — see [Learn more](#learn-more) for the full docs.
 
