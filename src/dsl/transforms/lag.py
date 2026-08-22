@@ -13,16 +13,37 @@ from dsl.core.extension.transform_base import Transform, register_transform
 
 @register_transform("lag")  # this string is what you write in YAML
 class LagTransform(Transform):
-    """Shift a series forward by ``n`` periods, NaN-filling the warm-up."""
+    """Shift a series forward by n periods, NaN-filling the warm-up.
+
+    Registered as "lag" in the transform registry. apply() returns the
+    series shifted so value at time t becomes the input's value at t - n;
+    the first n positions have no valid past and become NaN.
+    Example: array([nan, nan, 50.5, 59.3, ...]) for n=2.
+    """
 
     def __init__(self, n: int = 0):
-        """``n`` is the delay in periods; 0 means no shift. Must be >= 0."""
+        """Store the YAML params: for this transform. n=0 means no shift.
+
+        Errors Caught (raised to caller):
+            ValueError: If n < 0.
+        """
         if n < 0:
             raise ValueError(f"n must be >= 0, got {n}")
         self.n = n
 
     def apply(self, series: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-        """Return a lagged copy of ``series``. ``rng`` is unused (no randomness)."""
+        """Shift the series forward by n periods.
+
+        Args:
+            series: The input time series.
+            rng: Seeded random generator (required by the transform API,
+                unused — lag is deterministic).
+
+        Returns:
+            A lagged copy of series, same length. The first n positions
+            are NaN (no valid past to read from).
+            Example: array([nan, nan, 50.5, 59.3, ...]) for n=2.
+        """
         # astype(float) both copies (input stays untouched) and guarantees
         # the array can hold NaN — integer arrays cannot.
         result = series.astype(float)
