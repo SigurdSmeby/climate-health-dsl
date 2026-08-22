@@ -10,13 +10,23 @@ from dsl.core.extension.transform_base import Transform, register_transform
 
 @register_transform("heavy_tail")
 class HeavyTailTransform(Transform):
-    """Add Student-t noise (scale ``scale``, ``df`` degrees of freedom)."""
+    """Add Student-t noise for fat tails/outliers.
+
+    Registered as "heavy_tail" in the transform registry. apply() adds
+    scale * Student-t(df) noise to each value; low df means heavy tails,
+    and as df grows the distribution approaches Gaussian.
+    """
 
     def __init__(self, scale: float = 1.0, df: float = 3.0):
-        # np.isfinite also rejects NaN/Inf, unlike a plain `scale < 0` check:
-        # every comparison against NaN is False, so `NaN < 0` (and `inf < 0`
-        # is False too) would silently pass, then corrupt the whole output
-        # series in apply() instead of failing here with a clear error.
+        """Store the YAML params: for this transform.
+
+        Errors Caught (raised to caller):
+            ValueError: If scale isn't a finite number >= 0, or df isn't a
+                finite number > 0. np.isfinite also rejects NaN/Inf, unlike
+                a plain `scale < 0` check — every comparison against NaN is
+                False, so a NaN scale would otherwise silently pass here
+                and corrupt the output series in apply() instead.
+        """
         if not np.isfinite(scale) or scale < 0:
             raise ValueError(f"scale must be a finite number >= 0, got {scale}")
         if not np.isfinite(df) or df <= 0:
@@ -25,6 +35,16 @@ class HeavyTailTransform(Transform):
         self.df = df
 
     def apply(self, series: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+        """Add Student-t noise to the series.
+
+        Args:
+            series: The input time series.
+            rng: Seeded random generator for reproducibility.
+
+        Returns:
+            series plus scale * Student-t(df) noise, same length. NaN
+            values stay NaN. Unchanged if scale is 0.
+        """
         result = series.astype(float)  # copy; NaN + noise stays NaN
         if self.scale == 0.0:
             return result
