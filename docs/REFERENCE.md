@@ -1,78 +1,6 @@
-# DSL guide
+# Reference: scenario fields, generators, transforms
 
-The full reference for writing scenarios, the built-in generators and transforms, how the disease model works, and how to extend the DSL. For the quick reference (install, commands, output files) see the [README](../README.md).
-
-## Getting started
-
-A hands-on path from install to a real-data experiment — one command or edit per step.
-
-**0. Install.** Requires Python 3.11+. With [uv](https://docs.astral.sh/uv/):
-
-```bash
-uv venv
-uv pip install -e ".[dev]"
-```
-
-(Without uv: `python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"`, then drop the `uv run` prefix below.)
-
-**1. Scaffold a starter.** Writes a small, commented scenario:
-
-```bash
-uv run dsl new my_scenario.yaml
-```
-
-(Prefer to start from a finished example? `examples/` has several ready to run, e.g. `uv run dsl run examples/basic_scenario.yaml`.)
-
-**2. Run it and look.** `--plot` writes an interactive `plot.html`; `--watch` re-runs every time you save the file:
-
-```bash
-uv run dsl run my_scenario.yaml --plot --watch
-```
-
-Together they open a browser tab served from `localhost` that **reloads itself** whenever you save the scenario — edit, save, watch the plot update live, no manual refresh. (Drop `--watch` for a one-shot run; it just writes `plot.html`.)
-
-When a scenario already has output, `dsl run` lists the earlier runs and asks whether to **continue one** (refine the same `out/` folder) or start fresh — so a second session doesn't silently spawn `out/my_scenario_1/`. Use `--new` to skip the prompt and always start fresh, or `-o DIR` to write somewhere specific.
-
-**3. Read the output.** `out/my_scenario/simulated_data.csv` has one row per period — the climate columns, `disease_cases`, and `population`. The first `disease_cases` are blank on purpose: with `lag: 2` there's no driver signal yet to react to. That blanked warm-up is the lag made visible.
-
-**4. Change one thing, watch it move.** In `my_scenario.yaml`, bump `lag: 2` to `lag: 6` and save. With `--watch` running, the dataset regenerates and the plot refreshes — the disease peak shifts later relative to rainfall. Adding a second driver is pure YAML, no code:
-
-```yaml
-variables:
-  - name: rainfall
-    generate: seasonal_spike
-  - name: mean_temperature      # add a second climate variable
-    generate: seasonal_smooth
-disease_cases:
-  depends_on:
-    - { variable: rainfall, lag: 6 }
-    - { variable: mean_temperature, lag: 2 }   # ...and a second driver
-```
-
-**5. Use real climate data.** Swap a synthetic generator for `from_csv` to drive disease off *real* climate (a bundled three-province Laos sample lives in `examples/data/`):
-
-```yaml
-variables:
-  - name: rainfall
-    generate: from_csv
-    # laos_subset.csv holds three provinces; source_location picks one (or set
-    # locations: [Bokeo, ...] at the top to match the CSV names).
-    params: { file: examples/data/laos_subset.csv, column: rainfall, source_location: Bokeo }
-```
-
-**6. Generate replicates.** To show your evaluation isn't a fluke of one seed, generate several with `--replicates`:
-
-```bash
-uv run dsl run my_scenario.yaml -o out/study --replicates 20
-```
-
-This writes `out/study/rep_00/`, `rep_01/`, … each a full dataset+metadata with seed `base, base+1, …`. Run your forecaster over all of them and report the spread.
-
-**7. Explore the worked examples.** `examples/real_data_demo/` has five fuller scenarios (real, synthetic, and mixed) — each with pre-generated output and a `README`:
-
-```bash
-uv run dsl run examples/real_data_demo/01_vietnam_multiprovince.yaml --plot
-```
+Every YAML field, generator, and transform, with types, defaults, and meanings. New to the DSL? Start with the [tutorial](TUTORIAL.md) instead — this page is for looking things up. See also: [how-to guides](HOW_TO.md) (extend the DSL), [concepts](CONCEPTS.md) (how the disease model works).
 
 ## Writing a scenario
 
@@ -286,52 +214,8 @@ Blanks whole contiguous runs to NaN, modelling a reporting outage — unlike `mi
 
 These underlie the built-in `depends_on[].lag` and `disease_cases.missing_rate` shortcuts and can also be named explicitly in a `transforms` list: `lag` (`n`) delays a series causally, `missing` (`rate`) blanks a random fraction of points.
 
-## How `disease_cases` is generated
+## See also
 
-The disease signal is a population-relative incidence model, not a plain weighted sum. It builds a per-period incidence *rate*, then draws integer counts from it (Poisson by default, or overdispersed negative binomial via `count_distribution`):
-
-1. Start from a seasonal baseline (one sine cycle per year), so disease has its own seasonality even with no drivers.
-2. For each `depends_on` entry: delay the driver by `lag` (causally — the warm-up becomes NaN; values never wrap around from the end), apply any `transforms`, standardize to a z-score, multiply by `weight`, and add.
-3. If `autoregressive`, add a random walk (cumulative white noise).
-4. Squash through a sigmoid shifted so a typical period lands near `median_rate`, then scale to a rate: `sigmoid × population × max_rate`. The sigmoid guarantees incidence stays below `max_rate` no matter how extreme the drivers get.
-5. Draw integer counts from the rate (seeded, per the chosen distribution), capped at `population`.
-6. Blank any period with no valid driver signal — the lag warm-up, plus rows where a driver value was itself missing — then apply `missing_rate` last.
-
-See `examples/overdispersed_outbreaks.yaml` for the negative-binomial counts.
-
-## Extending the DSL — generators and transforms
-
-One mental model: **generators create a series; transforms modify one.** Both live in extension folders where every file registers itself — you never edit the core machinery.
-
-First check whether you need code at all. A new *variable* that reuses an existing shape is pure YAML:
-
-```yaml
-variables:
-  - name: wind
-    generate: seasonal_smooth  # reuse
-    params: { mean: 12, amplitude: 4 }
-```
-
-A new *shape* is one new file in `src/dsl/generators/`:
-
-```python
-"""Gusty wind: a noisy series with occasional sharp spikes."""
-import numpy as np
-from dsl.core.extension.generator_base import VariableGenerator, register_generator
-
-@register_generator("gusty")  # the name you write in YAML
-class GustyGenerator(VariableGenerator):
-    def __init__(self, base: float = 5.0, gust_chance: float = 0.1):
-        self.base = base  # these are the YAML `params:`
-        self.gust_chance = gust_chance
-
-    def generate(self, n_periods, period, rng):
-        series = rng.normal(self.base, 1.0, size=n_periods)
-        gusts = rng.random(n_periods) < self.gust_chance
-        series[gusts] += rng.normal(10, 2, size=gusts.sum())
-        return series
-```
-
-The file is auto-discovered on import, the schema passes `params` through, and the engine finds the name in the registry — no other file changes. **Transforms** work identically under `src/dsl/transforms/`: subclass `Transform`, implement `apply(series, rng)`, register with `@register_transform`. A transform becomes usable from a `depends_on[].transforms` list with no core change.
-
-The only core file ever edited after the initial build is `src/dsl/core/config/schema.py`, and only for a genuinely new top-level concept (a new `disease_cases` field, a new global setting) — with schema tests in the same commit.
+- **[Concepts](CONCEPTS.md)** — how these fields combine to build the disease signal.
+- **[How-to guides](HOW_TO.md)** — add a new generator or transform of your own.
+- **[Tutorial](TUTORIAL.md)** — a hands-on walkthrough if you're starting out.

@@ -4,7 +4,7 @@ A YAML-based DSL for generating synthetic climate-health datasets. A scenario fi
 
 Output is formatted for [CHAP](https://chap.dhis2.org/), but is plain CSV.
 
-**New here?** The [full guide](docs/GUIDE.md) walks from install to a real-data experiment and documents every field, generator, and transform. This page is the quick reference.
+**New here?** The [tutorial](docs/TUTORIAL.md) walks from install to a real-data experiment. This page is the quick reference — see [Learn more](#learn-more) for the full docs.
 
 ## Install
 
@@ -25,7 +25,7 @@ uv run dsl run my_scenario.yaml --plot --watch     # generate + live-reloading p
 uv run dsl run examples/basic_scenario.yaml        # or run a bundled example
 ```
 
-`--watch` re-runs on every save and reloads the browser plot. Drop it for a one-shot run. See the [guide](docs/GUIDE.md#getting-started) for a hands-on walkthrough.
+`--watch` re-runs on every save and reloads the browser plot. Drop it for a one-shot run. See the [tutorial](docs/TUTORIAL.md) for a hands-on walkthrough.
 
 ## Commands and options
 
@@ -62,7 +62,10 @@ Rerunning the same scenario produces identical files — all randomness comes fr
 
 ## Learn more
 
-- **[Full guide](docs/GUIDE.md)** — getting-started walkthrough, the complete scenario reference (every field), all generators and transforms with their params, how the disease model works, and how to extend the DSL with a new generator or transform.
+- **[Tutorial](docs/TUTORIAL.md)** — a hands-on walkthrough from install to a real-data experiment. Start here if you're new.
+- **[Reference](docs/REFERENCE.md)** — every scenario field, generator, and transform, with defaults and meanings. Look things up here.
+- **[How-to guides](docs/HOW_TO.md)** — add a new generator or transform.
+- **[Concepts](docs/CONCEPTS.md)** — how the disease signal is actually built, step by step.
 - **`examples/`** — ready-to-run scenarios (`basic_scenario`, `confounders_and_controls`, `overdispersed_outbreaks`, …). `examples/real_data_demo/` has five fuller ones (real / synthetic / mixed), each with pre-generated output and its own README.
 
 ## Project layout
@@ -77,7 +80,7 @@ src/dsl/
 ├── transforms/            # extension zone: one file = one series modification
 └── cli.py                 # the `dsl run` / `dsl new` commands
 tests/                     # mirrors the package; conftest.py has shared fixtures
-docs/GUIDE.md              # the full guide
+docs/                      # tutorial, reference, how-to guides, concepts
 ```
 
 ## Development

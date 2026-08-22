@@ -40,7 +40,7 @@ def _list_blocks() -> int:
     print("transforms (depends_on[].transforms / series modifiers):")
     for name in transform_registry.names():
         print(f"  {name}")
-    print("\nParams for each: see docs/GUIDE.md.")
+    print("\nParams for each: see docs/REFERENCE.md.")
     return 0
 
 
