@@ -23,14 +23,7 @@ class FlatGenerator(VariableGenerator):
         noise: float = 1.0,
         clamp_min: float | None = None,
     ):
-        """Store and validate the YAML params: for this variable.
-
-        Args:
-            level: The constant value the series sits at (default 0.0).
-            noise: Standard deviation of additive Gaussian noise; 0 gives a
-                flat line (default 1.0).
-            clamp_min: If set, values are floored at this minimum, e.g. 0
-                (default None).
+        """Store the YAML params: for this variable.
 
         Errors Caught (raised to caller):
             ValueError: If noise < 0.
