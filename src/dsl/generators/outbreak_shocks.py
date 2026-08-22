@@ -12,11 +12,14 @@ from dsl.core.pipeline.periods import periods_per_year
 
 @register_generator("outbreak_shocks")
 class OutbreakShocksGenerator(VariableGenerator):
-    """A ``baseline`` (+noise) with rare shocks of size ``magnitude``.
+    """A baseline (+noise) with rare shocks of size magnitude.
 
-    Params: ``baseline`` (quiet-period level), ``noise`` (Gaussian std),
-    ``rate`` (expected shocks per year), ``magnitude`` (rise above baseline),
-    ``duration`` (periods each shock lasts), ``clamp_min`` (optional floor).
+    Registered as "outbreak_shocks" in the generator registry. generate()
+    returns baseline plus noise, with rare Poisson-timed shock windows of
+    height magnitude layered on top (overlaps cap at one magnitude, not
+    stacked), floored at clamp_min if set.
+    Example: array([5.1, 4.8, 25.3, 24.9, 5.2, ...]) for baseline=5,
+    magnitude=20, duration=2.
     """
 
     def __init__(
@@ -28,6 +31,20 @@ class OutbreakShocksGenerator(VariableGenerator):
         duration: int = 1,
         clamp_min: float | None = None,
     ):
+        """Store the YAML params: for this variable.
+
+        Args:
+            baseline: The quiet-period level.
+            noise: Standard deviation of additive Gaussian noise.
+            rate: Expected shocks per year (Poisson), not a fixed count.
+            magnitude: How far above baseline a shock rises.
+            duration: How many periods each shock stays elevated.
+            clamp_min: If set, floors the result at this minimum.
+
+        Errors Caught (raised to caller):
+            ValueError: If rate < 0, duration isn't an int >= 1, noise < 0,
+                or magnitude <= 0.
+        """
         if rate < 0:
             raise ValueError(f"rate must be >= 0, got {rate}")
         if not isinstance(duration, int) or duration < 1:
@@ -46,6 +63,21 @@ class OutbreakShocksGenerator(VariableGenerator):
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
+        """Generate the baseline-plus-shocks series.
+
+        Args:
+            n_periods: Number of time periods.
+            period: Period type (e.g., "monthly", "daily") — sets how many
+                periods make up a year, for converting rate to a per-span
+                expected shock count.
+            rng: Seeded random generator for reproducibility.
+
+        Returns:
+            A numpy array of length n_periods, holding baseline plus noise
+            plus any shock windows, floored at clamp_min if set.
+            Example: array([5.1, 4.8, 25.3, 24.9, 5.2, ...]) for baseline=5,
+            magnitude=20, duration=2.
+        """
         series = np.full(n_periods, float(self.baseline))
         if self.noise > 0:
             series = series + rng.normal(0.0, self.noise, size=n_periods)

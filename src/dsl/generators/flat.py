@@ -12,7 +12,12 @@ from dsl.core.extension.generator_base import VariableGenerator, register_genera
 
 @register_generator("flat")  # this string is what you write in YAML
 class FlatGenerator(VariableGenerator):
-    """A constant ``level`` with optional Gaussian noise — no seasonality."""
+    """A constant level with optional Gaussian noise — no seasonality.
+
+    Registered as "flat" in the generator registry. generate() returns
+    level plus noise, floored at clamp_min if set.
+    Example: array([50.3, 49.1, 50.8, 49.6, ...]) for level=50, noise=1.
+    """
 
     def __init__(
         self,
@@ -20,16 +25,10 @@ class FlatGenerator(VariableGenerator):
         noise: float = 1.0,
         clamp_min: float | None = None,
     ):
-        """Store and validate the YAML ``params:`` for this variable.
+        """Store the YAML params: for this variable.
 
-        Parameters
-        ----------
-        level:
-            The constant value the series sits at.
-        noise:
-            Standard deviation of additive Gaussian noise (0 → a flat line).
-        clamp_min:
-            If set, values are floored at this minimum (e.g. 0).
+        Errors Caught (raised to caller):
+            ValueError: If noise < 0.
         """
         if noise < 0:
             raise ValueError(f"noise must be >= 0, got {noise}")
@@ -40,7 +39,20 @@ class FlatGenerator(VariableGenerator):
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
-        """Return the flat series, length ``n_periods``."""
+        """Generate the flat series.
+
+        Args:
+            n_periods: Number of time periods.
+            period: Period type (e.g., "monthly", "daily"); unused — flat
+                has no seasonal shape to align.
+            rng: Seeded random generator for reproducibility.
+
+        Returns:
+            A numpy array of length n_periods, holding self.level plus
+            optional noise, floored at clamp_min if set.
+            Example: array([50.3, 49.1, 50.8, 49.6, ...]) for level=50,
+            noise=1.
+        """
         series = np.full(n_periods, float(self.level))
         if self.noise > 0:
             series = series + rng.normal(0.0, self.noise, size=n_periods)

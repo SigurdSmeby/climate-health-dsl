@@ -13,9 +13,21 @@ from dsl.core.extension.transform_base import Transform, register_transform
 
 @register_transform("distributed_lag")
 class DistributedLagTransform(Transform):
-    """Convolve a series with a causal weight kernel over lags 0..len-1."""
+    """Convolve a series with a causal weight kernel over lags 0..len-1.
+
+    Registered as "distributed_lag" in the transform registry. apply()
+    returns the convolved series; weight i is the effect at lag i, and the
+    first len(weights) - 1 positions become warm-up NaN.
+    Example: array([nan, nan, 32.1, 28.4, ...]) for weights=[0.5, 0.3, 0.2].
+    """
 
     def __init__(self, weights: list[float] | None = None):
+        """Store the YAML params: for this transform.
+
+        Errors Caught (raised to caller):
+            ValueError: If weights is not a non-empty list of finite
+                numbers.
+        """
         if (
             not weights
             or not hasattr(weights, "__iter__")
@@ -32,6 +44,19 @@ class DistributedLagTransform(Transform):
         self.weights = np.asarray(weights, dtype=float)
 
     def apply(self, series: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+        """Convolve the series with the weight kernel.
+
+        Args:
+            series: The input time series.
+            rng: Seeded random generator (required by the transform API,
+                unused — this transform is deterministic).
+
+        Returns:
+            The convolved series, same length as series. The first
+            len(weights) - 1 positions are NaN (incomplete past, warm-up).
+            Example: array([nan, nan, 32.1, 28.4, ...]) for a 3-weight
+            kernel.
+        """
         x = series.astype(float)
         k = len(self.weights)
         # Position t of the convolution is sum_i weights[i] * x[t - i]:

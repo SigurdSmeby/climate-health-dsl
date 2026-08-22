@@ -10,16 +10,36 @@ from dsl.core.extension.transform_base import Transform, register_transform
 
 @register_transform("missing")  # this string is what you write in YAML
 class MissingTransform(Transform):
-    """Replace a ``rate`` fraction of entries with NaN."""
+    """Replace a rate fraction of entries with NaN.
+
+    Registered as "missing" in the transform registry. apply() blanks each
+    entry independently with probability rate (a reproducible random mask
+    from the seeded rng), not exactly rate*len(series) entries.
+    Example: array([50.5, nan, 63.8, 72.5, nan, ...]) for rate=0.2.
+    """
 
     def __init__(self, rate: float = 0.0):
-        """``rate`` is the expected fraction of entries blanked, in [0, 1]."""
+        """Store the YAML params: for this transform. rate is the expected
+        fraction of entries blanked, in [0, 1].
+
+        Errors Caught (raised to caller):
+            ValueError: If rate is not in [0, 1].
+        """
         if not 0.0 <= rate <= 1.0:
             raise ValueError(f"rate must be in [0, 1], got {rate}")
         self.rate = rate
 
     def apply(self, series: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-        """Return a copy of ``series`` with ~rate of its entries set to NaN."""
+        """Blank ~rate of the series' entries to NaN.
+
+        Args:
+            series: The input time series.
+            rng: Seeded random generator, used to draw the missing mask.
+
+        Returns:
+            A copy of series with each entry independently set to NaN with
+            probability self.rate. Unchanged if rate is 0.
+        """
         result = series.astype(float)  # copy + make the array NaN-capable
         if self.rate == 0.0:
             return result
