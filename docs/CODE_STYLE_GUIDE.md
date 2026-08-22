@@ -771,6 +771,42 @@ y = y * 2  # Double y
 x = x + 1  # Compensate for 1-indexed API (not obvious why we add 1)
 ```
 
+### Block Comment Length: 3-Line Cap
+
+A comment block explaining WHY should fit in 1-3 lines: one line for
+something that just needs a label, two or three lines for a real "why"
+that isn't obvious from the code.
+
+If an explanation needs more than 3 lines, that's a signal, not a license to
+keep writing. Either the comment is restating what the code below it already
+shows (cut the restatement), or the logic itself deserves a named helper
+function with its own docstring (the docstring is where a longer explanation
+belongs — Args/Returns/Errors already give it room).
+
+#### ❌ DON'T: A 7-line comment justifying one `if` branch
+
+```python
+# `generator` above is bound to THIS location's own
+# source_location (auto-matched per-location when the variable
+# set none) — reusing it would make the "shared" component just
+# this location's own data again. A shared series needs its OWN
+# location-independent source: use the variable's explicit
+# source_location if it set one, else this is ambiguous on a
+# multi-location file.
+if "source_location" not in dict(spec.params):
+    ...
+```
+
+#### ✅ DO: The same WHY, trimmed to what the code below doesn't already show
+
+```python
+# `generator` is bound to THIS location's own source_location;
+# reusing it would make "shared" just this location's data again,
+# so the shared series needs its own explicit source_location.
+if "source_location" not in dict(spec.params):
+    ...
+```
+
 ---
 
 ## 5. Comprehensions & Generator Expressions

@@ -221,13 +221,9 @@ def _mix_shared_component(
     if shared_series is None:
         shared_rng = _child_rng(config.seed, "shared", "variable", spec.name)
         if spec.generate == "from_csv":
-            # `generator` above is bound to THIS location's own
-            # source_location (auto-matched per-location when the variable
-            # set none) — reusing it would make the "shared" component just
-            # this location's own data again. A shared series needs its OWN
-            # location-independent source: use the variable's explicit
-            # source_location if it set one, else this is ambiguous on a
-            # multi-location file.
+            # `generator` is bound to THIS location's own source_location;
+            # reusing it would make "shared" just this location's data again,
+            # so the shared series needs its own explicit source_location.
             if "source_location" not in dict(spec.params):
                 csv_locations = get_generator("from_csv").locations_in(
                     params.get("file", "")
