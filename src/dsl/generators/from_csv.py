@@ -31,15 +31,26 @@ _LABEL_SHAPE = {
 
 @register_generator("from_csv")  # this string is what you write in YAML
 class FromCsvGenerator(VariableGenerator):
-    """Reads a column from a CHAP-format CSV instead of synthesizing it."""
+    """Reads a column from a CHAP-format CSV instead of synthesizing it.
+
+    Registered as "from_csv" in the generator registry.
+    """
 
     @staticmethod
     def locations_in(file: str) -> list[str]:
-        """The distinct ``location`` values in a CSV (empty if no such column).
+        """List the distinct location values in a CSV.
 
-        Lets the engine decide whether to auto-map each output location to its
-        own rows. Reads only the ``location`` column, and tolerates a missing
-        file (returns empty — generation surfaces that error later).
+        Lets the engine decide whether to auto-map each output location to
+        its own rows. Reads only the location column, and tolerates a
+        missing file (generation surfaces that error later).
+
+        Args:
+            file: Path to the CSV.
+
+        Returns:
+            Distinct values from the "location" column, in first-seen
+            order. Empty list if the file is missing, empty, or has no
+            "location" column.
         """
         path = Path(file)
         if not path.is_file():
@@ -57,21 +68,19 @@ class FromCsvGenerator(VariableGenerator):
         source_location: str | None = None,
         start_period: str | None = None,
     ):
-        """Store and validate the YAML ``params:`` for this variable.
+        """Store and validate the YAML params: for this variable.
 
-        Parameters
-        ----------
-        file:
-            Path to the CSV (CHAP format: a ``time_period`` column plus
-            data columns; a ``location`` column if multi-location).
-        column:
-            Which column to use as this variable's values.
-        source_location:
-            Which location's rows to use. Required when the CSV contains
-            more than one location.
-        start_period:
-            A ``time_period`` label to start reading from (e.g. "2011-01").
-            Defaults to the first row.
+        Args:
+            file: Path to the CSV (CHAP format: a time_period column plus
+                data columns; a location column if multi-location).
+            column: Which column to use as this variable's values.
+            source_location: Which location's rows to use. Required when
+                the CSV contains more than one location.
+            start_period: A time_period label to start reading from (e.g.
+                "2011-01"). Defaults to the first row.
+
+        Errors Caught (raised to caller):
+            ValueError: If file does not exist.
         """
         path = Path(file)
         if not path.is_file():
@@ -84,7 +93,27 @@ class FromCsvGenerator(VariableGenerator):
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
-        """Return the first ``n_periods`` real values. ``rng`` is unused."""
+        """Read the first n_periods real values from the CSV.
+
+        Args:
+            n_periods: Number of time periods the scenario needs.
+            period: Period type (e.g., "monthly", "daily"), checked against
+                the CSV's time_period label format.
+            rng: Seeded random generator; unused (the data is real, not
+                drawn).
+
+        Returns:
+            A float array of length n_periods, read straight from the CSV
+            column (never wrapped, repeated, or extrapolated).
+            Example: array([12.1, 15.4, 9.8, 22.0, ...]).
+
+        Errors Caught (raised to caller):
+            ValueError: If the CSV is empty or missing the column, the
+                column has non-numeric or non-finite values, the CSV has
+                fewer than n_periods rows, or (via the helpers below) the
+                time_period labels don't match, aren't consecutive, or
+                don't cover the requested source_location/start_period.
+        """
         try:
             df = pd.read_csv(self.path)
         except pd.errors.EmptyDataError as exc:
@@ -153,6 +182,18 @@ class FromCsvGenerator(VariableGenerator):
         (a missing month) would silently relabel later values onto earlier
         slots — both are errors. Ordering uses the parsed calendar position,
         not string order, so labels are validated as real dates here too.
+
+        Args:
+            df: Rows for this variable (already reduced to one location).
+            period: Period type (e.g., "monthly", "daily").
+
+        Returns:
+            df sorted chronologically by time_period, with the internal
+            ordering column dropped and the index reset.
+
+        Errors Caught (raised to caller):
+            ValueError: If time_period has duplicates, an unparseable
+                label, or a gap between consecutive periods.
         """
         labels = df["time_period"].astype(str)
         dupes = labels[labels.duplicated()].unique()
@@ -193,7 +234,19 @@ class FromCsvGenerator(VariableGenerator):
 
     @staticmethod
     def _check_daily_consecutive(labels: list[str]) -> None:
-        """Daily gap check via real dates (handles month/year/leap boundaries)."""
+        """Check daily labels for gaps using real dates.
+
+        Daily's year*366 base (used by _order_by_period) jumps at year
+        boundaries, so consecutiveness is checked via real calendar dates
+        instead — this handles month/year/leap-year boundaries correctly.
+
+        Args:
+            labels: Sorted YYYYMMDD time_period labels.
+
+        Errors Caught (raised to caller):
+            ValueError: If any two consecutive dates are not exactly one
+                day apart.
+        """
         import datetime
         import itertools
 
@@ -210,7 +263,20 @@ class FromCsvGenerator(VariableGenerator):
                 )
 
     def _select_location(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Reduce a multi-location CSV to the configured source location."""
+        """Reduce a multi-location CSV to the configured source location.
+
+        Args:
+            df: The full CSV, as loaded.
+
+        Returns:
+            df unchanged if there's no location column or only one
+            location; otherwise just the rows for self.source_location.
+
+        Errors Caught (raised to caller):
+            ValueError: If the CSV has several locations but
+                source_location is unset, or source_location isn't one of
+                the CSV's locations.
+        """
         if "location" not in df.columns:
             return df
         available = list(df["location"].unique())
@@ -229,7 +295,16 @@ class FromCsvGenerator(VariableGenerator):
         return df[df["location"] == self.source_location]
 
     def _check_resolution(self, df: pd.DataFrame, period: str) -> None:
-        """Refuse a scenario resolution that doesn't match the source data."""
+        """Refuse a scenario resolution that doesn't match the source data.
+
+        Args:
+            df: Rows for this variable (already reduced to one location).
+            period: Period type (e.g., "monthly", "daily").
+
+        Errors Caught (raised to caller):
+            ValueError: If any time_period label doesn't match period's
+                expected shape (checked against the first label's format).
+        """
         first_label = str(df["time_period"].iloc[0])
         if not df["time_period"].astype(str).str.match(_LABEL_SHAPE[period]).all():
             raise ValueError(
@@ -239,7 +314,18 @@ class FromCsvGenerator(VariableGenerator):
             )
 
     def _apply_start_period(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Drop rows before the configured start_period, if one is set."""
+        """Drop rows before the configured start_period, if one is set.
+
+        Args:
+            df: Rows for this variable, already ordered chronologically.
+
+        Returns:
+            df unchanged if start_period is None; otherwise the rows from
+            start_period onward.
+
+        Errors Caught (raised to caller):
+            ValueError: If start_period is set but not present in df.
+        """
         if self.start_period is None:
             return df
         labels = df["time_period"].astype(str).tolist()
