@@ -12,7 +12,10 @@ from dsl.core.extension.generator_base import VariableGenerator, register_genera
 
 @register_generator("linear_trend")  # this string is what you write in YAML
 class LinearTrendGenerator(VariableGenerator):
-    """A straight line ``start + slope * t`` with optional Gaussian noise."""
+    """A straight line start + slope * t with optional Gaussian noise.
+
+    Registered as "linear_trend" in the generator registry.
+    """
 
     def __init__(
         self,
@@ -21,18 +24,19 @@ class LinearTrendGenerator(VariableGenerator):
         noise: float = 0.0,
         clamp_min: float | None = None,
     ):
-        """Store and validate the YAML ``params:`` for this variable.
+        """Store and validate the YAML params: for this variable.
 
-        Parameters
-        ----------
-        start:
-            The value at period 0.
-        slope:
-            How much the value changes each period (negative falls).
-        noise:
-            Standard deviation of additive Gaussian noise (0 → a clean line).
-        clamp_min:
-            If set, values are floored at this minimum (e.g. 0).
+        Args:
+            start: The value at period 0 (default 0.0).
+            slope: How much the value changes each period; negative falls
+                (default 1.0).
+            noise: Standard deviation of additive Gaussian noise; 0 gives a
+                clean line (default 0.0).
+            clamp_min: If set, values are floored at this minimum, e.g. 0
+                (default None).
+
+        Errors Caught (raised to caller):
+            ValueError: If noise < 0.
         """
         if noise < 0:
             raise ValueError(f"noise must be >= 0, got {noise}")
@@ -44,7 +48,20 @@ class LinearTrendGenerator(VariableGenerator):
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
     ) -> np.ndarray:
-        """Return the trend series, length ``n_periods``."""
+        """Generate the trend series.
+
+        Args:
+            n_periods: Number of time periods.
+            period: Period type (e.g., "monthly", "daily"); unused —
+                linear_trend has no seasonal shape to align.
+            rng: Seeded random generator for reproducibility.
+
+        Returns:
+            A numpy array of length n_periods, holding start + slope*t plus
+            optional noise, floored at clamp_min if set.
+            Example: array([70000, 70090, 70180, 70270, ...]) for
+            start=70000, slope=90.
+        """
         t = np.arange(n_periods)
         series = self.start + self.slope * t
         if self.noise > 0:
