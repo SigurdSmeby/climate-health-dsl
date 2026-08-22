@@ -14,7 +14,9 @@ from dsl.core.extension.generator_base import VariableGenerator, register_genera
 class FlatGenerator(VariableGenerator):
     """A constant level with optional Gaussian noise — no seasonality.
 
-    Registered as "flat" in the generator registry.
+    Registered as "flat" in the generator registry. generate() returns
+    level plus noise, floored at clamp_min if set.
+    Example: array([50.3, 49.1, 50.8, 49.6, ...]) for level=50, noise=1.
     """
 
     def __init__(
