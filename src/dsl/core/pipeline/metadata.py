@@ -16,23 +16,28 @@ from dsl.core.config.schema import ScenarioConfig
 METADATA_FILENAME = "metadata.json"
 
 
-def _population_json(population: "int | BaseModel") -> object:
-    """A JSON-safe view of a population: an int as-is, a spec as a dict."""
-    if isinstance(population, BaseModel):
-        return population.model_dump(mode="json")
-    return population
-
-
 def build_metadata(config: ScenarioConfig) -> dict:
-    """Return a JSON-serializable record of the ground truth behind a run.
+    """Build a JSON-serializable metadata record from a validated scenario.
 
-    The ``scenario`` key holds the full resolved config — feeding it back to
-    ``parse_config`` reproduces the run exactly. The other keys flatten the
-    interesting fields for quick inspection.
+    The returned dict contains two parts:
+    1. Flattened top-level fields (seed, period, locations, variables) for
+       quick inspection.
+    2. A full "scenario" key with the complete resolved config — feeding it
+       back to parse_config() reproduces the run exactly.
+
+    Args:
+        config: A validated ScenarioConfig object.
+
+    Returns:
+        A dict with keys: dsl_version, seed, period, n_total, start_period,
+        locations, variables, disease_cases, scenario.
+        Example: {'dsl_version': '0.1.0', 'seed': 42, 'period': 'monthly', ...}
     """
-    # model_dump fills in defaults, so the sidecar shows the RESOLVED
-    # scenario, not just what the user typed.
+    # Step 1: Resolve defaults. model_dump fills them in, so the sidecar
+    # shows the RESOLVED scenario, not just what the user typed.
     scenario = config.model_dump(mode="json")
+    # Now scenario = {'period': 'monthly', 'n_total': 36, ..., <defaults filled>}
+
     # location_overrides is excluded from dumps; rebuild the mapping form so
     # per-location populations survive the round-trip.
     if config.location_overrides:
@@ -42,6 +47,9 @@ def build_metadata(config: ScenarioConfig) -> dict:
             else {}
             for name in config.locations
         }
+
+    # Step 2: Flatten the interesting fields for quick inspection, alongside
+    # the full scenario for reproduction.
     return {
         "dsl_version": __version__,
         "seed": config.seed,
@@ -76,8 +84,31 @@ def build_metadata(config: ScenarioConfig) -> dict:
 
 
 def write_metadata(config: ScenarioConfig, out_dir: str | Path) -> None:
-    """Write ``metadata.json`` (human-readable, indented) in ``out_dir``."""
+    """Write metadata.json (human-readable, indented) into out_dir.
+
+    Args:
+        config: A validated ScenarioConfig object.
+        out_dir: Output directory path (created if it doesn't exist).
+
+    Errors Caught (raised to caller):
+        OSError: If the output directory cannot be created or written to.
+    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     metadata = build_metadata(config)
     (out_dir / METADATA_FILENAME).write_text(json.dumps(metadata, indent=2))
+    # Now out_dir/metadata.json contains the resolved scenario + flattened fields
+
+
+def _population_json(population: "int | BaseModel") -> object:
+    """A JSON-safe view of a population: an int as-is, a spec as a dict.
+
+    Args:
+        population: Either a fixed population (int) or a PopulationSpec.
+
+    Returns:
+        The int unchanged, or population.model_dump(mode="json") for a spec.
+    """
+    if isinstance(population, BaseModel):
+        return population.model_dump(mode="json")
+    return population

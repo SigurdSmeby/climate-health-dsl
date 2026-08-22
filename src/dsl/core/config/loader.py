@@ -13,23 +13,17 @@ import yaml
 def load_yaml(path: str | Path) -> dict:
     """Read a YAML file from disk and return its contents as a dict.
 
-    Parameters
-    ----------
-    path:
-        Path to the scenario file.
+    Args:
+        path: Path to the scenario file (str or Path object).
 
-    Returns
-    -------
-    dict
-        The parsed YAML mapping, ready to be validated by ``parse_config``.
+    Returns:
+        A dict parsed from the YAML file, ready to be validated by
+        parse_config(). Example: {"period": "monthly", "n_total": 36, ...}
 
-    Raises
-    ------
-    FileNotFoundError
-        If the file does not exist.
-    ValueError
-        If the file is not valid YAML, or its top level is not a mapping
-        (e.g. the file contains just a list or a bare string).
+    Errors Caught (raised to caller):
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the file is not valid YAML, or its top level is not
+            a mapping (e.g. the file contains just a list or a bare string).
     """
     path = Path(path)  # accept both strings and Path objects
     if not path.is_file():
@@ -45,10 +39,9 @@ def load_yaml(path: str | Path) -> dict:
         raise ValueError(f"Invalid YAML in {path}: {exc}") from exc
 
     if not isinstance(data, dict):
-        # ValueError, not TypeError: callers catch (FileNotFoundError,
-        # ValueError, ValidationError) to print a clean CLI error instead of
-        # a raw traceback, and this is a bad-scenario-content error, not a
-        # Python type-contract violation.
+        # ValueError, not TypeError: this is bad scenario content, not a
+        # Python type-contract violation, and callers catch ValueError to
+        # print a clean CLI error instead of a raw traceback.
         raise ValueError(  # noqa: TRY004
             f"Scenario file {path} must contain a YAML mapping (key: value pairs), "
             f"got {type(data).__name__}"
