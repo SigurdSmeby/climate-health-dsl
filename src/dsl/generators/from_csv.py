@@ -33,7 +33,10 @@ _LABEL_SHAPE = {
 class FromCsvGenerator(VariableGenerator):
     """Reads a column from a CHAP-format CSV instead of synthesizing it.
 
-    Registered as "from_csv" in the generator registry.
+    Registered as "from_csv" in the generator registry. generate() returns
+    the column's first n_periods values, unmodified — never wrapped,
+    repeated, or extrapolated beyond the file's real dates.
+    Example: array([12.1, 15.4, 9.8, 22.0, ...]).
     """
 
     @staticmethod
@@ -68,12 +71,9 @@ class FromCsvGenerator(VariableGenerator):
         source_location: str | None = None,
         start_period: str | None = None,
     ):
-        """Store and validate the YAML params: for this variable.
+        """Store the YAML params: for this variable.
 
         Args:
-            file: Path to the CSV (CHAP format: a time_period column plus
-                data columns; a location column if multi-location).
-            column: Which column to use as this variable's values.
             source_location: Which location's rows to use. Required when
                 the CSV contains more than one location.
             start_period: A time_period label to start reading from (e.g.
