@@ -14,7 +14,10 @@ from dsl.core.extension.generator_base import VariableGenerator, register_genera
 class LinearTrendGenerator(VariableGenerator):
     """A straight line start + slope * t with optional Gaussian noise.
 
-    Registered as "linear_trend" in the generator registry.
+    Registered as "linear_trend" in the generator registry. generate()
+    returns start + slope*t plus noise, floored at clamp_min if set.
+    Example: array([70000, 70090, 70180, 70270, ...]) for start=70000,
+    slope=90.
     """
 
     def __init__(
@@ -24,16 +27,7 @@ class LinearTrendGenerator(VariableGenerator):
         noise: float = 0.0,
         clamp_min: float | None = None,
     ):
-        """Store and validate the YAML params: for this variable.
-
-        Args:
-            start: The value at period 0 (default 0.0).
-            slope: How much the value changes each period; negative falls
-                (default 1.0).
-            noise: Standard deviation of additive Gaussian noise; 0 gives a
-                clean line (default 0.0).
-            clamp_min: If set, values are floored at this minimum, e.g. 0
-                (default None).
+        """Store the YAML params: for this variable.
 
         Errors Caught (raised to caller):
             ValueError: If noise < 0.
