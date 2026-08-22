@@ -33,6 +33,8 @@ class SeasonalSpikeGenerator(VariableGenerator):
         """Store the YAML params: for this variable.
 
         Args:
+            baseline: The value far from the spike (the dry-season level).
+            spike_height: How far above baseline the peak rises.
             spike_center: The period offset of the peak within the yearly
                 cycle (e.g. 26 for mid-year in weekly data, 6 for July in
                 monthly data). Values beyond one cycle wrap (24 on monthly
@@ -41,6 +43,9 @@ class SeasonalSpikeGenerator(VariableGenerator):
                 series peaks correctly without tuning.
             spike_width: The standard deviation of the Gaussian bump, in
                 periods. Bigger means a broader rainy season.
+            noise: Standard deviation of additive Gaussian noise.
+            clamp_min: If set, floors the result at this minimum — e.g. 0
+                for rainfall, which can't be negative.
 
         Errors Caught (raised to caller):
             ValueError: If spike_width <= 0 or noise < 0.

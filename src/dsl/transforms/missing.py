@@ -15,6 +15,7 @@ class MissingTransform(Transform):
     Registered as "missing" in the transform registry. apply() blanks each
     entry independently with probability rate (a reproducible random mask
     from the seeded rng), not exactly rate*len(series) entries.
+    Example: array([50.5, nan, 63.8, 72.5, nan, ...]) for rate=0.2.
     """
 
     def __init__(self, rate: float = 0.0):

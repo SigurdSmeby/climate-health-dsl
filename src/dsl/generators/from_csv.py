@@ -74,6 +74,9 @@ class FromCsvGenerator(VariableGenerator):
         """Store the YAML params: for this variable.
 
         Args:
+            file: Path to the CSV (CHAP format: a time_period column plus
+                data columns; a location column if multi-location).
+            column: Which column to use as this variable's values.
             source_location: Which location's rows to use. Required when
                 the CSV contains more than one location.
             start_period: A time_period label to start reading from (e.g.

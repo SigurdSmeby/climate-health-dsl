@@ -34,8 +34,12 @@ class OutbreakShocksGenerator(VariableGenerator):
         """Store the YAML params: for this variable.
 
         Args:
+            baseline: The quiet-period level.
+            noise: Standard deviation of additive Gaussian noise.
             rate: Expected shocks per year (Poisson), not a fixed count.
+            magnitude: How far above baseline a shock rises.
             duration: How many periods each shock stays elevated.
+            clamp_min: If set, floors the result at this minimum.
 
         Errors Caught (raised to caller):
             ValueError: If rate < 0, duration isn't an int >= 1, noise < 0,

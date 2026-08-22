@@ -16,12 +16,14 @@ _MODES = ("hinge", "step", "quadratic")
 class ThresholdTransform(Transform):
     """Reshape a series nonlinearly around threshold.
 
-    Registered as "threshold" in the transform registry.
-
-    mode:
+    Registered as "threshold" in the transform registry. The output shape
+    depends on mode:
       - ``hinge``: max(0, x - threshold) — effect only above the threshold.
+        Example: array([0.0, 0.0, 3.2, 7.8, ...]) for threshold=5.
       - ``step``: 1 where x >= threshold else 0 — a binary switch.
+        Example: array([0.0, 0.0, 1.0, 1.0, ...]) for threshold=5.
       - ``quadratic``: (x - threshold)**2 — U-shape around an optimum.
+        Example: array([25.0, 9.0, 4.9, 60.8, ...]) for threshold=5.
     """
 
     def __init__(self, mode: str = "hinge", threshold: float = 0.0):

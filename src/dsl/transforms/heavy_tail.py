@@ -15,6 +15,8 @@ class HeavyTailTransform(Transform):
     Registered as "heavy_tail" in the transform registry. apply() adds
     scale * Student-t(df) noise to each value; low df means heavy tails,
     and as df grows the distribution approaches Gaussian.
+    Example: array([51.2, 48.7, 62.4, 49.9, ...]) for a series around 50
+    with scale=1, df=3 (occasional larger jumps than Gaussian noise).
     """
 
     def __init__(self, scale: float = 1.0, df: float = 3.0):

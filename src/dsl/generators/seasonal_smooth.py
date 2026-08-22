@@ -30,8 +30,12 @@ class SeasonalSmoothGenerator(VariableGenerator):
         """Store the YAML params: for this variable.
 
         Args:
+            mean: The value the wave oscillates around.
+            amplitude: How far above/below the mean the wave swings.
             phase: Phase offset in radians — shifts where in the year the
                 peak falls.
+            noise: Standard deviation of additive Gaussian noise.
+            clamp_min: If set, floors the result at this minimum.
 
         Errors Caught (raised to caller):
             ValueError: If amplitude < 0 or noise < 0.

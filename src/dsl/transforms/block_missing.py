@@ -17,10 +17,14 @@ class BlockMissingTransform(Transform):
     returns the series with those runs set to NaN; blocks may overlap
     (fewer effective NaNs than n_blocks*block_len), and a block near the
     end is clipped at the boundary rather than wrapping.
+    Example: array([50.5, nan, nan, nan, 72.5, ...]) for n_blocks=1,
+    block_len=3.
     """
 
     def __init__(self, n_blocks: int = 1, block_len: int = 4):
-        """Store the YAML params: for this transform.
+        """Store the YAML params: for this transform. bool is accepted for
+        n_blocks/block_len (bool subclasses int in Python — True/False are
+        valid values here, not rejected as a wrong type).
 
         Errors Caught (raised to caller):
             ValueError: If n_blocks isn't an int >= 0, or block_len isn't
