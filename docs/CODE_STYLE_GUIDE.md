@@ -1129,6 +1129,85 @@ def lag_transform(series: np.ndarray, rng: np.random.Generator, n: int = 1) -> n
     return lagged
 ```
 
+### Class-Based Generators and Transforms
+
+Most generators and transforms in this codebase are classes (`__init__` +
+`generate`/`apply`), not the plain decorated function shown above. The
+docstring balance across the three spots is deliberate:
+
+- **Class docstring**: registry note plus the concrete return-shape
+  example (what `generate()`/`apply()` produces, with sample values) — the
+  first thing a reader sees when they open the class, so it should tell
+  them what the generator actually outputs, not just restate the field
+  names from `__init__`'s signature.
+- **`__init__` docstring**: stays minimal. No `Args:` section restating
+  what a parameter name and type already say (`level: The constant value
+  the series sits at` tells the reader nothing `level: float` didn't).
+  Keep only `Errors Caught` for real validation. A parameter whose
+  behavior genuinely isn't obvious from its name (e.g. does `clamp_min`
+  floor or clip both ways?) is worth a plain sentence in the class
+  docstring instead of an `Args:` entry here — a docstring with one
+  `Args:` line for three parameters reads as if the other two were
+  forgotten, not deliberately skipped.
+- **`generate`/`apply` docstring**: keeps its full `Args:`/`Returns:`,
+  including the same concrete example as the class docstring. Yes, this
+  duplicates the class docstring's example — that's intentional: it's the
+  method someone actually looks up when they want to know what calling it
+  returns, so it should be self-contained without requiring a scroll back
+  to the class docstring.
+
+```python
+@register_generator("flat")  # this string is what you write in YAML
+class FlatGenerator(VariableGenerator):
+    """A constant level with optional Gaussian noise — no seasonality.
+
+    Registered as "flat" in the generator registry. generate() returns
+    level plus noise, floored at clamp_min if set.
+    Example: array([50.3, 49.1, 50.8, 49.6, ...]) for level=50, noise=1.
+    """
+
+    def __init__(
+        self,
+        level: float = 0.0,
+        noise: float = 1.0,
+        clamp_min: float | None = None,
+    ):
+        """Store the YAML params: for this variable.
+
+        Errors Caught (raised to caller):
+            ValueError: If noise < 0.
+        """
+        if noise < 0:
+            raise ValueError(f"noise must be >= 0, got {noise}")
+        self.level = level
+        self.noise = noise
+        self.clamp_min = clamp_min
+
+    def generate(
+        self, n_periods: int, period: str, rng: np.random.Generator
+    ) -> np.ndarray:
+        """Generate the flat series.
+
+        Args:
+            n_periods: Number of time periods.
+            period: Period type (e.g., "monthly", "daily"); unused — flat
+                has no seasonal shape to align.
+            rng: Seeded random generator for reproducibility.
+
+        Returns:
+            A numpy array of length n_periods, holding self.level plus
+            optional noise, floored at clamp_min if set.
+            Example: array([50.3, 49.1, 50.8, 49.6, ...]) for level=50,
+            noise=1.
+        """
+        series = np.full(n_periods, float(self.level))
+        if self.noise > 0:
+            series = series + rng.normal(0.0, self.noise, size=n_periods)
+        if self.clamp_min is not None:
+            series = np.maximum(series, self.clamp_min)
+        return series
+```
+
 ---
 
 ## 12. Imports
