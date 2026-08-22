@@ -276,9 +276,8 @@ class ScenarioConfig(BaseModel):
         if any(not loc.strip() for loc in self.locations):
             raise ValueError("location names must not be blank.")
         # "shared" is the internal RNG key for a variable's latent regional
-        # driver (see engine._generate_variable); a location with this exact
-        # name would draw the same stream as that driver, silently breaking
-        # `shared:` for it.
+        # driver (see engine._generate_variable); reusing it as a location
+        # name would silently break `shared:` for that location.
         if "shared" in self.locations:
             raise ValueError(
                 "location name 'shared' is reserved (used internally for the "

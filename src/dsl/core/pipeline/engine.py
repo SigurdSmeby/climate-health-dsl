@@ -66,13 +66,14 @@ def _run_one_location(
             locations (mutated in place by _generate_variable).
 
     Returns:
-        A DataFrame with columns: time_period, location, one column per
-        variable, disease_cases, population. One row per time period.
+        A DataFrame with columns: [time_period, location, <variables>,
+        disease_cases, population]. One row per time period.
         Example: 36 rows for n_total=36.
 
     Errors Caught (raised to caller):
         ValueError: If a generator param is invalid or population is
             non-finite.
+        KeyError: If a generator or transform name is not registered.
     """
     # Step 1: Generate all variables for this location.
     drivers = {}
@@ -123,8 +124,6 @@ def _run_one_location(
     columns["disease_cases"] = disease
     columns["population"] = population
     return pd.DataFrame(columns)
-    # Returns columns: [time_period, location, <variables>, disease_cases,
-    # population] with config.n_total rows.
 
 
 def _generate_variable(

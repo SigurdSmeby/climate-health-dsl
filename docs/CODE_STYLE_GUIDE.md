@@ -707,6 +707,43 @@ return pd.DataFrame(columns)
 - Lag warm-up, data types, and array shapes are all visible
 - Makes debugging easier (you know what should be where)
 
+### When to Skip the "Now X = ..." Trace Comment
+
+A `# Now x = ...` comment earns its place only when it shows a concrete
+shape or value the reader couldn't already get from the line above it and
+the function's own `Returns:` docstring. If it just restates one of those
+in English — no numbers, no example, no new fact — cut it.
+
+This applies doubly to a trace comment placed **after** a `return`
+statement: it's dead code (unreachable), and if it repeats the `Returns:`
+section instead of adding to it, it's pure duplication with a spot for the
+two to drift out of sync. Put the concrete example in the docstring's
+`Returns:` section instead — that's the one place a reader will actually
+look for it.
+
+```python
+# ❌ DON'T: restates the Returns: docstring after an unreachable return
+def build_disease_cases(...) -> np.ndarray:
+    """...
+    Returns:
+        A float array of length n_periods with Poisson-drawn case counts.
+    """
+    ...
+    return counts
+    # Returns a float array of length n_periods; NaN marks warm-up and
+    # missing periods, everything else is a non-negative case count.
+
+# ✅ DO: the mid-function trace comments stay (they show real intermediate
+# state); nothing repeats the docstring after the return.
+def _run_one_location(...) -> pd.DataFrame:
+    drivers = {}
+    for spec in config.variables:
+        drivers[spec.name] = _generate_variable(...)
+    # Now drivers = {"rainfall": [50.5, 59.3, ...], "humidity": [65.2, ...]}
+    ...
+    return pd.DataFrame(columns)
+```
+
 ---
 
 ## 4. Comments

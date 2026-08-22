@@ -38,7 +38,6 @@ def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) 
     # Step 1: Write the full dataset.
     # index=False: CHAP's reader does not expect pandas' row-index column.
     df.to_csv(out_dir / FULL_FILENAME, index=False)
-    # Now out_dir/simulated_data.csv contains all rows, all columns true
 
     # Step 2: Write a train/test split if requested.
     if config.train_fraction is not None:
@@ -51,7 +50,6 @@ def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) 
         by_location.tail(config.n_total - n_train).to_csv(
             out_dir / TEST_FILENAME, index=False
         )
-        # Now out_dir/train.csv and test.csv hold the time-based split
     else:
         # Don't leave a previous run's split files beside the new dataset.
         (out_dir / TRAIN_FILENAME).unlink(missing_ok=True)

@@ -319,11 +319,9 @@ def _friendly_error(exc: ValidationError) -> str:
                 return found
         return None
 
-    # field name (as it appears in err["loc"]) -> the NESTED model's own
-    # field pool. e.g. "location_overrides" -> LocationSpec's fields (the
-    # dict[str, LocationSpec] field's value type), so a typo inside a
-    # location override only gets suggestions from what LocationSpec
-    # accepts, not the field's own containing model's fields.
+    # field name -> its NESTED model's field pool, e.g. "location_overrides"
+    # -> LocationSpec's fields, so a typo inside a location override only
+    # gets suggestions from what LocationSpec accepts.
     model_for: dict[str, set[str]] = {}
     all_fields: set[str] = set()
     for obj in vars(_schema).values():
@@ -342,12 +340,9 @@ def _friendly_error(exc: ValidationError) -> str:
             key = str(err["loc"][-1])
             where = ".".join(str(p) for p in err["loc"][:-1])
             at = f" in {where}" if where else ""
-            # The nearest enclosing model: the first loc segment (scanning
-            # from the key backwards) that's an actual field name we know a
-            # model for — NOT just the first string, which for e.g.
-            # ('location_overrides', 'north', 'populaton') would wrongly
-            # match the location name 'north' before reaching
-            # 'location_overrides'.
+            # The nearest enclosing model: scan loc backwards for the first
+            # segment that's an actual field name we know a model for — NOT
+            # just the first string, which could be a location name.
             pool = all_fields
             for segment in reversed(err["loc"][:-1]):
                 if isinstance(segment, str) and segment in model_for:
@@ -405,11 +400,9 @@ def _load_and_parse(scenario: str, seed_override: int | None = None) -> Scenario
     """
     config = parse_config(_load_scenario_dict(scenario))
     if seed_override is not None:
-        # model_copy skips validation (it's meant to be cheap) and, unlike
-        # model_dump()+model_validate(), correctly preserves
-        # location_overrides (excluded from dumps). So check the one
-        # constraint that matters — ScenarioConfig.seed is `ge=0` — by hand
-        # instead of a full re-validate.
+        # model_copy skips validation and (unlike model_dump()+model_validate())
+        # preserves location_overrides, so check the one constraint that
+        # matters — ScenarioConfig.seed is `ge=0` — by hand instead.
         if seed_override < 0:
             raise ValueError(f"seed_override must be >= 0, got {seed_override}.")
         config = config.model_copy(update={"seed": seed_override})
@@ -465,10 +458,9 @@ def _run_once(
     for warning in validate_scenario(config):
         print(f"warning: {warning}", file=sys.stderr)
 
-    # --- Generate, check CHAP compatibility, write. ---
-    # Generation/output can fail on input the schema can't catch (a bad
-    # generator param, a malformed from_csv source). Surface those as clean
-    # CLI errors; let genuine programming bugs propagate.
+    # Generate, check CHAP compatibility, write. Generation can fail on input
+    # the schema can't catch (a bad generator param, a malformed from_csv
+    # source) — surface those as clean CLI errors, not a raw traceback.
     try:
         df = run_engine(config)
     except (ValueError, FileNotFoundError, KeyError) as exc:

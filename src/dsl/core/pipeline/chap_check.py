@@ -60,7 +60,6 @@ def validate_chap(df: pd.DataFrame) -> list[str]:
     if "time_period" in df.columns:
         findings.extend(_check_periods(df))
     findings.extend(_check_values(df))
-    # Now findings = [list of issues, or empty if clean]
     return findings
 
 

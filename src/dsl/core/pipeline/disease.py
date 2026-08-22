@@ -48,6 +48,9 @@ def build_disease_cases(
         A float array of length n_periods with Poisson-drawn case counts.
         NaN in the lag warm-up and wherever missing_rate struck.
         Example: array([nan, nan, 5.0, 8.0, 12.0, nan, 15.0, 11.0, ...])
+
+    Errors Caught (raised to caller):
+        KeyError: If a dependency's transform name isn't registered.
     """
     ppy = periods_per_year(period)
     t = np.arange(n_periods)
@@ -67,7 +70,6 @@ def build_disease_cases(
         for tf in dep.transforms:
             series = get_transform(tf.name)(**tf.params).apply(series, rng)
         eta = eta + dep.weight * _standardize(series)
-    # Now eta = seasonal baseline + sum of weighted, standardized drivers
 
     # Step 3: Optional autoregressive component: a random walk gives the
     # signal memory of its own past.
@@ -80,11 +82,11 @@ def build_disease_cases(
     missing_input = np.isnan(eta)
     eta = np.nan_to_num(eta, nan=0.0)
 
-    # Step 4: eta -> incidence rate. The logit shift maps eta = 0 (a
-    # typical period) to median_rate; the sigmoid keeps every rate below
-    # max_rate * population. Clip before exp only to avoid a spurious
-    # overflow warning — the sigmoid has already saturated by +-700.
+    # Step 4: eta -> incidence rate. The logit shift maps eta = 0 (a typical
+    # period) to median_rate; the sigmoid caps every rate below max_rate.
     shifted = eta + _logit(spec.median_rate / spec.max_rate)
+    # Clip before exp only to silence a spurious overflow warning — the
+    # sigmoid has already saturated by +-700.
     sigmoid = 1.0 / (1.0 + np.exp(-np.clip(shifted, -700.0, 700.0)))
     incidence_rate = sigmoid * spec.population * spec.max_rate
     # Now incidence_rate = [rate_0, rate_1, ...], each in [0, population*max_rate]
@@ -102,8 +104,6 @@ def build_disease_cases(
         counts = MissingTransform(rate=spec.missing_rate).apply(counts, rng)
 
     return counts
-    # Returns a float array of length n_periods; NaN marks warm-up and
-    # missing periods, everything else is a non-negative case count.
 
 
 def _standardize(series: np.ndarray) -> np.ndarray:

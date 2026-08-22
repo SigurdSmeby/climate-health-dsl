@@ -39,10 +39,9 @@ def load_yaml(path: str | Path) -> dict:
         raise ValueError(f"Invalid YAML in {path}: {exc}") from exc
 
     if not isinstance(data, dict):
-        # ValueError, not TypeError: callers catch (FileNotFoundError,
-        # ValueError, ValidationError) to print a clean CLI error instead of
-        # a raw traceback, and this is a bad-scenario-content error, not a
-        # Python type-contract violation.
+        # ValueError, not TypeError: this is bad scenario content, not a
+        # Python type-contract violation, and callers catch ValueError to
+        # print a clean CLI error instead of a raw traceback.
         raise ValueError(  # noqa: TRY004
             f"Scenario file {path} must contain a YAML mapping (key: value pairs), "
             f"got {type(data).__name__}"

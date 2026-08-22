@@ -56,14 +56,12 @@ def plot_dataset(
 
     # Step 1: Build the figure.
     fig = _build_figure(df, train_split)
-    # Now fig = a plotly Figure with one stacked subplot per series column
 
     # Step 2: Write to disk in the requested format.
     if suffix == ".html":
         fig.write_html(out_path)
     else:
         fig.write_image(out_path)
-    # Now out_path contains the plot
 
 
 def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure:
