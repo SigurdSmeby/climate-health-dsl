@@ -11,15 +11,24 @@ from dsl.core.extension.transform_base import Transform, register_transform
 
 @register_transform("block_missing")
 class BlockMissingTransform(Transform):
-    """Blank ``n_blocks`` contiguous runs of length ``block_len`` to NaN."""
+    """Blank n_blocks contiguous runs of length block_len to NaN.
+
+    Registered as "block_missing" in the transform registry. apply()
+    returns the series with those runs set to NaN; blocks may overlap
+    (fewer effective NaNs than n_blocks*block_len), and a block near the
+    end is clipped at the boundary rather than wrapping.
+    """
 
     def __init__(self, n_blocks: int = 1, block_len: int = 4):
-        # isinstance(x, int) excludes bool implicitly is NOT true (bool is an
-        # int subclass) but that's fine here — True/False are valid n_blocks.
-        # A float (e.g. a YAML author writing 4.5) is what needs rejecting,
-        # since rng.integers()/slice indexing both require real ints and
-        # otherwise fail later with a cryptic numpy TypeError, not this
-        # constructor's friendly ValueError.
+        """Store the YAML params: for this transform.
+
+        Errors Caught (raised to caller):
+            ValueError: If n_blocks isn't an int >= 0, or block_len isn't
+                an int >= 1. A float (e.g. a YAML author writing 4.5) is
+                rejected here with a clear message rather than failing
+                later with a cryptic numpy TypeError from rng.integers()
+                or slice indexing.
+        """
         if not isinstance(n_blocks, int) or n_blocks < 0:
             raise ValueError(f"n_blocks must be an int >= 0, got {n_blocks!r}")
         if not isinstance(block_len, int) or block_len < 1:
@@ -28,8 +37,17 @@ class BlockMissingTransform(Transform):
         self.block_len = block_len
 
     def apply(self, series: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-        """Blocks may overlap (fewer effective NaNs); a block near the end is
-        clipped at the boundary rather than wrapping."""
+        """Blank n_blocks contiguous runs of the series to NaN.
+
+        Args:
+            series: The input time series.
+            rng: Seeded random generator, used to pick block start points.
+
+        Returns:
+            series with n_blocks runs of block_len values set to NaN.
+            Blocks may overlap (fewer effective NaNs), and a block starting
+            near the end is clipped at the boundary rather than wrapping.
+        """
         result = series.astype(float)  # copy + NaN-capable
         n = len(result)
         if self.n_blocks == 0 or n == 0:
