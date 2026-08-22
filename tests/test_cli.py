@@ -6,15 +6,15 @@ import pandas as pd
 import pytest
 import yaml
 
-from dsl.cli import (
+from dsl._run import (
     _changed,
     _inject_reload,
     _prompt_continue,
     _run_once,
     _scenario_runs,
     _serve,
-    main,
 )
+from dsl.cli import main
 from tests.conftest import scenario_dict as base_scenario
 from tests.conftest import write_csv
 
