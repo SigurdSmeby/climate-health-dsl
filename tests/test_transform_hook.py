@@ -120,5 +120,5 @@ def test_transforms_recorded_in_metadata():
         }]),
     )
     meta = build_metadata(cfg)
-    dep = meta["disease_cases"]["depends_on"][0]
+    dep = meta["scenario"]["disease_cases"]["depends_on"][0]
     assert dep["transforms"] == [{"name": "_test_scale", "params": {"factor": 2.0}}]

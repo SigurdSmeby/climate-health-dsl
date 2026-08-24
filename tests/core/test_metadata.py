@@ -31,32 +31,30 @@ def sample_config():
 
 
 def test_metadata_records_the_ground_truth():
-    meta = build_metadata(sample_config())
+    scenario = build_metadata(sample_config())["scenario"]
     # The knobs that define the embedded relationship must all be captured.
-    assert meta["seed"] == 7
-    assert meta["period"] == "monthly"
-    assert meta["n_total"] == 24
-    assert meta["start_period"] == "2010-01"
-    assert meta["locations"] == ["oslo", "bergen"]
-    deps = meta["disease_cases"]["depends_on"]
+    assert scenario["seed"] == 7
+    assert scenario["period"] == "monthly"
+    assert scenario["n_total"] == 24
+    assert scenario["start_period"] == "2010-01"
+    assert scenario["locations"] == ["oslo", "bergen"]
+    deps = scenario["disease_cases"]["depends_on"]
     assert deps[0] == {
         "variable": "rainfall", "lag": 2, "weight": 1.5, "transforms": [],
     }
-    assert meta["disease_cases"]["population"] == 1000
+    assert scenario["disease_cases"]["population"] == 1000
 
 
 def test_metadata_records_generators():
-    meta = build_metadata(sample_config())
-    gens = {v["name"]: v["generate"] for v in meta["variables"]}
+    scenario = build_metadata(sample_config())["scenario"]
+    gens = {v["name"]: v["generate"] for v in scenario["variables"]}
     assert gens == {
         "rainfall": "seasonal_spike",
         "mean_temperature": "seasonal_smooth",
     }
 
 
-def test_flattened_metadata_includes_count_distribution():
-    # The flattened disease summary must record the count
-    # distribution and overdispersion, not only the nested scenario.
+def test_metadata_includes_count_distribution():
     config = parse_config(
         {
             "period": "monthly", "n_total": 3, "seed": 0,
@@ -69,14 +67,14 @@ def test_flattened_metadata_includes_count_distribution():
             },
         }
     )
-    meta = build_metadata(config)
-    assert meta["disease_cases"]["count_distribution"] == "negative_binomial"
-    assert meta["disease_cases"]["overdispersion"] == 2.5
+    disease = build_metadata(config)["scenario"]["disease_cases"]
+    assert disease["count_distribution"] == "negative_binomial"
+    assert disease["overdispersion"] == 2.5
 
 
-def test_flattened_metadata_count_distribution_default():
-    meta = build_metadata(sample_config())
-    assert meta["disease_cases"]["count_distribution"] == "poisson"
+def test_metadata_count_distribution_default():
+    disease = build_metadata(sample_config())["scenario"]["disease_cases"]
+    assert disease["count_distribution"] == "poisson"
 
 
 def test_metadata_records_tool_version():
@@ -95,7 +93,7 @@ def test_write_metadata_creates_file(tmp_path):
     path = tmp_path / "metadata.json"
     assert path.is_file()
     loaded = json.loads(path.read_text())
-    assert loaded["seed"] == 7
+    assert loaded["scenario"]["seed"] == 7
 
 
 def test_write_metadata_reproduces_config(tmp_path):
@@ -163,9 +161,9 @@ def test_metadata_round_trips_population_generator():
         }
     )
     meta = build_metadata(config)
-    # The WHOLE metadata dict must be JSON-serializable, not just the scenario
-    # block — the flattened top-level population field must not leak a raw
-    # PopulationSpec object (regression: it did, breaking write_metadata).
+    # The whole dict must be JSON-serializable: a generated population is a
+    # PopulationSpec, which only model_dump(mode="json") flattens safely
+    # (regression: a raw spec leaked through, breaking write_metadata).
     json.dumps(meta)
     rebuilt = parse_config(meta["scenario"])
     assert rebuilt == config
@@ -190,7 +188,7 @@ def test_write_metadata_with_population_generator(tmp_path):
     )
     write_metadata(config, tmp_path)
     loaded = json.loads((tmp_path / "metadata.json").read_text())
-    assert loaded["disease_cases"]["population"] == {
+    assert loaded["scenario"]["disease_cases"]["population"] == {
         "generate": "linear_trend",
         "params": {"start": 1000, "slope": 10},
     }

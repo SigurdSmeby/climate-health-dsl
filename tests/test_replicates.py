@@ -27,7 +27,9 @@ def test_replicates_use_consecutive_seeds(tmp_path):
     import json
 
     seeds = [
-        json.loads((out / f"rep_{i:02d}" / "metadata.json").read_text())["seed"]
+        json.loads((out / f"rep_{i:02d}" / "metadata.json").read_text())["scenario"][
+            "seed"
+        ]
         for i in range(3)
     ]
     # basic_scenario.yaml has seed 0 → replicates use 0, 1, 2.
