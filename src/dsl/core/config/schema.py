@@ -416,9 +416,9 @@ class ScenarioConfig(BaseModel):
 
         Errors Caught (raised to caller):
             ValueError: If locations has duplicates, a blank name, the
-                reserved name "shared", an override population < 1, or a
-                location with no population source at all (neither its own
-                override nor its counts block's population fallback).
+                an override population < 1, or a location with no
+                population source at all (neither its own override nor its
+                counts block's population fallback).
         """
         if len(set(self.locations)) != len(self.locations):
             raise ValueError(
@@ -426,14 +426,6 @@ class ScenarioConfig(BaseModel):
             )
         if any(not loc.strip() for loc in self.locations):
             raise ValueError("location names must not be blank.")
-        # "shared" is the internal RNG key for a variable's latent regional
-        # driver (see engine._generate_variable); reusing it as a location
-        # name would silently break `shared:` for that location.
-        if "shared" in self.locations:
-            raise ValueError(
-                "location name 'shared' is reserved (used internally for the "
-                "shared-variable latent driver); choose a different name."
-            )
         # A Field range can't sit on a union arm, so enforce it here.
         for name, override in self.location_overrides.items():
             if isinstance(override.population, int) and override.population < 1:

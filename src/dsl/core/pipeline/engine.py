@@ -331,15 +331,15 @@ def _resolve_population(
     params = dict(source.params)
     if source.generate == "from_csv":
         _inject_start_period(params, start_period)
-    series = _build_generator(source.generate, params).generate(
+    headcount = _build_generator(source.generate, params).generate(
         n_periods, period, rng
     )
-    if not np.all(np.isfinite(series)):
+    if not np.all(np.isfinite(headcount)):
         raise ValueError(
             f"population generator '{source.generate}' produced a missing or "
             f"non-finite value; population must be finite at every period."
         )
-    return np.maximum(np.round(series), 0).astype(int)
+    return np.maximum(np.round(headcount), 0).astype(int)
 
 
 def _child_rng(seed: int, *keys: str) -> np.random.Generator:
@@ -367,14 +367,14 @@ def _child_rng(seed: int, *keys: str) -> np.random.Generator:
     return np.random.default_rng(np.random.SeedSequence(entropy))
 
 
-def _build_generator(name: str, params: dict, variable: str | None = None):
+def _build_generator(name: str, params: dict, series: str | None = None):
     """Instantiate a generator by its registry name.
 
     Args:
         name: The generator's registered name (e.g. "seasonal_smooth").
         params: Keyword params to pass to the generator's constructor.
-        variable: The series name this generator is for, if any (used only
-            to make the error message specific); None means it's for the
+        series: The series name this generator is for, if any (used only to
+            make the error message specific); None means it's for the
             population.
 
     Returns:
@@ -382,12 +382,12 @@ def _build_generator(name: str, params: dict, variable: str | None = None):
 
     Errors Caught (raised to caller):
         ValueError: If a param is unexpected (turns the raw TypeError into a
-            message naming the variable, generator, and bad param).
+            message naming the series, generator, and bad param).
     """
     try:
         return get_generator(name)(**params)
     except TypeError as exc:
-        where = f"series '{variable}'" if variable else "population"
+        where = f"series '{series}'" if series else "population"
         raise ValueError(
             f"{where}: generator '{name}' got an invalid param ({exc})."
         ) from exc

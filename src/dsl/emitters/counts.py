@@ -40,7 +40,7 @@ class CountsEmitter(Emitter):
             distribution: "poisson" (variance == mean) or
                 "negative_binomial" (overdispersed, spikier).
             overdispersion: Negative binomial only; smaller means more
-                variable.
+                variable series.
 
         Errors Caught (raised to caller):
             ValueError: If median_rate is not below max_rate — the sigmoid
