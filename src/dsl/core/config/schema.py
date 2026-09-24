@@ -25,6 +25,7 @@ from collections import Counter
 from graphlib import CycleError, TopologicalSorter
 from typing import Literal
 
+import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from dsl.core.pipeline.periods import format_period, parse_period, periods_per_year
@@ -122,6 +123,110 @@ class CountsSpec(BaseModel):
         return self
 
 
+class EventSpec(BaseModel):
+    """A named shock under ``events:`` — when it fires.
+
+    Either a ``rate`` (each period independently, seeded) or explicit ``at``
+    periods, never both: two sources of truth for the timing would be
+    ambiguous. Events are regional — drawn once and shared by every location,
+    so a storm hits the whole region in the same periods.
+    """
+
+    model_config = _STRICT
+
+    rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    at: list[int] | None = None
+
+    @model_validator(mode="after")
+    def _check_timing(self) -> "EventSpec":
+        """Check exactly one timing source is given, and that it is usable.
+
+        Returns:
+            self, unchanged, if the timing is well formed.
+
+        Errors Caught (raised to caller):
+            ValueError: If neither or both of rate/at are set, or any listed
+                period is negative.
+        """
+        if (self.rate is None) == (self.at is None):
+            raise ValueError(
+                "an event needs exactly one of 'rate' (fires randomly) or "
+                "'at' (fires at these periods)."
+            )
+        if self.at is not None:
+            if not self.at:
+                raise ValueError("'at' must list at least one period.")
+            if any(period < 0 for period in self.at):
+                raise ValueError(f"'at' periods must be >= 0, got {self.at}.")
+        return self
+
+    def periods(self, n_total: int, rng: np.random.Generator) -> np.ndarray:
+        """Return the periods this event fires in.
+
+        Args:
+            n_total: Length of the series, so a rate draw covers every period.
+            rng: Seeded generator, used only for a rate-driven event.
+
+        Returns:
+            A boolean mask of length n_total, True where the event fires.
+            Example: array([False, False, True, False, ...]) for at=[2].
+        """
+        if self.at is not None:
+            mask = np.zeros(n_total, dtype=bool)
+            mask[self.at] = True
+            return mask
+        return rng.random(n_total) < self.rate
+
+
+class EventEffectSpec(BaseModel):
+    """What an event does to one series when it fires.
+
+    ``multiplier`` scales the series (proportional: it grows with the series'
+    own level and can never move a series sitting at zero); ``add`` shifts it
+    by a fixed amount regardless of level. Both are signed, so one event can
+    raise rainfall and lower temperature in the same period.
+    """
+
+    model_config = _STRICT
+
+    multiplier: float | None = None
+    add: float | None = None
+
+    @model_validator(mode="after")
+    def _check_effect(self) -> "EventEffectSpec":
+        """Check exactly one of multiplier/add is given.
+
+        Returns:
+            self, unchanged, if exactly one effect is set.
+
+        Errors Caught (raised to caller):
+            ValueError: If neither or both are set.
+        """
+        if (self.multiplier is None) == (self.add is None):
+            raise ValueError(
+                "an event effect needs exactly one of 'multiplier' (scales "
+                "the series) or 'add' (shifts it by a fixed amount)."
+            )
+        return self
+
+    def apply(self, values: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """Apply this effect wherever the event fires.
+
+        Args:
+            values: The series so far.
+            mask: Boolean mask of the periods the event fires in.
+
+        Returns:
+            A copy of values with the effect applied at the masked periods.
+        """
+        out = values.copy()
+        if self.multiplier is not None:
+            out[mask] = out[mask] * self.multiplier
+        else:
+            out[mask] = out[mask] + self.add
+        return out
+
+
 class TransformSpec(BaseModel):
     """A registry transform applied to a driver — the generator envelope's
     twin: ``name`` is looked up in the transform registry, ``params`` is
@@ -171,6 +276,8 @@ class SeriesSpec(BaseModel):
     # Persistence. Natural on a physical store (soil moisture, a dam), not
     # only on counts.
     autoregressive: AutoregressiveSpec | None = None
+    # Named events this series reacts to, and how: {"storm": {"multiplier": 2}}.
+    events: dict[str, EventEffectSpec] = Field(default_factory=dict)
     # Presence of this block is what makes the series a count series.
     counts: CountsSpec | None = None
 
@@ -218,6 +325,9 @@ class ScenarioConfig(BaseModel):
     location_overrides: dict[str, LocationSpec] = Field(
         default_factory=dict, exclude=True
     )
+    # Named shocks a series can opt into; regional, so every location is
+    # struck in the same periods.
+    events: dict[str, EventSpec] = Field(default_factory=dict)
     # One list for everything: climate drivers and disease signals alike.
     # min_length=1: a scenario with no series has nothing to generate.
     series: list[SeriesSpec] = Field(min_length=1)
@@ -266,6 +376,7 @@ class ScenarioConfig(BaseModel):
         self._check_series_names(defined)
         self._check_dependencies(defined)
         self._check_acyclic()
+        self._check_events()
         return self
 
     def _check_start_period(self) -> None:
@@ -431,6 +542,30 @@ class ScenarioConfig(BaseModel):
                         f"n_total is {self.n_total}; every value would be NaN."
                     )
 
+    def _check_events(self) -> None:
+        """Check every referenced event exists and fits inside the series.
+
+        Errors Caught (raised to caller):
+            ValueError: If a series reacts to an undeclared event, or an
+                event's explicit periods run past n_total.
+        """
+        for name, event in self.events.items():
+            if event.at is None:
+                continue
+            beyond = [period for period in event.at if period >= self.n_total]
+            if beyond:
+                raise ValueError(
+                    f"event '{name}' fires at periods {beyond}, but n_total "
+                    f"is {self.n_total}; every period must be < n_total."
+                )
+        for spec in self.series:
+            unknown = sorted(set(spec.events) - set(self.events))
+            if unknown:
+                raise ValueError(
+                    f"series '{spec.name}' reacts to undeclared events: "
+                    f"{unknown}. Declared events: {sorted(self.events)}."
+                )
+
     def _check_acyclic(self) -> None:
         """Reject a dependency loop, naming the series involved.
 
@@ -561,6 +696,14 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
             warnings.append(
                 f"series '{spec.name}' is declared but nothing depends on it "
                 f"(decoy/confounder, or a mistake?)"
+            )
+
+    reacted_to = {name for spec in config.series for name in spec.events}
+    for name in config.events:
+        if name not in reacted_to:
+            warnings.append(
+                f"event '{name}' is declared but no series reacts to it; it "
+                f"will have no effect on the output."
             )
 
     if not any(spec.counts is not None for spec in config.series):

@@ -41,16 +41,32 @@ def run(config: ScenarioConfig) -> pd.DataFrame:
         ValueError: If generator instantiation fails or population is invalid.
         KeyError: If a generator name is not registered.
     """
-    frames = [_run_one_location(config, location) for location in config.locations]
+    # Regional: drawn once, so every location is struck in the same periods.
+    event_masks = {
+        name: event.periods(
+            config.n_total, _child_rng(config.seed, "event", name)
+        )
+        for name, event in config.events.items()
+    }
+    frames = [
+        _run_one_location(config, location, event_masks)
+        for location in config.locations
+    ]
     return pd.concat(frames, ignore_index=True)
 
 
-def _run_one_location(config: ScenarioConfig, location: str) -> pd.DataFrame:
+def _run_one_location(
+    config: ScenarioConfig,
+    location: str,
+    event_masks: dict[str, np.ndarray],
+) -> pd.DataFrame:
     """Build every series for a single location and assemble its frame.
 
     Args:
         config: The validated scenario configuration.
         location: The location identifier (e.g., "north", "south").
+        event_masks: Which periods each declared event fires in, shared by
+            every location.
 
     Returns:
         A DataFrame with columns [time_period, location, <series>,
@@ -69,7 +85,9 @@ def _run_one_location(config: ScenarioConfig, location: str) -> pd.DataFrame:
     # Parents before children, so every dependency is ready when needed.
     for name in config.series_order():
         spec = by_name[name]
-        series, series_population = _build_series(config, spec, location, values)
+        series, series_population = _build_series(
+            config, spec, location, values, event_masks
+        )
         values[name] = series
         # The population column shows the first count series' headcount;
         # with several diseases they share the location's population.
@@ -102,14 +120,16 @@ def _build_series(
     spec: SeriesSpec,
     location: str,
     built: dict[str, np.ndarray],
+    event_masks: dict[str, np.ndarray],
 ) -> tuple[np.ndarray, "np.ndarray | None"]:
-    """Build one series: base, parents, persistence, counts, gaps.
+    """Build one series: base, parents, events, persistence, counts, gaps.
 
     Args:
         config: The validated scenario configuration.
         spec: The series to build.
         location: The location identifier.
         built: Already-built series for this location, keyed by name.
+        event_masks: Which periods each declared event fires in.
 
     Returns:
         A (values, population) pair. population is the resolved headcount
@@ -129,6 +149,11 @@ def _build_series(
     signal = build_signal(
         base, spec, built, _child_rng(config.seed, location, "signal", spec.name)
     )
+
+    # Before anything downstream reads this series, so a child sees the
+    # post-event values and a count draw responds to the shock.
+    for name, effect in spec.events.items():
+        signal = effect.apply(signal, event_masks[name])
 
     population = None
     if spec.counts is not None:
