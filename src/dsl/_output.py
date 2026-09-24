@@ -19,18 +19,16 @@ period: monthly       # daily | weekly | monthly | yearly
 n_total: 36           # how many periods to generate (here: 3 years)
 seed: 42              # same seed -> identical data every run
 
-variables:
+series:
   - name: rainfall            # becomes a column; CHAP uses 'rainfall'
     generate: seasonal_spike  # a yearly rainy-season bump
     params:                   # every generator takes `params:` -- tune its shape
       spike_center: 7         # peak month of the rainy season (1-12)
       spike_height: 25        # how tall the wet-season peak is above baseline
       clamp_min: 0            # rainfall can't go negative
-    # shared: 0.8            # multi-location only: fraction of this signal shared
-                             #   across locations (a latent regional driver). Try
-                             #   it with `locations: [north, south]` at the top.
+    # missing_rate: 0.02      # blank ~2% of periods, as a broken gauge would
 
-  # A second climate variable -- uncomment to add it (no code needed, just YAML).
+  # A second climate series -- uncomment to add it (no code needed, just YAML).
   # 'seasonal_smooth' is a yearly sine wave, good for temperature.
   # - name: mean_temperature      # CHAP's column name (not "temperature")
   #   generate: seasonal_smooth
@@ -38,27 +36,40 @@ variables:
   #     mean: 25                  # average temperature
   #     amplitude: 6              # how far it swings above/below across the year
 
+  # A series built from another series: rain fills it, and it drains slowly.
+  # With no `generate:` its base is flat, so its parents give it all its shape.
+  # - name: soil_moisture
+  #   autoregressive: { phi: 0.85 }   # 85% carries over to the next period
+  #   depends_on:
+  #     - { series: rainfall, lag: 1, weight: 1.0 }
+
   # A non-seasonal "decoy" the disease does NOT depend on -- a control to check
-  # a model doesn't latch onto an irrelevant variable. 'flat' is constant+noise.
+  # a model doesn't latch onto an irrelevant series. 'flat' is constant+noise.
   # - name: humidity
   #   generate: flat
   #   params:
   #     level: 80
   #     noise: 5
 
-disease_cases:
-  population: 100000
-  depends_on:
-    - variable: rainfall
-      lag: 2          # disease reacts 2 months after rainfall -- change and re-run
-      weight: 1.0     # strength of this driver relative to the others
-      # transforms:   # reshape this driver (nonlinear / distributed-lag effects):
-      #   - { name: threshold, params: { mode: hinge, threshold: 5 } }
-      #   - { name: distributed_lag, params: { weights: [0.5, 0.3, 0.2] } }
-    # Add a driver for each extra variable you enable above:
-    # - variable: mean_temperature
-    #   lag: 1
-    #   weight: 0.5
+  # A `counts:` block turns a series into a disease signal: its float values
+  # become whole case counts, drawn against the population.
+  - name: disease_cases
+    counts:
+      population: 100000
+      # max_rate: 0.3                     # ceiling, as a fraction of population
+      # median_rate: 0.1                  # where a typical period sits
+      # distribution: negative_binomial   # spikier than the default poisson
+    depends_on:
+      - series: rainfall
+        lag: 2          # disease reacts 2 months after rainfall -- change and re-run
+        weight: 1.0     # strength of this driver relative to the others
+        # transforms:   # reshape this driver (nonlinear / distributed-lag effects):
+        #   - { name: threshold, params: { mode: hinge, threshold: 5 } }
+        #   - { name: distributed_lag, params: { weights: [0.5, 0.3, 0.2] } }
+      # Add a driver for each extra series you enable above:
+      # - series: mean_temperature
+      #   lag: 1
+      #   weight: 0.5
 """
 
 

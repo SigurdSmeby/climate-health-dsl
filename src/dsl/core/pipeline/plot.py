@@ -1,6 +1,6 @@
 """Plot a generated dataset for visual inspection.
 
-A chart of the covariates and disease_cases over time makes a mistake (wrong
+A chart of every series over time makes a mistake (wrong
 lag, flat signal, missing season) obvious at a glance. Output is interactive
 HTML or a static image (PNG/SVG/PDF, rendered by kaleido).
 """
@@ -31,7 +31,7 @@ def plot_dataset(
 ) -> None:
     """Write a faceted time-series plot to disk.
 
-    Create one stacked panel per variable (covariates + disease_cases, plus
+    Create one stacked panel per series (climate + counts, plus
     population if it varies), with one line per location. Output format:
     .html (interactive) or a static image, chosen by out_path's extension.
 
@@ -139,7 +139,7 @@ def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure
 def _series_columns(df: pd.DataFrame) -> list[str]:
     """Decide which columns get their own panel.
 
-    Covariates and disease_cases always get a panel. population gets one
+    Every series column gets a panel. population gets one
     only when it varies within at least one location (a growth trajectory
     is worth a panel; different constants across locations are not).
 

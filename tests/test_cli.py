@@ -39,7 +39,7 @@ def test_example_scenario_runs_and_writes_files(tmp_path, capsys):
 
 def test_orphan_variable_warns_but_succeeds(tmp_path, capsys):
     data = base_scenario()
-    data["variables"].append({"name": "wind", "generate": "seasonal_smooth"})
+    data["series"].insert(0, {"name": "wind", "generate": "seasonal_smooth"})
     path = write_scenario(tmp_path, data)
     out = tmp_path / "out"
     code = main(["run", str(path), "-o", str(out)])
@@ -53,7 +53,7 @@ def test_orphan_variable_warns_but_succeeds(tmp_path, capsys):
 
 def test_dangling_reference_fails_before_writing(tmp_path, capsys):
     data = base_scenario()
-    data["disease_cases"]["depends_on"] = [{"variable": "rainfal", "lag": 3}]
+    data["series"][-1]["depends_on"] = [{"series": "rainfal", "lag": 3}]
     path = write_scenario(tmp_path, data)
     out = tmp_path / "out"
     code = main(["run", str(path), "-o", str(out)])
@@ -86,17 +86,12 @@ def nan_covariate_scenario(tmp_path):
         "period": "monthly",
         "n_total": 12,
         "start_period": "2010-01",
-        "variables": [
+        "series": [
             {
                 "name": "rainfall",
                 "generate": "from_csv",
                 "params": {"file": str(csv), "column": "rainfall"},
-            }
-        ],
-        "disease_cases": {
-            "population": 1000,
-            "depends_on": [{"variable": "rainfall", "lag": 1}],
-        },
+            }, {"name": "disease_cases", "counts": {"population": 1000}, "depends_on": [{"series": "rainfall", "lag": 1}]}],
     }
 
 
@@ -122,9 +117,8 @@ def test_relative_from_csv_path_resolves_to_scenario_dir(tmp_path, monkeypatch):
     ).to_csv(exp / "data.csv", index=False)
     scenario = {
         "period": "monthly", "n_total": 6, "start_period": "2010-01",
-        "variables": [{"name": "rainfall", "generate": "from_csv",
-                       "params": {"file": "data.csv", "column": "rainfall"}}],
-        "disease_cases": {"population": 100, "depends_on": [{"variable": "rainfall"}]},
+        "series": [{"name": "rainfall", "generate": "from_csv",
+                       "params": {"file": "data.csv", "column": "rainfall"}}, {"name": "disease_cases", "counts": {"population": 100}, "depends_on": [{"series": "rainfall"}]}],
     }
     (exp / "scenario.yaml").write_text(yaml.safe_dump(scenario))
     # Launch from a DIFFERENT directory.
@@ -146,13 +140,9 @@ def test_relative_from_csv_population_path_resolves(tmp_path, monkeypatch):
               pop=[1000, 1100, 1200])
     scenario = {
         "period": "monthly", "n_total": 3, "start_period": "2010-01",
-        "variables": [{"name": "rainfall", "generate": "from_csv",
-                       "params": {"file": "clim.csv", "column": "rainfall"}}],
-        "disease_cases": {
-            "population": {"generate": "from_csv",
-                           "params": {"file": "pop.csv", "column": "pop"}},
-            "depends_on": [{"variable": "rainfall"}],
-        },
+        "series": [{"name": "rainfall", "generate": "from_csv",
+                       "params": {"file": "clim.csv", "column": "rainfall"}}, {"name": "disease_cases", "counts": {"population": {"generate": "from_csv",
+                           "params": {"file": "pop.csv", "column": "pop"}}}, "depends_on": [{"series": "rainfall"}]}],
     }
     (exp / "scenario.yaml").write_text(yaml.safe_dump(scenario))
     monkeypatch.chdir(tmp_path)
@@ -178,9 +168,8 @@ def test_relative_from_csv_per_location_population_path_resolves(tmp_path, monke
             "north": {"population": {"generate": "from_csv",
                                      "params": {"file": "pop.csv", "column": "pop"}}},
         },
-        "variables": [{"name": "rainfall", "generate": "from_csv",
-                       "params": {"file": "clim.csv", "column": "rainfall"}}],
-        "disease_cases": {"depends_on": [{"variable": "rainfall"}]},
+        "series": [{"name": "rainfall", "generate": "from_csv",
+                       "params": {"file": "clim.csv", "column": "rainfall"}}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall"}]}],
     }
     (exp / "scenario.yaml").write_text(yaml.safe_dump(scenario))
     monkeypatch.chdir(tmp_path)
@@ -197,10 +186,8 @@ def test_generation_error_is_clean_cli_error(tmp_path, capsys):
     # traceback.
     data = {
         "period": "monthly", "n_total": 3,
-        "variables": [
-            {"name": "x", "generate": "seasonal_spike", "params": {"bogus": 1}}
-        ],
-        "disease_cases": {"population": 100, "depends_on": [{"variable": "x"}]},
+        "series": [
+            {"name": "x", "generate": "seasonal_spike", "params": {"bogus": 1}}, {"name": "disease_cases", "counts": {"population": 100}, "depends_on": [{"series": "x"}]}],
     }
     path = write_scenario(tmp_path, data)
     out = tmp_path / "out"
@@ -216,17 +203,12 @@ def test_daily_scenario_has_no_chap_warning(tmp_path, capsys):
     data = {
         "period": "daily",
         "n_total": 400,
-        "variables": [
+        "series": [
             {"name": "rainfall", "generate": "seasonal_spike"},
-            {"name": "mean_temperature", "generate": "seasonal_smooth"},
-        ],
-        "disease_cases": {
-            "population": 1000,
-            "depends_on": [
-                {"variable": "rainfall", "lag": 1},
-                {"variable": "mean_temperature", "lag": 1},
-            ],
-        },
+            {"name": "mean_temperature", "generate": "seasonal_smooth"}, {"name": "disease_cases", "counts": {"population": 1000}, "depends_on": [
+                {"series": "rainfall", "lag": 1},
+                {"series": "mean_temperature", "lag": 1},
+            ]}],
     }
     path = write_scenario(tmp_path, data)
     out = tmp_path / "out"

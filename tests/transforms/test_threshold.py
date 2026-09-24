@@ -78,27 +78,50 @@ def test_registered_and_reachable_from_scenario():
 
 
 def test_planted_threshold_is_recoverable():
-    # Thesis check: run the disease model with a hinge relationship and confirm
-    # disease responds ONLY where the driver exceeds the threshold. A driver
-    # that never crosses the threshold produces no threshold-driven signal.
-    from dsl.core.config.schema import DiseaseSpec
-    from dsl.core.pipeline.disease import build_disease_cases
+    # Thesis check: run a scenario with a hinge relationship and confirm the
+    # disease responds ONLY where the driver exceeds the threshold, so the
+    # planted nonlinearity is visible in the generated data.
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+    from tests.conftest import scenario_dict as make_config_dict
+    from tests.conftest import series_dict
 
     n = 120
-    # Driver rises linearly; only the second half exceeds threshold 5.
-    driver = np.linspace(0.0, 10.0, n)
-    spec = DiseaseSpec(
-        population=500_000, median_rate=0.1, max_rate=0.4,
-        depends_on=[{
-            "variable": "rainfall", "weight": 4.0,
-            "transforms": [{"name": "threshold",
-                            "params": {"mode": "hinge", "threshold": 5.0}}],
-        }],
+    config = parse_config(
+        make_config_dict(
+            n_total=n,
+            series=[
+                # Rises linearly: only the second half exceeds threshold 5.
+                series_dict(
+                    "rainfall",
+                    generate="linear_trend",
+                    params={"start": 0.0, "slope": 10.0 / n, "noise": 0.0},
+                ),
+                series_dict(
+                    "disease_cases",
+                    counts={
+                        "population": 500_000,
+                        "median_rate": 0.1,
+                        "max_rate": 0.4,
+                    },
+                    depends_on=[
+                        {
+                            "series": "rainfall",
+                            "weight": 4.0,
+                            "transforms": [
+                                {
+                                    "name": "threshold",
+                                    "params": {"mode": "hinge", "threshold": 5.0},
+                                }
+                            ],
+                        }
+                    ],
+                ),
+            ],
+        )
     )
-    counts = build_disease_cases(
-        {"rainfall": driver}, spec, np.random.default_rng(0), n, "weekly",
-    )
+    counts = run(config)["disease_cases"].to_numpy()
     below = np.nanmean(counts[: n // 2])
-    above = np.nanmean(counts[n // 2:])
+    above = np.nanmean(counts[n // 2 :])
     # Above-threshold mean must be clearly higher — the planted nonlinearity.
     assert above > below * 1.5

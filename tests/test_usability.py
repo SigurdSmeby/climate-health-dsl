@@ -18,11 +18,8 @@ def write_scenario(tmp_path, data):
 def test_misspelled_field_suggests_correction(tmp_path, capsys):
     data = {
         "period": "weekly", "n_total": 52,
-        "variables": [{"name": "rain", "generate": "seasonal_spike"}],
-        "disease_cases": {
-            "populaton": 1000,  # typo of population
-            "depends_on": [{"variable": "rain", "weight": 1}],
-        },
+        "series": [{"name": "rain", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {"populaton": 1000}, # typo of population
+            "depends_on": [{"series": "rain", "weight": 1}]}],
     }
     path = write_scenario(tmp_path, data)
     code = main(["run", str(path), "-o", str(tmp_path / "out")])
@@ -39,11 +36,8 @@ def test_misspelled_field_suggests_correction(tmp_path, capsys):
 def test_unknown_field_with_no_close_match_still_clear(tmp_path, capsys):
     data = {
         "period": "weekly", "n_total": 52,
-        "variables": [{"name": "rain", "generate": "seasonal_spike"}],
-        "disease_cases": {
-            "population": 1000, "zzzzz": 5,  # not close to any real field
-            "depends_on": [{"variable": "rain", "weight": 1}],
-        },
+        "series": [{"name": "rain", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {"population": 1000}, "zzzzz": 5, # not close to any real field
+            "depends_on": [{"series": "rain", "weight": 1}]}],
     }
     path = write_scenario(tmp_path, data)
     code = main(["run", str(path), "-o", str(tmp_path / "out")])
@@ -62,10 +56,7 @@ def test_misspelled_location_override_field_suggests_from_location_spec(
     data = {
         "period": "weekly", "n_total": 52,
         "locations": {"north": {"populaton": 5}},  # typo, inside an override
-        "variables": [{"name": "rain", "generate": "seasonal_spike"}],
-        "disease_cases": {
-            "depends_on": [{"variable": "rain", "weight": 1}],
-        },
+        "series": [{"name": "rain", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rain", "weight": 1}]}],
     }
     path = write_scenario(tmp_path, data)
     code = main(["run", str(path), "-o", str(tmp_path / "out")])
@@ -77,12 +68,12 @@ def test_misspelled_location_override_field_suggests_from_location_spec(
 
 # --- 2. Starter template teaches the newer features ---
 
-def test_starter_mentions_transforms_and_shared(tmp_path, capsys):
+def test_starter_mentions_transforms_and_dependencies(tmp_path, capsys):
     path = tmp_path / "s.yaml"
     assert main(["new", str(path)]) == 0
     text = path.read_text()
     assert "transforms" in text
-    assert "shared" in text
+    assert "depends_on" in text
 
 
 def test_new_message_does_not_assume_uv(tmp_path, capsys):

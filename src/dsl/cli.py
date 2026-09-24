@@ -34,7 +34,7 @@ def _list_blocks() -> int:
     from dsl.core.extension.generator_base import generator_registry
     from dsl.core.extension.transform_base import transform_registry
 
-    print("generators (variables -> generate:):")
+    print("generators (series -> generate:):")
     for name in generator_registry.names():
         print(f"  {name}")
     print("transforms (depends_on[].transforms / series modifiers):")

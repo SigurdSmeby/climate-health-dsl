@@ -63,14 +63,16 @@ def _resolve_from_csv_paths(scenario: dict, base_dir: Path) -> None:
         if candidate.exists():
             params["file"] = str(candidate)
 
-    for var in scenario.get("variables", []):
-        if isinstance(var, dict) and var.get("generate") == "from_csv":
-            fix(var.get("params", {}))
-    # Population can also be a from_csv generator (top-level and per-location).
-    disease = scenario.get("disease_cases", {})
-    pop = disease.get("population")
-    if isinstance(pop, dict) and pop.get("generate") == "from_csv":
-        fix(pop.get("params", {}))
+    for spec in scenario.get("series", []):
+        if not isinstance(spec, dict):
+            continue
+        if spec.get("generate") == "from_csv":
+            fix(spec.get("params", {}))
+        # Population can also be a from_csv generator.
+        counts = spec.get("counts")
+        pop = counts.get("population") if isinstance(counts, dict) else None
+        if isinstance(pop, dict) and pop.get("generate") == "from_csv":
+            fix(pop.get("params", {}))
     locations = scenario.get("locations")
     if isinstance(locations, dict):
         for loc in locations.values():
