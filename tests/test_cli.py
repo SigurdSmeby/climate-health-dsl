@@ -31,10 +31,10 @@ def test_example_scenario_runs_and_writes_files(tmp_path, capsys):
     out = tmp_path / "out"
     code = main(["run", EXAMPLE, "-o", str(out)])
     assert code == 0
-    # The example sets train_fraction: 0.8, so all three files appear.
+    # The example declares a split, so the folds appear beside the dataset.
     assert (out / "simulated_data.csv").is_file()
-    assert (out / "train.csv").is_file()
-    assert (out / "test.csv").is_file()
+    assert (out / "folds" / "fold_0" / "train.csv").is_file()
+    assert (out / "folds" / "fold_0" / "test.csv").is_file()
 
 
 def test_orphan_variable_warns_but_succeeds(tmp_path, capsys):

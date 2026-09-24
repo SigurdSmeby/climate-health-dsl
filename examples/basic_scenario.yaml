@@ -1,7 +1,9 @@
 period: weekly
 n_total: 78
 seed: 42
-train_fraction: 0.8 # OPTIONAL — omit to write only the single full CSV
+split:
+  kind: time
+  k: 5
 locations:
   loc:
     population: 100000 # a count series draws against its location

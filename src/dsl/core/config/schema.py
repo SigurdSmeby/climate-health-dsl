@@ -20,7 +20,6 @@ generators are added. Two pragmatic name-based exceptions look inside params:
 the lag-adding transforms (``_transform_lag``) and the from_csv
 multi-location warning in ``validate_scenario``.
 """
-import math
 from collections import Counter
 from graphlib import CycleError, TopologicalSorter
 from typing import Literal
@@ -369,9 +368,6 @@ class ScenarioConfig(BaseModel):
     n_total: int = Field(ge=1)
     # ge=0: numpy's default_rng requires a non-negative seed.
     seed: int = Field(default=0, ge=0)
-    # None → only the single full CSV; a value in (0, 1) also writes
-    # train.csv/test.csv as a row split.
-    train_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
     # Real-world period the series starts at (e.g. "2010-07"). None means
     # the first period of the year 2000.
     start_period: str | None = None
@@ -431,7 +427,6 @@ class ScenarioConfig(BaseModel):
         """
         self._check_start_period()
         self._check_locations()
-        self._check_train_fraction()
         defined = [spec.name for spec in self.series]
         self._check_series_names(defined)
         self._check_dependencies(defined)
@@ -509,23 +504,6 @@ class ScenarioConfig(BaseModel):
                 f"these locations need a population: {missing}. A count "
                 f"series draws against its location's population, so write "
                 f"it as 'locations: {{{missing[0]}: {{population: 100000}}}}'."
-            )
-
-    def _check_train_fraction(self) -> None:
-        """Check both the train and test partitions end up non-empty.
-
-        Errors Caught (raised to caller):
-            ValueError: If train_fraction with n_total gives an empty train
-                or test split.
-        """
-        if self.train_fraction is None:
-            return
-        n_train = math.floor(self.n_total * self.train_fraction)
-        if n_train < 1 or self.n_total - n_train < 1:
-            raise ValueError(
-                f"train_fraction {self.train_fraction} with n_total "
-                f"{self.n_total} gives an empty train or test split "
-                f"(train={n_train}, test={self.n_total - n_train})."
             )
 
     def _check_series_names(self, defined: list[str]) -> None:
@@ -892,12 +870,6 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
                 f"half or more of its values will be NaN."
             )
 
-    if config.train_fraction is not None and config.train_fraction >= 0.95:
-        warnings.append(
-            f"train_fraction is {config.train_fraction}; the test split will "
-            f"contain very few rows."
-        )
-
     cycle = periods_per_year(config.period)
     if config.n_total < cycle:
         warnings.append(
@@ -924,15 +896,6 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
     max_lag = max(
         (d.lag + _transform_lag(d.transforms) for d in deps), default=0
     )
-    if config.train_fraction is not None and deps:
-        n_train = math.floor(config.n_total * config.train_fraction)
-        if max_lag >= n_train:
-            warnings.append(
-                f"max dependency lag ({max_lag}) covers the whole training "
-                f"split ({n_train} periods); train.csv will have no observed "
-                f"values (all warm-up NaN)."
-            )
-
     if config.split is not None:
         if config.split.scheme == "blocked":
             warnings.append(

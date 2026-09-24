@@ -18,7 +18,9 @@
 period: weekly
 n_total: 156
 seed: 7
-train_fraction: 0.8
+split:
+  kind: time
+  k: 5
 locations:
   loc:
     population: 40000

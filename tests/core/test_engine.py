@@ -16,7 +16,6 @@ def example_config():
             "period": "weekly",
             "n_total": 78,
             "seed": 42,
-            "train_fraction": 0.8,
             "locations": {"loc": {"population": 100_000}},
             "series": [
                 {"name": "rainfall", "generate": "seasonal_spike"},

@@ -79,7 +79,7 @@ population.*
 Every run writes `simulated_data.csv` (CHAP-ready), a `metadata.json` recording
 the exact ground truth (seed, lags, weights, generators — enough to reproduce
 the dataset), and with `--plot` an interactive `plot.html`. Demos that set
-`train_fraction` also write `train.csv`/`test.csv`.
+`split:` also write one `folds/fold_N/` directory per fold.
 
 ## Per-location real climate
 

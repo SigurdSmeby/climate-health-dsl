@@ -8,7 +8,6 @@ dirs with varying seeds, or re-run it automatically on every save and
 import argparse
 import functools
 import http.server
-import math
 import shutil
 import sys
 import threading
@@ -97,13 +96,10 @@ def _run_once(
     print(f"Wrote {len(df)} rows to {out_dir}/")
 
     if plot:
-        # The train/test boundary, as a period index, so the plot can mark it
-        # (same floor() rule the output split uses).
-        split = (
-            math.floor(config.n_total * config.train_fraction)
-            if config.train_fraction is not None
-            else None
-        )
+        # Mark where the first fold stops training, so the split a model is
+        # evaluated against is visible in the chart.
+        folds = config.folds()
+        split = len(folds[0].train_periods) if folds else None
         plot_path = out_dir / f"plot.{plot_format}"
         plot_dataset(df, plot_path, train_split=split)
         print(f"Wrote plot to {plot_path}")
