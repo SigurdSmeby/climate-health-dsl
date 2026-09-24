@@ -1,0 +1,41 @@
+# The report's reason for existing: storms at periods 3 and 8 both land in the
+# first half, so the second fold's test half cannot measure storm recovery at
+# all. That must be counted exactly and warned about by name.
+_expect:
+  exit_code: 0
+  files_exist: [folds/report.md, folds/report.json]
+  report:
+    folds: 2
+    total_events: 2
+    warnings: "no 'storm' in the test half"
+    fold_events:
+      0: { rainfall: { storm: { train: 1, test: 1 } } }
+      1: { rainfall: { storm: { train: 2, test: 0 } } }
+  reproduce: true
+
+period: monthly
+n_total: 24
+seed: 0
+
+events:
+  storm: { at: [3, 8] }
+
+split:
+  kind: time
+  k: 2
+
+locations:
+  loc:
+    population: 100000
+
+series:
+  - name: rainfall
+    generate: flat
+    params: { level: 10.0, noise: 0.0 }
+    events:
+      storm: { multiplier: 2.0 }
+  - name: disease_cases
+    counts: {}
+    depends_on:
+      - series: rainfall
+        lag: 1

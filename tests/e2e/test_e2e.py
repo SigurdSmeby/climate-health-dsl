@@ -23,12 +23,19 @@ keys:
       column_exists: [location]
       column_all:                  # every value in the column satisfies this
         disease_cases: non_negative_int   # non_negative_int | non_negative
+      report:                      # assertions against folds/report.json
+        folds: 5                   # how many folds the report describes
+        total_events: 12           # planted features the scenario declares
+        warnings: 0                # or a substring every warning must match
+        fold_events:               # exact counts: fold -> series -> kind
+          0: {rainfall: {storm: {train: 1, test: 0}}}
 
 Both keys (and all their sub-keys) are optional; an empty ``_expect: {}``
 just means "must run and exit 0". ``columns`` is for deterministic (seeded)
 values; ``column_all`` is for a property that must hold on every row when
 exact values aren't practical (e.g. random counts).
 """
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -101,6 +108,35 @@ def test_e2e_case(case_dir, tmp_path):
         assert df is not None and col in df.columns, f"missing column {col}"
         check = COLUMN_PROPERTIES[prop]
         assert check(df[col]), f"column {col} fails property {prop!r}: {df[col].tolist()}"
+
+    report_expect = expect.get("report")
+    if report_expect is not None:
+        report_path = out / "folds" / "report.json"
+        assert report_path.is_file(), "expected folds/report.json"
+        report = json.loads(report_path.read_text())
+
+        if "folds" in report_expect:
+            assert len(report["folds"]) == report_expect["folds"]
+        if "total_events" in report_expect:
+            assert report["total_events"] == report_expect["total_events"]
+        if "warnings" in report_expect:
+            wanted = report_expect["warnings"]
+            if isinstance(wanted, int):
+                assert len(report["warnings"]) == wanted, report["warnings"]
+            else:
+                assert any(wanted in w for w in report["warnings"]), (
+                    f"no warning containing {wanted!r}: {report['warnings']}"
+                )
+        for index, series_counts in report_expect.get("fold_events", {}).items():
+            fold = report["folds"][int(index)]
+            for series, kinds in series_counts.items():
+                for kind, sides in kinds.items():
+                    for side, count in sides.items():
+                        actual = fold[side]["events"].get(series, {}).get(kind, 0)
+                        assert actual == count, (
+                            f"fold {index} {side} {series}/{kind}: "
+                            f"{actual}, expected {count}"
+                        )
 
     if expect.get("reproduce"):
         repro = tmp_path / "repro"
