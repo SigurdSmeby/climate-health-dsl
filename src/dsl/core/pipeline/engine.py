@@ -11,13 +11,14 @@ import hashlib
 import numpy as np
 import pandas as pd
 
-# Importing the extension packages triggers auto-discovery: every generator/
-# transform module registers itself on import.
+# Importing the extension packages triggers auto-discovery: every generator,
+# transform and emitter module registers itself on import.
+import dsl.emitters
 import dsl.generators
 import dsl.transforms  # noqa: F401
 from dsl.core.config.schema import PopulationSpec, ScenarioConfig, SeriesSpec
+from dsl.core.extension.emitter_base import get_emitter
 from dsl.core.extension.generator_base import get_generator
-from dsl.core.pipeline.disease import build_counts
 from dsl.core.pipeline.periods import format_period, parse_period
 from dsl.core.pipeline.signal import apply_missing, build_signal
 
@@ -229,11 +230,13 @@ def _build_series(
             _child_rng(config.seed, location, "population", spec.name),
             config.start_period,
         )
-        signal = build_counts(
-            signal,
-            spec.counts,
-            population,
-            _child_rng(config.seed, location, "counts", spec.name),
+        # The block name selects the emitter; its params come from the block.
+        emitter = get_emitter("counts")(
+            population=population,
+            **spec.counts.model_dump(exclude={"population"}),
+        )
+        signal = emitter.emit(
+            signal, _child_rng(config.seed, location, "counts", spec.name)
         )
 
     signal = apply_missing(
