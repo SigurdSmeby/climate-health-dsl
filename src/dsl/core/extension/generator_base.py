@@ -29,3 +29,25 @@ class VariableGenerator(ABC):
         ``rng`` (the seeded generator threaded through the run) so output
         is reproducible.
         """
+
+    def events(self) -> list[dict]:
+        """Return the features this generator deliberately placed.
+
+        Override this when a generator puts something at an identifiable
+        period — a seasonal peak, an outbreak shock. Reporting them makes
+        the periods exact ground truth, so anything counting features (which
+        fold holds how many spikes, say) reads them instead of guessing from
+        the data.
+
+        Called after ``generate``, on the same instance, so an implementation
+        may report what it actually drew.
+
+        Returns:
+            One dict per feature, each with at least ``kind`` (a short label)
+            and ``index`` (the period it sits at); ``magnitude`` and
+            ``duration`` where they are meaningful. Empty by default, which
+            is right for any generator that plants nothing identifiable.
+            Example: [{"kind": "seasonal_spike", "index": 26,
+            "magnitude": 20.0}]
+        """
+        return []

@@ -55,6 +55,71 @@ def run(config: ScenarioConfig) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+def series_events(config: ScenarioConfig) -> list[dict]:
+    """Collect every feature the scenario deliberately planted.
+
+    Two sources, both exact rather than detected: each generator reports the
+    peaks or shocks it placed, and each declared event reports the periods it
+    fires in. Anything that needs to count features — how many spikes fall in
+    a given fold, say — reads this instead of guessing from the output.
+
+    Runs the generators again on their own seeded streams, so the numbers
+    match a run of the same config without consuming or disturbing it.
+
+    Args:
+        config: A validated ScenarioConfig.
+
+    Returns:
+        One dict per feature: the series and location it belongs to, plus the
+        reporter's own fields (kind, index, and magnitude/duration where
+        meaningful). Empty if nothing identifiable was planted.
+        Example: [{"series": "rainfall", "location": "north",
+        "kind": "seasonal_spike", "index": 26, "magnitude": 20.0}]
+
+    Errors Caught (raised to caller):
+        ValueError: If a generator param is invalid.
+        KeyError: If a generator name is not registered.
+    """
+    found: list[dict] = []
+
+    for location in config.locations:
+        for spec in config.series:
+            if spec.generate is None:
+                continue
+            generator = _build_generator(
+                spec.generate, dict(spec.params), spec.name
+            )
+            generator.generate(
+                config.n_total,
+                config.period,
+                _child_rng(config.seed, location, "series", spec.name),
+            )
+            for event in generator.events():
+                found.append(
+                    {"series": spec.name, "location": location, **event}
+                )
+
+    # Scenario events are regional: one draw, so they are reported once per
+    # series that actually reacts to them.
+    for name, event in config.events.items():
+        mask = event.periods(
+            config.n_total, _child_rng(config.seed, "event", name)
+        )
+        for spec in config.series:
+            if name not in spec.events:
+                continue
+            for index in np.flatnonzero(mask):
+                found.append(
+                    {
+                        "series": spec.name,
+                        "location": None,  # regional: every location at once
+                        "kind": name,
+                        "index": int(index),
+                    }
+                )
+    return found
+
+
 def _run_one_location(
     config: ScenarioConfig,
     location: str,
