@@ -6,10 +6,10 @@ Task-oriented guides. Looking for what a field does instead? See the [reference]
 
 One mental model: **generators create a series; transforms modify one.** Both live in extension folders where every file registers itself — you never edit the core machinery.
 
-First check whether you need code at all. A new *variable* that reuses an existing shape is pure YAML:
+First check whether you need code at all. A new *series* that reuses an existing shape is pure YAML:
 
 ```yaml
-variables:
+series:
   - name: wind
     generate: seasonal_smooth  # reuse
     params: { mean: 12, amplitude: 4 }

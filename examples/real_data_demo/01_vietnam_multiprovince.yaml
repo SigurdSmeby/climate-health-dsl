@@ -10,34 +10,40 @@
 # Shows: real-data covariates via from_csv, multi-location with per-location
 # population, overdispersed (negative-binomial) counts, train/test split.
 period: monthly
-n_total: 120 # 2000-01 .. 2009-12
+n_total: 120
 seed: 1
-start_period: "2000-01" # align output labels to the real data's dates
+start_period: 2000-01
 train_fraction: 0.8
 locations:
-  AN GIANG: { population: 2211544 }
-  DAK LAK: { population: 2114170 }
-  HA GIANG: { population: 879206 }
-  KHANH HOA: { population: 1174000 } # corrected from the source's odd 2922
-variables:
-  # No source_location: each output province above auto-matches its OWN rows
-  # in the CSV by name, so every province gets its real climate.
-  - name: rainfall
-    generate: from_csv
-    params:
-      file: ../data/vietnam_provinces.csv
-      column: rainfall
-  - name: mean_temperature
-    generate: from_csv
-    params:
-      file: ../data/vietnam_provinces.csv
-      column: mean_temperature
-disease_cases:
-  population: 1000000 # fallback (every location above sets its own)
+  AN GIANG:
+    population: 2211544
+  DAK LAK:
+    population: 2114170
+  HA GIANG:
+    population: 879206
+  KHANH HOA:
+    population: 1174000
+series:
+- name: rainfall
+  generate: from_csv
+  params:
+    file: ../data/vietnam_provinces.csv
+    column: rainfall
+- name: mean_temperature
+  generate: from_csv
+  params:
+    file: ../data/vietnam_provinces.csv
+    column: mean_temperature
+- name: disease_cases
   depends_on:
-    - { variable: rainfall, lag: 2, weight: 1.5 }
-    - { variable: mean_temperature, lag: 1, weight: 1.0 }
-  count_distribution: negative_binomial
-  overdispersion: 3.0
-  max_rate: 0.02
-  median_rate: 0.001
+  - series: rainfall
+    lag: 2
+    weight: 1.5
+  - series: mean_temperature
+    lag: 1
+    weight: 1.0
+  counts:
+    distribution: negative_binomial
+    overdispersion: 3.0
+    max_rate: 0.02
+    median_rate: 0.001

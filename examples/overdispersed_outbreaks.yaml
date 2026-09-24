@@ -9,22 +9,25 @@ period: weekly
 n_total: 156
 seed: 42
 train_fraction: 0.8
-variables:
-  - name: rainfall
-    generate: seasonal_spike
-    params:
-      clamp_min: 0
-  - name: mean_temperature
-    generate: seasonal_smooth
-disease_cases:
-  population: 50000
+locations:
+  loc:
+    population: 50000
+series:
+- name: rainfall
+  generate: seasonal_spike
+  params:
+    clamp_min: 0
+- name: mean_temperature
+  generate: seasonal_smooth
+- name: disease_cases
   depends_on:
-    - variable: rainfall
-      lag: 3
-      weight: 2.0
-    - variable: mean_temperature
-      lag: 2
-      weight: 1.0
-  count_distribution: negative_binomial
-  overdispersion: 2.0 # smaller = more variable; large approaches Poisson
+  - series: rainfall
+    lag: 3
+    weight: 2.0
+  - series: mean_temperature
+    lag: 2
+    weight: 1.0
   missing_rate: 0
+  counts:
+    distribution: negative_binomial
+    overdispersion: 2.0

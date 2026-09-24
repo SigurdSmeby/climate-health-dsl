@@ -212,6 +212,33 @@ def _is_one_step(a: "datetime.date", b: "datetime.date", resolution: str) -> boo
     return b.year - a.year == 1  # yearly
 
 
+def _has_gap_after_warmup(df: pd.DataFrame, column: str) -> bool:
+    """Report whether a covariate is missing values anywhere but its start.
+
+    A series built from a lagged parent has no input for its first few
+    periods, so a LEADING run of NaN is the declared warm-up rather than a
+    defect. A gap further in is real missing data, which CHAP cannot use.
+
+    Args:
+        df: The output DataFrame.
+        column: The covariate column to check.
+
+    Returns:
+        True if any NaN appears after the column's first non-NaN value, in
+        any location. False for a clean column, or one whose only NaN is the
+        opening warm-up.
+    """
+    for _, group in df.groupby("location", sort=False):
+        missing = group[column].isna().to_numpy()
+        if not missing.any() or missing.all():
+            # All-NaN is caught as an empty column elsewhere; skip it here.
+            continue
+        first_value = int(np.argmin(missing))
+        if missing[first_value:].any():
+            return True
+    return False
+
+
 def _check_values(df: pd.DataFrame) -> list[str]:
     """Check NaN/type/value rules for the covariate and disease_cases columns.
 
@@ -231,10 +258,10 @@ def _check_values(df: pd.DataFrame) -> list[str]:
         if not pd.api.types.is_numeric_dtype(df[column]):
             findings.append(f"covariate '{column}' is not numeric.")
             continue
-        if df[column].isna().any():
+        if _has_gap_after_warmup(df, column):
             findings.append(
-                f"covariate '{column}' contains NaN values; CHAP requires "
-                f"complete covariates."
+                f"covariate '{column}' contains NaN values after its opening "
+                f"periods; CHAP requires complete covariates."
             )
         if np.isinf(df[column].to_numpy(dtype=float)).any():
             findings.append(

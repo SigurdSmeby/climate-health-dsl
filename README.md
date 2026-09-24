@@ -54,7 +54,7 @@ uv run dsl run examples/basic_scenario.yaml        # or run a bundled example
 | File | When | Contents |
 |---|---|---|
 | `simulated_data.csv` | always | The full dataset: `time_period`, `location`, one column per variable, `disease_cases`, `population`. Give this to CHAP — it does its own train/test hiding. |
-| `train.csv`, `test.csv` | only if `train_fraction` is set | A split in time (first `train_fraction` of each location's periods vs the rest) for evaluation outside CHAP. |
+| `train.csv`, `test.csv` | only if `train_fraction` is set | A split in time (the first `train_fraction` of each location's periods against the rest) for evaluation outside CHAP. |
 | `metadata.json` | always | The ground truth behind the dataset: seed, lags, weights, transforms, rates, generators, tool version, and the full resolved scenario. Feed it back to `dsl run` to reproduce the data byte-for-byte — no original YAML needed. |
 | `plot.html` (or `.png`/`.svg`/`.pdf`) | only with `--plot` | A faceted plot of the covariates and `disease_cases` over time, one line per location, train/test boundary marked. |
 

@@ -13,35 +13,48 @@
 period: monthly
 n_total: 120
 seed: 42
-start_period: "2000-01"
-locations: [delta, highland, coast]
-variables:
-  - name: rainfall
-    generate: seasonal_spike
-    params:
-      baseline: 30
-      spike_height: 450
-      spike_center: 6 # mid-year monsoon
-      spike_width: 1.8
-      noise: 40
-      clamp_min: 0
-  - name: mean_temperature
-    generate: seasonal_smooth
-    params:
-      mean: 27
-      amplitude: 3.5
-      phase: 0
-      noise: 0.8
-  - name: humidity # DECOY: present in the data but disease does not depend on it
-    generate: flat
-    params: { level: 80, noise: 4, clamp_min: 0 }
-disease_cases:
-  population: 1500000
+start_period: 2000-01
+locations:
+  delta:
+    population: 1500000
+  highland:
+    population: 1500000
+  coast:
+    population: 1500000
+series:
+- name: rainfall
+  generate: seasonal_spike
+  params:
+    baseline: 30
+    spike_height: 450
+    spike_center: 6
+    spike_width: 1.8
+    noise: 40
+    clamp_min: 0
+- name: mean_temperature
+  generate: seasonal_smooth
+  params:
+    mean: 27
+    amplitude: 3.5
+    phase: 0
+    noise: 0.8
+- name: humidity
+  generate: flat
+  params:
+    level: 80
+    noise: 4
+    clamp_min: 0
+- name: disease_cases
   depends_on:
-    - { variable: rainfall, lag: 2, weight: 1.5 }
-    - { variable: mean_temperature, lag: 1, weight: 1.0 }
-  count_distribution: negative_binomial
-  overdispersion: 3.0
-  missing_rate: 0.03 # a few reporting gaps
-  max_rate: 0.02
-  median_rate: 0.001
+  - series: rainfall
+    lag: 2
+    weight: 1.5
+  - series: mean_temperature
+    lag: 1
+    weight: 1.0
+  missing_rate: 0.03
+  counts:
+    distribution: negative_binomial
+    overdispersion: 3.0
+    max_rate: 0.02
+    median_rate: 0.001
