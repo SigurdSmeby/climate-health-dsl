@@ -22,6 +22,7 @@ from dsl._scenario import _friendly_error, _load_and_parse
 from dsl.core.config.schema import ScenarioConfig, validate_scenario
 from dsl.core.pipeline.chap_check import validate_chap
 from dsl.core.pipeline.engine import run as run_engine
+from dsl.core.pipeline.folds import write_report
 from dsl.core.pipeline.metadata import write_metadata
 from dsl.core.pipeline.output import write_output
 from dsl.core.pipeline.plot import plot_dataset
@@ -90,6 +91,9 @@ def _run_once(
         print(f"warning: {finding}", file=sys.stderr)
 
     write_output(df, config, out_dir)
+    # What each fold actually contains, so a fold that cannot measure what
+    # the scenario planted is visible rather than silently scored well.
+    write_report(config, df, out_dir)
     # The ground-truth sidecar: records the resolved scenario so the dataset
     # is self-describing and reproducible.
     write_metadata(config, out_dir)
