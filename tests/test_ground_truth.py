@@ -47,14 +47,14 @@ def test_recovers_known_lag_from_aperiodic_driver():
             "period": "weekly",
             "n_total": 208,
             "seed": 42,
-            "series": [
+            "locations": {"loc": {"population": 100_000}}, "series": [
                 {
                     "name": "rainfall",
                     "generate": "seasonal_smooth",
                     # amplitude 0 + noise: an aperiodic (pure-noise) driver,
                     # so the seasonal baseline cannot confound the lag.
                     "params": {"mean": 10.0, "amplitude": 0.0, "noise": 2.0},
-                }, {"name": "disease_cases", "counts": {"population": 100_000}, "depends_on": [
+                }, {"name": "disease_cases", "counts": {}, "depends_on": [
                     {"series": "rainfall", "lag": TRUE_LAG, "weight": 2.0}
                 ]}],
         }
@@ -72,12 +72,12 @@ def test_recovery_is_stable_across_seeds():
                 "period": "weekly",
                 "n_total": 208,
                 "seed": seed,
-                "series": [
+                "locations": {"loc": {"population": 100_000}}, "series": [
                     {
                         "name": "rainfall",
                         "generate": "seasonal_smooth",
                         "params": {"mean": 10.0, "amplitude": 0.0, "noise": 2.0},
-                    }, {"name": "disease_cases", "counts": {"population": 100_000}, "depends_on": [
+                    }, {"name": "disease_cases", "counts": {}, "depends_on": [
                         {"series": "rainfall", "lag": TRUE_LAG, "weight": 2.0}
                     ]}],
             }
@@ -99,12 +99,12 @@ def test_seasonal_driver_recovers_lag_within_one_period():
             "period": "weekly",
             "n_total": 208,
             "seed": 42,
-            "series": [
+            "locations": {"loc": {"population": 100_000}}, "series": [
                 {
                     "name": "rainfall",
                     "generate": "seasonal_spike",
                     "params": {"spike_center": 20, "spike_width": 4.0},
-                }, {"name": "disease_cases", "counts": {"population": 100_000}, "depends_on": [
+                }, {"name": "disease_cases", "counts": {}, "depends_on": [
                     {"series": "rainfall", "lag": TRUE_LAG, "weight": 2.0}
                 ]}],
         }

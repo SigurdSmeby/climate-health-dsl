@@ -16,6 +16,8 @@ series:
     lag: 1
     weight: 1.0
   counts:
-    population: 100000
     distribution: negative_binomial
     overdispersion: 2.0
+locations:
+  loc:
+    population: 100000

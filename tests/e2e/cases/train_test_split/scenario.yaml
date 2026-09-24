@@ -17,5 +17,7 @@ series:
   - series: rainfall
     lag: 1
     weight: 1.0
-  counts:
+  counts: {}
+locations:
+  loc:
     population: 100000

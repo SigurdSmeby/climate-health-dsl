@@ -141,11 +141,11 @@ def test_run_collects_events_per_series_and_location():
                 ),
                 series_dict(
                     "cases",
-                    counts={"population": 100_000},
+                    counts={},
                     depends_on=[{"series": "rainfall", "lag": 1}],
                 ),
             ],
-            locations=["north", "south"],
+            locations={"north": {"population": 100_000}, "south": {"population": 100_000}},
         )
     )
     events = series_events(config)

@@ -12,6 +12,8 @@ series:
   depends_on:
   - series: rain
   counts:
-    population: 1000
     median_rate: 0.5
     max_rate: 0.3
+locations:
+  loc:
+    population: 1000

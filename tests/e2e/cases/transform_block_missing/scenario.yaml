@@ -19,5 +19,7 @@ series:
       params:
         n_blocks: 2
         block_len: 4
-  counts:
+  counts: {}
+locations:
+  loc:
     population: 300000

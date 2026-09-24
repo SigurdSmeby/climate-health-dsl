@@ -20,6 +20,8 @@ series:
         mode: hinge
         threshold: 1.0
   counts:
-    population: 500000
     median_rate: 0.1
     max_rate: 0.4
+locations:
+  loc:
+    population: 500000

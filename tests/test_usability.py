@@ -18,15 +18,15 @@ def write_scenario(tmp_path, data):
 def test_misspelled_field_suggests_correction(tmp_path, capsys):
     data = {
         "period": "weekly", "n_total": 52,
-        "series": [{"name": "rain", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {"populaton": 1000}, # typo of population
+        "locations": {"loc": {"population": 100_000}}, "series": [{"name": "rain", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {"maxx_rate": 0.3}, # typo of max_rate
             "depends_on": [{"series": "rain", "weight": 1}]}],
     }
     path = write_scenario(tmp_path, data)
     code = main(["run", str(path), "-o", str(tmp_path / "out")])
     assert code == 1
     err = capsys.readouterr().err
-    assert "populaton" in err            # names the offending key
-    assert "population" in err           # suggests the near-miss
+    assert "maxx_rate" in err            # names the offending key
+    assert "max_rate" in err           # suggests the near-miss
     assert "did you mean" in err.lower()
     # The raw pydantic noise should be gone.
     assert "extra_forbidden" not in err
@@ -36,7 +36,7 @@ def test_misspelled_field_suggests_correction(tmp_path, capsys):
 def test_unknown_field_with_no_close_match_still_clear(tmp_path, capsys):
     data = {
         "period": "weekly", "n_total": 52,
-        "series": [{"name": "rain", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {"population": 1000}, "zzzzz": 5, # not close to any real field
+        "locations": {"loc": {"population": 100_000}}, "series": [{"name": "rain", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {}, "zzzzz": 5, # not close to any real field
             "depends_on": [{"series": "rain", "weight": 1}]}],
     }
     path = write_scenario(tmp_path, data)

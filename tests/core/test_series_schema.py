@@ -228,7 +228,7 @@ def test_counts_block_marks_a_count_series():
     rainfall, disease = config.series[0], config.series[2]
     assert rainfall.counts is None
     assert disease.counts is not None
-    assert disease.counts.population == 100_000
+    assert config.population_for("loc") == 100_000
 
 
 def test_counts_defaults_are_applied():
@@ -242,8 +242,8 @@ def test_counts_defaults_are_applied():
 def test_count_fields_rejected_outside_the_block():
     """`extra="forbid"` does the work — no cross-field rule needed."""
     data = make_config_dict()
-    data["series"][0]["population"] = 100_000
-    with pytest.raises(ValidationError, match="population"):
+    data["series"][0]["max_rate"] = 0.3
+    with pytest.raises(ValidationError, match="max_rate"):
         parse_config(data)
 
 
@@ -285,12 +285,12 @@ def test_several_count_series_allowed():
             series_dict("rain"),
             series_dict(
                 "dengue",
-                counts={"population": 1000},
+                counts={},
                 depends_on=[{"series": "rain", "lag": 1}],
             ),
             series_dict(
                 "malaria",
-                counts={"population": 1000},
+                counts={},
                 depends_on=[{"series": "rain", "lag": 2}],
             ),
         ]
@@ -306,12 +306,12 @@ def test_a_count_series_may_drive_another_series():
             series_dict("rain"),
             series_dict(
                 "dengue",
-                counts={"population": 1000},
+                counts={},
                 depends_on=[{"series": "rain", "lag": 1}],
             ),
             series_dict(
                 "malaria",
-                counts={"population": 1000},
+                counts={},
                 depends_on=[{"series": "dengue", "lag": 1}],
             ),
         ]
@@ -403,3 +403,116 @@ def test_transform_warmup_counts_toward_n_total():
     )
     with pytest.raises(ValidationError, match="warm-up"):
         parse_config(data)
+
+
+# ------------------------------------------------------------- population
+
+
+def test_population_lives_on_the_location():
+    config = parse_config(
+        make_config_dict(
+            locations={"north": {"population": 300_000}},
+            series=[
+                series_dict("rain"),
+                series_dict(
+                    "cases",
+                    counts={},
+                    depends_on=[{"series": "rain", "lag": 1}],
+                ),
+            ],
+        )
+    )
+    assert config.population_for("north") == 300_000
+
+
+def test_population_on_a_counts_block_is_rejected():
+    """One place only: population is a property of a place, not a disease."""
+    data = make_config_dict()
+    data["series"][2]["counts"]["population"] = 100_000
+    with pytest.raises(ValidationError, match="population"):
+        parse_config(data)
+
+
+def test_locations_are_required_when_a_series_counts():
+    """A count series needs a population, which only a location can give."""
+    data = make_config_dict(
+        series=[
+            series_dict("rain"),
+            series_dict(
+                "cases", counts={}, depends_on=[{"series": "rain", "lag": 1}]
+            ),
+        ]
+    )
+    data.pop("locations", None)
+    with pytest.raises(ValidationError, match="locations"):
+        parse_config(data)
+
+
+def test_a_scenario_without_counts_needs_no_population():
+    config = parse_config(
+        make_config_dict(
+            locations={"north": {"population": 100_000}}, series=[series_dict("rain")]
+        )
+    )
+    assert config.locations == ["north"]
+
+
+def test_every_location_must_declare_a_population():
+    data = make_config_dict(
+        locations={"north": {"population": 300_000}, "south": {}},
+        series=[
+            series_dict("rain"),
+            series_dict(
+                "cases", counts={}, depends_on=[{"series": "rain", "lag": 1}]
+            ),
+        ],
+    )
+    with pytest.raises(ValidationError, match="south"):
+        parse_config(data)
+
+
+def test_two_diseases_share_one_location_population():
+    """The point of the move: they cannot disagree about the same place."""
+    config = parse_config(
+        make_config_dict(
+            locations={"north": {"population": 300_000}},
+            series=[
+                series_dict("rain"),
+                series_dict(
+                    "dengue",
+                    counts={},
+                    depends_on=[{"series": "rain", "lag": 1}],
+                ),
+                series_dict(
+                    "malaria",
+                    counts={},
+                    depends_on=[{"series": "rain", "lag": 2}],
+                ),
+            ],
+        )
+    )
+    assert config.population_for("north") == 300_000
+
+
+def test_location_population_may_be_a_generator():
+    config = parse_config(
+        make_config_dict(
+            locations={
+                "north": {
+                    "population": {
+                        "generate": "linear_trend",
+                        "params": {"start": 70_000, "slope": 90},
+                    }
+                }
+            },
+            series=[
+                series_dict("rain"),
+                series_dict(
+                    "cases",
+                    counts={},
+                    depends_on=[{"series": "rain", "lag": 1}],
+                ),
+            ],
+        )
+    )
+    assert config.population_for("north").generate == "linear_trend"

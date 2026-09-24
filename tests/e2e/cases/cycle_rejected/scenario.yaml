@@ -1,21 +1,29 @@
-# A three-series loop must be refused before anything is generated, and the
-# error must name the whole path, not just one pair.
 _expect:
   exit_code: 1
-  stderr_contains: "cycle"
-  files_absent: [simulated_data.csv]
-
+  stderr_contains: cycle
+  files_absent:
+  - simulated_data.csv
 period: monthly
 n_total: 24
 seed: 0
-
 series:
-  - name: rainfall
-    depends_on: [{series: temperature, lag: 1}]
-  - name: temperature
-    depends_on: [{series: wind, lag: 1}]
-  - name: wind
-    depends_on: [{series: rainfall, lag: 1}]
-  - name: disease_cases
-    counts: {population: 1000}
-    depends_on: [{series: rainfall, lag: 1}]
+- name: rainfall
+  depends_on:
+  - series: temperature
+    lag: 1
+- name: temperature
+  depends_on:
+  - series: wind
+    lag: 1
+- name: wind
+  depends_on:
+  - series: rainfall
+    lag: 1
+- name: disease_cases
+  counts: {}
+  depends_on:
+  - series: rainfall
+    lag: 1
+locations:
+  loc:
+    population: 1000

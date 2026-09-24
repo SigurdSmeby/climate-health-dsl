@@ -14,10 +14,13 @@ def sample_config():
             "seed": 7,
             "train_fraction": 0.8,
             "start_period": "2010-01",
-            "locations": ["oslo", "bergen"],
+            "locations": {
+                "oslo": {"population": 1000},
+                "bergen": {"population": 1000},
+            },
             "series": [
                 {"name": "rainfall", "generate": "seasonal_spike"},
-                {"name": "mean_temperature", "generate": "seasonal_smooth"}, {"name": "disease_cases", "counts": {"population": 1000}, "depends_on": [
+                {"name": "mean_temperature", "generate": "seasonal_smooth"}, {"name": "disease_cases", "counts": {}, "depends_on": [
                     {"series": "rainfall", "lag": 2, "weight": 1.5},
                     {"series": "mean_temperature", "lag": 1, "weight": 1.0},
                 ]}],
@@ -32,13 +35,13 @@ def test_metadata_records_the_ground_truth():
     assert scenario["period"] == "monthly"
     assert scenario["n_total"] == 24
     assert scenario["start_period"] == "2010-01"
-    assert scenario["locations"] == ["oslo", "bergen"]
+    assert list(scenario["locations"]) == ["oslo", "bergen"]
     disease = next(sp for sp in scenario["series"] if sp.get("counts"))
     deps = disease["depends_on"]
     assert deps[0] == {
         "series": "rainfall", "lag": 2, "weight": 1.5, "transforms": [],
     }
-    assert disease["counts"]["population"] == 1000
+    assert scenario["locations"]["oslo"]["population"] == 1000
 
 
 def test_metadata_records_generators():
@@ -58,7 +61,7 @@ def test_metadata_includes_count_distribution():
     config = parse_config(
         {
             "period": "monthly", "n_total": 3, "seed": 0,
-            "series": [{"name": "rainfall", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {"population": 100, "distribution": "negative_binomial", "overdispersion": 2.5}, "depends_on": [{"series": "rainfall", "lag": 1}]}],
+            "locations": {"loc": {"population": 100_000}}, "series": [{"name": "rainfall", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {"distribution": "negative_binomial", "overdispersion": 2.5}, "depends_on": [{"series": "rainfall", "lag": 1}]}],
         }
     )
     scenario = build_metadata(config)["scenario"]
@@ -112,7 +115,7 @@ def mapping_location_config():
                 "oslo": {"population": 700_000},
                 "bergen": {"population": 280_000},
             },
-            "series": [{"name": "rainfall", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {"population": 10_000}, "depends_on": [{"series": "rainfall", "lag": 2}]}],
+            "series": [{"name": "rainfall", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall", "lag": 2}]}],
         }
     )
 
@@ -123,9 +126,8 @@ def test_metadata_preserves_per_location_population():
     # scenario block — otherwise the round-trip silently loses them.
     config = mapping_location_config()
     rebuilt = parse_config(build_metadata(config)["scenario"])
-    disease = next(sp for sp in rebuilt.series if sp.counts is not None)
-    assert rebuilt.population_for("oslo", disease) == 700_000
-    assert rebuilt.population_for("bergen", disease) == 280_000
+    assert rebuilt.population_for("oslo") == 700_000
+    assert rebuilt.population_for("bergen") == 280_000
     assert rebuilt == config
 
 
@@ -143,16 +145,19 @@ def test_metadata_round_trips_population_generator():
         {
             "period": "monthly",
             "n_total": 24,
+            "locations": {
+                "loc": {
+                    "population": {
+                        "generate": "linear_trend",
+                        "params": {"start": 1000, "slope": 10},
+                    }
+                }
+            },
             "series": [
                 {"name": "rainfall", "generate": "seasonal_spike"},
                 {
                     "name": "disease_cases",
-                    "counts": {
-                        "population": {
-                            "generate": "linear_trend",
-                            "params": {"start": 1000, "slope": 10},
-                        },
-                    },
+                    "counts": {},
                     "depends_on": [{"series": "rainfall", "lag": 1}],
                 },
             ],
@@ -174,16 +179,19 @@ def test_write_metadata_with_population_generator(tmp_path):
         {
             "period": "monthly",
             "n_total": 24,
+            "locations": {
+                "loc": {
+                    "population": {
+                        "generate": "linear_trend",
+                        "params": {"start": 1000, "slope": 10},
+                    }
+                }
+            },
             "series": [
                 {"name": "rainfall", "generate": "seasonal_spike"},
                 {
                     "name": "disease_cases",
-                    "counts": {
-                        "population": {
-                            "generate": "linear_trend",
-                            "params": {"start": 1000, "slope": 10},
-                        },
-                    },
+                    "counts": {},
                     "depends_on": [{"series": "rainfall", "lag": 1}],
                 },
             ],
@@ -191,10 +199,7 @@ def test_write_metadata_with_population_generator(tmp_path):
     )
     write_metadata(config, tmp_path)
     loaded = json.loads((tmp_path / "metadata.json").read_text())
-    disease = next(
-        sp for sp in loaded["scenario"]["series"] if sp.get("counts")
-    )
-    assert disease["counts"]["population"] == {
+    assert loaded["scenario"]["locations"]["loc"]["population"] == {
         "generate": "linear_trend",
         "params": {"start": 1000, "slope": 10},
     }

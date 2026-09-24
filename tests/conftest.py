@@ -20,7 +20,8 @@ def scenario_dict(**overrides) -> dict:
     """A minimal valid scenario dict (weekly, two climate drivers).
 
     One ``series`` list: two plain climate series plus a count series (the
-    disease), which is marked by its ``counts`` block.
+    disease), which is marked by its ``counts`` block. Population lives on
+    the location, since a count series draws against where it happens.
 
     Tests tweak it via keyword overrides, e.g. ``scenario_dict(n_total=10)``.
     Returns a plain dict; call ``parse_config`` on it for a typed config.
@@ -29,12 +30,13 @@ def scenario_dict(**overrides) -> dict:
         "period": "weekly",
         "n_total": 78,
         "seed": 42,
+        "locations": {"loc": {"population": 100_000}},
         "series": [
             {"name": "rainfall", "generate": "seasonal_spike"},
             {"name": "mean_temperature", "generate": "seasonal_smooth"},
             {
                 "name": "disease_cases",
-                "counts": {"population": 100_000},
+                "counts": {},
                 "depends_on": [
                     {"series": "rainfall", "lag": 3, "weight": 2.0},
                     {"series": "mean_temperature", "lag": 3, "weight": 1.0},

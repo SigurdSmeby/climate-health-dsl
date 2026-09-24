@@ -224,7 +224,7 @@ def _build_series(
     population = None
     if spec.counts is not None:
         population = _resolve_population(
-            config.population_for(location, spec),
+            config.population_for(location),
             config.n_total,
             config.period,
             _child_rng(config.seed, location, "population", spec.name),

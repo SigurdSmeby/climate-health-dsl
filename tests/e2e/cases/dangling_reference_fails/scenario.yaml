@@ -12,5 +12,7 @@ series:
   depends_on:
   - series: rainfal
     lag: 3
-  counts:
+  counts: {}
+locations:
+  loc:
     population: 1000

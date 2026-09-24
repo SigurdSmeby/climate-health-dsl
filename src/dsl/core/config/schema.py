@@ -54,8 +54,8 @@ class PopulationSpec(BaseModel):
 class LocationSpec(BaseModel):
     """Per-location overrides under the mapping form of ``locations:``.
 
-    ``None`` means "use the count series' own ``counts.population``".
     A model (not a plain dict) so a typo'd override key is rejected.
+    ``population`` is required whenever any series in the scenario counts.
     """
 
     model_config = _STRICT
@@ -84,13 +84,13 @@ class CountsSpec(BaseModel):
     Its presence is what makes a series a disease signal; these are the
     incidence model's own parameters, so they live here rather than on the
     series, and cannot be written anywhere else.
+
+    Population is deliberately NOT here: it belongs to a location, not to a
+    disease, so two count series cannot disagree about the same place.
     """
 
     model_config = _STRICT
 
-    # A fixed headcount or a generator (growth). May be omitted only when
-    # EVERY location sets its own (checked on ScenarioConfig).
-    population: int | PopulationSpec | None = None
     max_rate: float = Field(default=0.3, gt=0.0, le=1.0)
     median_rate: float = Field(default=0.1, gt=0.0, le=1.0)
     # "poisson" has variance == mean; "negative_binomial" adds overdispersion
@@ -107,8 +107,8 @@ class CountsSpec(BaseModel):
             self, unchanged, if both checks pass.
 
         Errors Caught (raised to caller):
-            ValueError: If median_rate >= max_rate (the sigmoid shift is
-                undefined outside (0, 1)), or population is a fixed int < 1.
+            ValueError: If median_rate >= max_rate — the sigmoid shift is
+                undefined outside (0, 1).
         """
         # The model shifts its sigmoid by logit(median_rate / max_rate),
         # only defined for a ratio strictly between 0 and 1.
@@ -117,9 +117,6 @@ class CountsSpec(BaseModel):
                 f"median_rate ({self.median_rate}) must be smaller than "
                 f"max_rate ({self.max_rate})."
             )
-        # A Field range can't sit on a union arm, so enforce it here.
-        if isinstance(self.population, int) and self.population < 1:
-            raise ValueError(f"population must be >= 1, got {self.population}.")
         return self
 
 
@@ -433,22 +430,22 @@ class ScenarioConfig(BaseModel):
                     f"location '{name}' population must be >= 1, "
                     f"got {override.population}."
                 )
-        # A count series' counts.population is the fallback; it may be
-        # omitted ONLY when every location sets its own.
-        uncovered = [
-            loc
-            for loc in self.locations
-            if self.location_overrides.get(loc) is None
-            or self.location_overrides[loc].population is None
-        ]
-        if not uncovered:
+        # Population belongs to the place, so every location must state it
+        # as soon as anything in the scenario counts against it.
+        if not any(spec.counts is not None for spec in self.series):
             return
-        for spec in self.series:
-            if spec.counts is not None and spec.counts.population is None:
-                raise ValueError(
-                    f"series '{spec.name}' needs counts.population because "
-                    f"these locations do not set their own: {uncovered}."
-                )
+        missing = [
+            name
+            for name in self.locations
+            if self.location_overrides.get(name) is None
+            or self.location_overrides[name].population is None
+        ]
+        if missing:
+            raise ValueError(
+                f"these locations need a population: {missing}. A count "
+                f"series draws against its location's population, so write "
+                f"it as 'locations: {{{missing[0]}: {{population: 100000}}}}'."
+            )
 
     def _check_train_fraction(self) -> None:
         """Check both the train and test partitions end up non-empty.
@@ -602,26 +599,21 @@ class ScenarioConfig(BaseModel):
         }
         return list(TopologicalSorter(graph).static_order())
 
-    def population_for(
-        self, location: str, spec: "SeriesSpec"
-    ) -> "int | PopulationSpec":
-        """Resolve the population source for a count series at a location.
+    def population_for(self, location: str) -> "int | PopulationSpec":
+        """Resolve a location's population.
 
-        The single place the engine asks "what is the population here?".
+        The single place the engine asks "how many people live here?". Only
+        meaningful when the scenario has a count series, which is when the
+        schema requires every location to declare one.
 
         Args:
             location: The location name.
-            spec: The count series asking (its counts block holds the
-                scenario-wide fallback).
 
         Returns:
-            The location's own override if the mapping form set one, else
-            the series' counts.population.
+            The location's declared population — a fixed headcount or a
+            generator producing one value per period.
         """
-        override = self.location_overrides.get(location)
-        if override is not None and override.population is not None:
-            return override.population
-        return spec.counts.population
+        return self.location_overrides[location].population
 
 
 # Helper functions after the classes.

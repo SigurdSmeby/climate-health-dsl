@@ -16,5 +16,7 @@ series:
   - series: growth
     lag: 0
     weight: 1.0
-  counts:
+  counts: {}
+locations:
+  loc:
     population: 50000

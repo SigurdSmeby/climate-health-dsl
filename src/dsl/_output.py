@@ -19,6 +19,12 @@ period: monthly       # daily | weekly | monthly | yearly
 n_total: 36           # how many periods to generate (here: 3 years)
 seed: 42              # same seed -> identical data every run
 
+locations:            # a count series draws against where it happens, so
+  loc:                #   population belongs to the place, not the disease
+    population: 100000
+  # north:            # add locations to stack several series in one dataset
+  #   population: 300000
+
 series:
   - name: rainfall            # becomes a column; CHAP uses 'rainfall'
     generate: seasonal_spike  # a yearly rainy-season bump
@@ -54,8 +60,7 @@ series:
   # A `counts:` block turns a series into a disease signal: its float values
   # become whole case counts, drawn against the population.
   - name: disease_cases
-    counts:
-      population: 100000
+    counts: {}        # empty is fine: the defaults suit most scenarios
       # max_rate: 0.3                     # ceiling, as a fraction of population
       # median_rate: 0.1                  # where a typical period sits
       # distribution: negative_binomial   # spikier than the default poisson

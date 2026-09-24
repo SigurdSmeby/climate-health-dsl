@@ -90,6 +90,7 @@ def test_planted_threshold_is_recoverable():
     config = parse_config(
         make_config_dict(
             n_total=n,
+            locations={"loc": {"population": 500_000}},
             series=[
                 # Rises linearly: only the second half exceeds threshold 5.
                 series_dict(
@@ -99,11 +100,7 @@ def test_planted_threshold_is_recoverable():
                 ),
                 series_dict(
                     "disease_cases",
-                    counts={
-                        "population": 500_000,
-                        "median_rate": 0.1,
-                        "max_rate": 0.4,
-                    },
+                    counts={"median_rate": 0.1, "max_rate": 0.4},
                     depends_on=[
                         {
                             "series": "rainfall",

@@ -251,7 +251,7 @@ def test_events_reach_a_count_series():
                 _flat("rain"),
                 series_dict(
                     "cases",
-                    counts={"population": 100_000},
+                    counts={},
                     depends_on=[{"series": "rain", "lag": 1}],
                     events={"outbreak": {"add": 3.0}},
                 ),
@@ -272,7 +272,7 @@ def test_an_event_fires_in_the_same_periods_at_every_location():
         _scenario(
             {"storm": {"rate": 0.2}},
             [_flat("rain", events={"storm": {"multiplier": 5.0}})],
-            locations=["north", "south"],
+            locations={"north": {"population": 100_000}, "south": {"population": 100_000}},
             n_total=60,
         )
     )

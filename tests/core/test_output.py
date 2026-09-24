@@ -86,8 +86,8 @@ def test_multi_location_split_is_per_location(tmp_path):
             "n_total": 24,
             "seed": 1,
             "train_fraction": 0.75,
-            "locations": ["oslo", "bergen"],
-            "series": [{"name": "rainfall", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {"population": 10_000}, "depends_on": [{"series": "rainfall", "lag": 2}]}],
+            "locations": {"oslo": {"population": 100_000}, "bergen": {"population": 100_000}},
+            "series": [{"name": "rainfall", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall", "lag": 2}]}],
         }
     )
     write_output(run(config), config, tmp_path)

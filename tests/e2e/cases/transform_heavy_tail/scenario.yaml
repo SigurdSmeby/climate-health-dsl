@@ -19,5 +19,7 @@ series:
       params:
         scale: 2.0
         df: 3.0
-  counts:
+  counts: {}
+locations:
+  loc:
     population: 300000

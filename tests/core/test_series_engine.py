@@ -35,7 +35,7 @@ def test_columns_follow_declaration_order_not_dependency_order():
 
 
 def test_row_count_is_n_total_times_locations():
-    data = make_config_dict(n_total=24, locations=["north", "south"])
+    data = make_config_dict(n_total=24, locations={"north": {"population": 100_000}, "south": {"population": 100_000}})
     df = run(parse_config(data))
     assert len(df) == 48
 
@@ -189,12 +189,12 @@ def test_a_count_series_can_drive_another_series():
             series_dict("rain", generate="seasonal_spike"),
             series_dict(
                 "dengue",
-                counts={"population": 100_000},
+                counts={},
                 depends_on=[{"series": "rain", "lag": 1}],
             ),
             series_dict(
                 "malaria",
-                counts={"population": 100_000},
+                counts={},
                 depends_on=[{"series": "dengue", "lag": 1}],
             ),
         ]
@@ -242,12 +242,12 @@ def test_several_count_series_are_independent():
             series_dict("rain", generate="seasonal_spike"),
             series_dict(
                 "dengue",
-                counts={"population": 100_000},
+                counts={},
                 depends_on=[{"series": "rain", "lag": 1}],
             ),
             series_dict(
                 "malaria",
-                counts={"population": 100_000},
+                counts={},
                 depends_on=[{"series": "rain", "lag": 4}],
             ),
         ]
@@ -265,7 +265,7 @@ def test_no_built_in_seasonality_without_a_seasonal_driver():
             series_dict("flatline", generate="flat", params={"level": 1.0}),
             series_dict(
                 "cases",
-                counts={"population": 100_000},
+                counts={},
                 depends_on=[{"series": "flatline", "lag": 0, "weight": 1.0}],
             ),
         ],
@@ -354,7 +354,7 @@ def test_different_seed_changes_output():
 
 
 def test_locations_draw_independently():
-    data = make_config_dict(locations=["north", "south"], n_total=52)
+    data = make_config_dict(locations={"north": {"population": 100_000}, "south": {"population": 100_000}}, n_total=52)
     df = run(parse_config(data))
     north = df[df["location"] == "north"]["rainfall"].to_numpy()
     south = df[df["location"] == "south"]["rainfall"].to_numpy()
@@ -385,11 +385,16 @@ def test_per_location_population_is_used():
 
 
 def test_population_generator_varies_over_time():
-    data = make_config_dict()
-    data["series"][2]["counts"]["population"] = {
-        "generate": "linear_trend",
-        "params": {"start": 70_000, "slope": 90},
-    }
+    data = make_config_dict(
+        locations={
+            "loc": {
+                "population": {
+                    "generate": "linear_trend",
+                    "params": {"start": 70_000, "slope": 90},
+                }
+            }
+        }
+    )
     df = run(parse_config(data))
     assert df["population"].nunique() > 1
 

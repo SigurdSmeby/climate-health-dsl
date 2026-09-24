@@ -107,6 +107,7 @@ def test_planted_kernel_is_recoverable(tmp_path):
     config = parse_config(
         make_config_dict(
             n_total=n,
+            locations={"loc": {"population": 500_000}},
             series=[
                 series_dict(
                     "rainfall",
@@ -115,11 +116,7 @@ def test_planted_kernel_is_recoverable(tmp_path):
                 ),
                 series_dict(
                     "disease_cases",
-                    counts={
-                        "population": 500_000,
-                        "median_rate": 0.1,
-                        "max_rate": 0.4,
-                    },
+                    counts={"median_rate": 0.1, "max_rate": 0.4},
                     depends_on=[
                         {
                             "series": "rainfall",
