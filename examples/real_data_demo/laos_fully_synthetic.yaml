@@ -8,52 +8,54 @@
 period: monthly
 n_total: 36
 seed: 42
-start_period: "2010-01" # same calendar window as the real dataset
-# Per-location populations that GROW over time (real province sizes as the
-# starting points). Each location's population is a linear_trend generator, so
-# the population rises month by month — urban Vientiane faster than rural
-# Bokeo — instead of being a fixed number. A plain int still works for a
-# constant population; disease_cases.population below is the fallback.
+start_period: 2010-01
 locations:
   Bokeo:
-    population: { generate: linear_trend, params: { start: 75000, slope: 90 } }
+    population:
+      generate: linear_trend
+      params:
+        start: 75000
+        slope: 90
   Savannakhet:
-    population: { generate: linear_trend, params: { start: 686000, slope: 800 } }
+    population:
+      generate: linear_trend
+      params:
+        start: 686000
+        slope: 800
   Vientiane[prefecture]:
-    population: { generate: linear_trend, params: { start: 559000, slope: 1200 } }
-variables:
-  - name: rainfall
-    generate: seasonal_spike
-    params:
-      baseline: 30 # dry-season level, mm
-      spike_height: 450 # monsoon peak above the baseline
-      spike_center: 6 # July (month index 6 within the year)
-      spike_width: 1.5 # months; covers the ~Jun-Sep wet season
-      noise: 25
-      clamp_min: 0 # rainfall can never be negative
-  - name: mean_temperature
-    generate: seasonal_smooth
-    params:
-      mean: 23.5 # deg C; phase 0 peaks at April in monthly data
-      amplitude: 4
-      phase: 0
-      noise: 0.7
-disease_cases:
-  # No top-level population needed: every location above sets its own. It is
-  # only required as a fallback for locations that don't.
+    population:
+      generate: linear_trend
+      params:
+        start: 559000
+        slope: 1200
+series:
+- name: rainfall
+  generate: seasonal_spike
+  params:
+    baseline: 30
+    spike_height: 450
+    spike_center: 6
+    spike_width: 1.5
+    noise: 25
+    clamp_min: 0
+- name: mean_temperature
+  generate: seasonal_smooth
+  params:
+    mean: 23.5
+    amplitude: 4
+    phase: 0
+    noise: 0.7
+- name: disease_cases
   depends_on:
-    - variable: rainfall
-      lag: 2
-      weight: 1.5
-    - variable: mean_temperature
-      lag: 1
-      weight: 1.0
-  autoregressive: false
+  - series: rainfall
+    lag: 2
+    weight: 1.5
+  - series: mean_temperature
+    lag: 1
+    weight: 1.0
   missing_rate: 0
-  # Real Laos incidence is tiny (~1e-4); the defaults would give thousands
-  # of monthly cases.
-  max_rate: 0.002
-  median_rate: 0.0001
-  # Real dengue counts are overdispersed (outbreak years), not tidy Poisson.
-  count_distribution: negative_binomial
-  overdispersion: 3.0
+  counts:
+    max_rate: 0.002
+    median_rate: 0.0001
+    distribution: negative_binomial
+    overdispersion: 3.0

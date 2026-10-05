@@ -89,26 +89,51 @@ def test_registered_and_reachable():
     assert get_transform("distributed_lag") is DistributedLagTransform
 
 
-def test_planted_kernel_is_recoverable():
+def test_planted_kernel_is_recoverable(tmp_path):
     # Thesis check: a driver spike should produce elevated disease across the
     # kernel window, not just at one offset — the distributed-lag ground truth.
-    from dsl.core.config.schema import DiseaseSpec
-    from dsl.core.pipeline.disease import build_disease_cases
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+    from tests.conftest import scenario_dict as make_config_dict
+    from tests.conftest import series_dict, write_csv
 
     n = 120
-    driver = np.zeros(n)
-    driver[40] = 20.0  # one sharp climate event
-    spec = DiseaseSpec(
-        population=500_000, median_rate=0.1, max_rate=0.4,
-        depends_on=[{
-            "variable": "rainfall", "weight": 4.0,
-            "transforms": [{"name": "distributed_lag",
-                            "params": {"weights": [0.4, 0.3, 0.2, 0.1]}}],
-        }],
+    rainfall = np.zeros(n)
+    rainfall[40] = 20.0  # one sharp climate event
+    # from_csv is the only way to plant an exact, known driver shape.
+    periods = [f"{2000 + i // 52}-W{(i % 52) + 1:02d}" for i in range(n)]
+    path = write_csv(tmp_path / "driver.csv", periods, rainfall=rainfall)
+
+    config = parse_config(
+        make_config_dict(
+            n_total=n,
+            locations={"loc": {"population": 500_000}},
+            series=[
+                series_dict(
+                    "rainfall",
+                    generate="from_csv",
+                    params={"file": path, "column": "rainfall"},
+                ),
+                series_dict(
+                    "disease_cases",
+                    counts={"median_rate": 0.1, "max_rate": 0.4},
+                    depends_on=[
+                        {
+                            "series": "rainfall",
+                            "weight": 4.0,
+                            "transforms": [
+                                {
+                                    "name": "distributed_lag",
+                                    "params": {"weights": [0.4, 0.3, 0.2, 0.1]},
+                                }
+                            ],
+                        }
+                    ],
+                ),
+            ],
+        )
     )
-    counts = build_disease_cases(
-        {"rainfall": driver}, spec, np.random.default_rng(0), n, "weekly",
-    )
+    counts = run(config)["disease_cases"].to_numpy()
     # Disease in the 4-period window starting at the event (weight[0] is the
     # strongest response, at the SAME index as the event itself) exceeds the
     # quiet baseline.

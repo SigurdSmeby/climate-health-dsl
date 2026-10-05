@@ -1,0 +1,34 @@
+_expect:
+  exit_code: 0
+  files_exist:
+  - simulated_data.csv
+  - metadata.json
+  column_exists:
+  - dengue
+  - malaria
+  column_all:
+    dengue: non_negative_int
+    malaria: non_negative_int
+  reproduce: true
+period: monthly
+n_total: 48
+seed: 7
+series:
+- name: rainfall
+  generate: seasonal_spike
+- name: dengue
+  counts:
+    distribution: negative_binomial
+  depends_on:
+  - series: rainfall
+    lag: 1
+    weight: 1.5
+- name: malaria
+  counts: {}
+  depends_on:
+  - series: dengue
+    lag: 2
+    weight: 1.0
+locations:
+  loc:
+    population: 100000

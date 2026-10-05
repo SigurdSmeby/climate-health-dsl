@@ -40,21 +40,22 @@ When a scenario already has output, `dsl run` lists the earlier runs and asks wh
 **4. Change one thing, watch it move.** In `my_scenario.yaml`, bump `lag: 2` to `lag: 6` and save. With `--watch` running, the dataset regenerates and the plot refreshes — the disease peak shifts later relative to rainfall. Adding a second driver is pure YAML, no code:
 
 ```yaml
-variables:
+series:
   - name: rainfall
     generate: seasonal_spike
-  - name: mean_temperature      # add a second climate variable
+  - name: mean_temperature      # add a second climate series
     generate: seasonal_smooth
-disease_cases:
-  depends_on:
-    - { variable: rainfall, lag: 6 }
-    - { variable: mean_temperature, lag: 2 }   # ...and a second driver
+  - name: disease_cases
+    counts: {}
+    depends_on:
+      - { series: rainfall, lag: 6 }
+      - { series: mean_temperature, lag: 2 }   # ...and a second driver
 ```
 
-**5. Use real climate data.** Swap a synthetic generator for `from_csv` to drive disease off *real* climate (a bundled three-province Laos sample lives in `examples/data/`). In `my_scenario.yaml`, replace just the `rainfall` variable's `generate:`/`params:` lines with these (leave `disease_cases:` and everything else as-is):
+**5. Use real climate data.** Swap a synthetic generator for `from_csv` to drive disease off *real* climate (a bundled three-province Laos sample lives in `examples/data/`). In `my_scenario.yaml`, replace just the `rainfall` series' `generate:`/`params:` lines with these (leave the rest as-is):
 
 ```yaml
-variables:
+series:
   - name: rainfall
     generate: from_csv
     # laos_subset.csv holds three provinces; source_location picks one (or set

@@ -8,31 +8,32 @@
 period: monthly
 n_total: 36
 seed: 42
-start_period: "2010-01" # align output labels with the source data's dates
-variables:
-  - name: rainfall
-    generate: from_csv
-    params:
-      file: ../data/laos_subset.csv
-      column: rainfall
-      source_location: Bokeo
-  - name: mean_temperature
-    generate: from_csv
-    params:
-      file: ../data/laos_subset.csv
-      column: mean_temperature
-      source_location: Bokeo
-disease_cases:
-  population: 75000
+start_period: 2010-01
+locations:
+  loc:
+    population: 75000
+series:
+- name: rainfall
+  generate: from_csv
+  params:
+    file: ../data/laos_subset.csv
+    column: rainfall
+    source_location: Bokeo
+- name: mean_temperature
+  generate: from_csv
+  params:
+    file: ../data/laos_subset.csv
+    column: mean_temperature
+    source_location: Bokeo
+- name: disease_cases
   depends_on:
-    - variable: rainfall
-      lag: 2
-      weight: 1.5
-    - variable: mean_temperature
-      lag: 1
-      weight: 1.0
-  autoregressive: false
+  - series: rainfall
+    lag: 2
+    weight: 1.5
+  - series: mean_temperature
+    lag: 1
+    weight: 1.0
   missing_rate: 0
-  # Real dengue counts are overdispersed, not tidy Poisson.
-  count_distribution: negative_binomial
-  overdispersion: 3.0
+  counts:
+    distribution: negative_binomial
+    overdispersion: 3.0

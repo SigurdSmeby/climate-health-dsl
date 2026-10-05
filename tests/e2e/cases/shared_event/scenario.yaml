@@ -1,0 +1,67 @@
+_expect:
+  exit_code: 0
+  files_exist:
+  - simulated_data.csv
+  - metadata.json
+  columns:
+    rainfall:
+    - 10.0
+    - 10.0
+    - 10.0
+    - 25.0
+    - 10.0
+    - 10.0
+    - 10.0
+    - 10.0
+    - 25.0
+    - 10.0
+    - 10.0
+    - 10.0
+    temperature:
+    - 20.0
+    - 20.0
+    - 20.0
+    - 14.0
+    - 20.0
+    - 20.0
+    - 20.0
+    - 20.0
+    - 14.0
+    - 20.0
+    - 20.0
+    - 20.0
+  reproduce: true
+period: monthly
+n_total: 12
+seed: 3
+events:
+  storm:
+    at:
+    - 3
+    - 8
+series:
+- name: rainfall
+  generate: flat
+  params:
+    level: 10.0
+    noise: 0.0
+  events:
+    storm:
+      multiplier: 2.5
+- name: temperature
+  generate: flat
+  params:
+    level: 20.0
+    noise: 0.0
+  events:
+    storm:
+      add: -6.0
+- name: disease_cases
+  counts: {}
+  depends_on:
+  - series: rainfall
+    lag: 1
+    weight: 1.0
+locations:
+  loc:
+    population: 50000

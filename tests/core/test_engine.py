@@ -17,19 +17,13 @@ def example_config():
             "n_total": 78,
             "seed": 42,
             "train_fraction": 0.8,
-            "variables": [
+            "locations": {"loc": {"population": 100_000}},
+            "series": [
                 {"name": "rainfall", "generate": "seasonal_spike"},
-                {"name": "mean_temperature", "generate": "seasonal_smooth"},
-            ],
-            "disease_cases": {
-                "population": 100_000,
-                "depends_on": [
-                    {"variable": "rainfall", "lag": 3, "weight": 2.0},
-                    {"variable": "mean_temperature", "lag": 3, "weight": 1.0},
-                ],
-                "autoregressive": False,
-                "missing_rate": 0.05,
-            },
+                {"name": "mean_temperature", "generate": "seasonal_smooth"}, {"name": "disease_cases", "counts": {}, "depends_on": [
+                    {"series": "rainfall", "lag": 3, "weight": 2.0},
+                    {"series": "mean_temperature", "lag": 3, "weight": 1.0},
+                ], "missing_rate": 0.05}],
         }
     )
 
@@ -89,11 +83,7 @@ def test_column_names_come_from_yaml_not_hardcoded():
         {
             "period": "monthly",
             "n_total": 24,
-            "variables": [{"name": "wind", "generate": "seasonal_smooth"}],
-            "disease_cases": {
-                "population": 5_000,
-                "depends_on": [{"variable": "wind", "lag": 1}],
-            },
+            "locations": {"loc": {"population": 100_000}}, "series": [{"name": "wind", "generate": "seasonal_smooth"}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "wind", "lag": 1}]}],
         }
     )
     df = run(config)
@@ -115,17 +105,12 @@ def test_generator_params_are_passed_through():
                 "period": "weekly",
                 "n_total": 52,
                 "seed": seed,
-                "variables": [
+                "locations": {"loc": {"population": 100_000}}, "series": [
                     {
                         "name": "rainfall",
                         "generate": "seasonal_spike",
                         "params": {"noise": 0, "spike_center": 10},
-                    }
-                ],
-                "disease_cases": {
-                    "population": 1_000,
-                    "depends_on": [{"variable": "rainfall"}],
-                },
+                    }, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall"}]}],
             }
         )
 
@@ -140,11 +125,7 @@ def test_unknown_generator_name_raises_with_available():
         {
             "period": "weekly",
             "n_total": 52,
-            "variables": [{"name": "rainfall", "generate": "no_such_shape"}],
-            "disease_cases": {
-                "population": 1_000,
-                "depends_on": [{"variable": "rainfall"}],
-            },
+            "locations": {"loc": {"population": 100_000}}, "series": [{"name": "rainfall", "generate": "no_such_shape"}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall"}]}],
         }
     )
     with pytest.raises(KeyError, match="seasonal_spike"):
@@ -158,17 +139,12 @@ def test_unknown_generator_param_clear_error():
         {
             "period": "weekly",
             "n_total": 10,
-            "variables": [
+            "locations": {"loc": {"population": 100_000}}, "series": [
                 {
                     "name": "rainfall",
                     "generate": "seasonal_spike",
                     "params": {"bogus_param": 99},
-                }
-            ],
-            "disease_cases": {
-                "population": 1_000,
-                "depends_on": [{"variable": "rainfall", "lag": 1}],
-            },
+                }, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall", "lag": 1}]}],
         }
     )
     with pytest.raises(ValueError, match="bogus_param"):
@@ -185,11 +161,7 @@ def start_period_config(start_period, period="monthly"):
             "period": period,
             "n_total": 24,
             "start_period": start_period,
-            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
-            "disease_cases": {
-                "population": 1_000,
-                "depends_on": [{"variable": "rainfall"}],
-            },
+            "locations": {"loc": {"population": 100_000}}, "series": [{"name": "rainfall", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall"}]}],
         }
     )
 
@@ -236,12 +208,8 @@ def multi_location_config():
             "period": "monthly",
             "n_total": 24,
             "seed": 1,
-            "locations": ["oslo", "bergen"],
-            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
-            "disease_cases": {
-                "population": 10_000,
-                "depends_on": [{"variable": "rainfall", "lag": 2}],
-            },
+            "locations": {"oslo": {"population": 100_000}, "bergen": {"population": 100_000}},
+            "series": [{"name": "rainfall", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall", "lag": 2}]}],
         }
     )
 
@@ -270,11 +238,9 @@ def test_adding_decoy_variable_does_not_change_disease():
     # signal or the real driver — components must have independent RNG streams.
     base = {
         "period": "monthly", "n_total": 24, "seed": 42,
-        "variables": [{"name": "a", "generate": "flat"}],
-        "disease_cases": {"population": 1000,
-                          "depends_on": [{"variable": "a", "lag": 1}]},
+        "locations": {"loc": {"population": 100_000}}, "series": [{"name": "a", "generate": "flat"}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "a", "lag": 1}]}],
     }
-    decoy = {**base, "variables": base["variables"] + [
+    decoy = {**base, "series": base["series"] + [
         {"name": "decoy", "generate": "flat"}]}
     x = run(parse_config(base))
     y = run(parse_config(decoy))
@@ -288,12 +254,10 @@ def test_reordering_variables_does_not_change_their_values():
     # A variable's values depend on its name, not its position.
     a = {
         "period": "monthly", "n_total": 12, "seed": 1,
-        "variables": [{"name": "x", "generate": "flat"},
-                      {"name": "y", "generate": "flat"}],
-        "disease_cases": {"population": 1000,
-                          "depends_on": [{"variable": "x"}]},
+        "locations": {"loc": {"population": 100_000}}, "series": [{"name": "x", "generate": "flat"},
+                      {"name": "y", "generate": "flat"}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "x"}]}],
     }
-    b = {**a, "variables": list(reversed(a["variables"]))}
+    b = {**a, "series": list(reversed(a["series"]))}
     da, db = run(parse_config(a)), run(parse_config(b))
     assert np.array_equal(da["x"].to_numpy(), db["x"].to_numpy())
     assert np.array_equal(da["y"].to_numpy(), db["y"].to_numpy())
@@ -309,12 +273,19 @@ def test_population_from_csv_honors_start_period(tmp_path):
     config = parse_config(
         {
             "period": "monthly", "n_total": 2, "start_period": "2010-03",
-            "variables": [{"name": "x", "generate": "flat", "params": {"noise": 0}}],
-            "disease_cases": {
-                "population": {"generate": "from_csv",
-                               "params": {"file": str(csv), "column": "pop"}},
-                "depends_on": [{"variable": "x"}],
+            "locations": {
+                "loc": {
+                    "population": {
+                        "generate": "from_csv",
+                        "params": {"file": str(csv), "column": "pop"},
+                    }
+                }
             },
+            "series": [
+                {"name": "x", "generate": "flat", "params": {"noise": 0}},
+                {"name": "disease_cases", "counts": {},
+                 "depends_on": [{"series": "x"}]},
+            ],
         }
     )
     df = run(config)
@@ -331,12 +302,19 @@ def test_population_from_csv_with_nan_errors(tmp_path):
     config = parse_config(
         {
             "period": "monthly", "n_total": 3, "start_period": "2010-01",
-            "variables": [{"name": "x", "generate": "flat", "params": {"noise": 0}}],
-            "disease_cases": {
-                "population": {"generate": "from_csv",
-                               "params": {"file": str(csv), "column": "pop"}},
-                "depends_on": [{"variable": "x"}],
+            "locations": {
+                "loc": {
+                    "population": {
+                        "generate": "from_csv",
+                        "params": {"file": str(csv), "column": "pop"},
+                    }
+                }
             },
+            "series": [
+                {"name": "x", "generate": "flat", "params": {"noise": 0}},
+                {"name": "disease_cases", "counts": {},
+                 "depends_on": [{"series": "x"}]},
+            ],
         }
     )
     with pytest.raises(ValueError, match="population"):
@@ -360,11 +338,9 @@ def test_from_csv_auto_matches_each_location(tmp_path):
     config = parse_config(
         {
             "period": "monthly", "n_total": 12, "start_period": "2010-01",
-            "locations": ["north", "south"],
-            "variables": [{"name": "rainfall", "generate": "from_csv",
-                           "params": {"file": str(csv), "column": "rainfall"}}],
-            "disease_cases": {"population": 1000,
-                              "depends_on": [{"variable": "rainfall", "lag": 1}]},
+            "locations": {"north": {"population": 100_000}, "south": {"population": 100_000}},
+            "series": [{"name": "rainfall", "generate": "from_csv",
+                           "params": {"file": str(csv), "column": "rainfall"}}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall", "lag": 1}]}],
         }
     )
     df = run(config)
@@ -381,12 +357,10 @@ def test_from_csv_explicit_source_overrides_auto_match(tmp_path):
     config = parse_config(
         {
             "period": "monthly", "n_total": 12, "start_period": "2010-01",
-            "locations": ["north", "south"],
-            "variables": [{"name": "rainfall", "generate": "from_csv",
+            "locations": {"north": {"population": 100_000}, "south": {"population": 100_000}},
+            "series": [{"name": "rainfall", "generate": "from_csv",
                            "params": {"file": str(csv), "column": "rainfall",
-                                      "source_location": "north"}}],
-            "disease_cases": {"population": 1000,
-                              "depends_on": [{"variable": "rainfall", "lag": 1}]},
+                                      "source_location": "north"}}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall", "lag": 1}]}],
         }
     )
     df = run(config)
@@ -402,11 +376,9 @@ def test_from_csv_unmatched_location_errors(tmp_path):
     config = parse_config(
         {
             "period": "monthly", "n_total": 12, "start_period": "2010-01",
-            "locations": ["north", "west"],  # 'west' is not in the CSV
-            "variables": [{"name": "rainfall", "generate": "from_csv",
-                           "params": {"file": str(csv), "column": "rainfall"}}],
-            "disease_cases": {"population": 1000,
-                              "depends_on": [{"variable": "rainfall", "lag": 1}]},
+            "locations": {"north": {"population": 100_000}, "west": {"population": 100_000}},  # 'west' is not in the CSV
+            "series": [{"name": "rainfall", "generate": "from_csv",
+                           "params": {"file": str(csv), "column": "rainfall"}}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall", "lag": 1}]}],
         }
     )
     with pytest.raises(ValueError, match="west"):
@@ -423,11 +395,9 @@ def test_from_csv_single_location_csv_unaffected(tmp_path):
     config = parse_config(
         {
             "period": "monthly", "n_total": 12, "start_period": "2010-01",
-            "locations": ["a", "b"],
-            "variables": [{"name": "rainfall", "generate": "from_csv",
-                           "params": {"file": str(csv), "column": "rainfall"}}],
-            "disease_cases": {"population": 1000,
-                              "depends_on": [{"variable": "rainfall", "lag": 1}]},
+            "locations": {"a": {"population": 100_000}, "b": {"population": 100_000}},
+            "series": [{"name": "rainfall", "generate": "from_csv",
+                           "params": {"file": str(csv), "column": "rainfall"}}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall", "lag": 1}]}],
         }
     )
     df = run(config)
@@ -446,11 +416,8 @@ def test_per_location_population_in_output():
                 "oslo": {"population": 700000},
                 "bergen": {"population": 280000},
             },
-            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
-            "disease_cases": {
-                "population": 10000,  # the fallback; overridden per location
-                "depends_on": [{"variable": "rainfall", "lag": 2}],
-            },
+            "series": [{"name": "rainfall", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {}, # the fallback; overridden per location
+                "depends_on": [{"series": "rainfall", "lag": 2}]}],
         }
     )
     df = run(config)
@@ -470,11 +437,7 @@ def test_per_location_population_caps_disease_counts():
             "n_total": 36,
             "seed": 3,
             "locations": {"big": {"population": 100000}, "small": {"population": 50}},
-            "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
-            "disease_cases": {
-                "population": 100000,
-                "depends_on": [{"variable": "rainfall", "lag": 1, "weight": 3.0}],
-            },
+            "series": [{"name": "rainfall", "generate": "seasonal_spike"}, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall", "lag": 1, "weight": 3.0}]}],
         }
     )
     df = run(config)
@@ -489,11 +452,12 @@ def population_config(population, locations=None, seed=1):
         "period": "monthly",
         "n_total": 36,
         "seed": seed,
-        "variables": [{"name": "rainfall", "generate": "seasonal_spike"}],
-        "disease_cases": {
-            "population": population,
-            "depends_on": [{"variable": "rainfall", "lag": 1, "weight": 2.0}],
-        },
+        "locations": {"loc": {"population": population}},
+        "series": [
+            {"name": "rainfall", "generate": "seasonal_spike"},
+            {"name": "disease_cases", "counts": {},
+             "depends_on": [{"series": "rainfall", "lag": 1, "weight": 2.0}]},
+        ],
     }
     if locations is not None:
         data["locations"] = locations
@@ -571,17 +535,12 @@ def test_start_period_aligns_from_csv_data(tmp_path):
             "period": "monthly",
             "n_total": 3,
             "start_period": "2010-04",
-            "variables": [
+            "locations": {"loc": {"population": 100_000}}, "series": [
                 {
                     "name": "rainfall",
                     "generate": "from_csv",
                     "params": {"file": str(csv), "column": "rainfall"},
-                }
-            ],
-            "disease_cases": {
-                "population": 1000,
-                "depends_on": [{"variable": "rainfall", "lag": 1}],
-            },
+                }, {"name": "disease_cases", "counts": {}, "depends_on": [{"series": "rainfall", "lag": 1}]}],
         }
     )
     df = run(config)

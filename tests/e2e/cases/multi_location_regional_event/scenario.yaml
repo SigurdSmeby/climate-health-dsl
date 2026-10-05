@@ -1,0 +1,34 @@
+_expect:
+  exit_code: 0
+  files_exist:
+  - simulated_data.csv
+  - metadata.json
+  column_exists:
+  - location
+  reproduce: true
+period: weekly
+n_total: 104
+seed: 0
+locations:
+  north:
+    population: 200000
+  south:
+    population: 200000
+events:
+  storm:
+    rate: 0.05
+series:
+- name: rainfall
+  generate: seasonal_smooth
+  params:
+    noise: 3.0
+  events:
+    storm:
+      multiplier: 2.5
+- name: disease_cases
+  counts:
+    median_rate: 0.1
+    max_rate: 0.3
+  depends_on:
+  - series: rainfall
+    weight: 1.5

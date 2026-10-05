@@ -1,15 +1,25 @@
-_run:
-  extra_args: ["--plot", "--plot-format", "png"]
 _expect:
   exit_code: 0
-  files_exist: [simulated_data.csv, plot.png]
-
+  files_exist:
+  - simulated_data.csv
+  - plot.png
+_run:
+  extra_args:
+  - --plot
+  - --plot-format
+  - png
 period: weekly
 n_total: 78
 seed: 1
-variables:
-  - name: rainfall
-    generate: seasonal_spike
-disease_cases:
-  population: 100000
-  depends_on: [{variable: rainfall, lag: 1, weight: 1.0}]
+series:
+- name: rainfall
+  generate: seasonal_spike
+- name: disease_cases
+  depends_on:
+  - series: rainfall
+    lag: 1
+    weight: 1.0
+  counts: {}
+locations:
+  loc:
+    population: 100000

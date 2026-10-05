@@ -159,7 +159,7 @@ disease = build_disease_cases(...)  # Clear what it returns
 ```python
 # BAD: d, s, g are meaningless
 d = {}
-for s in config.variables:
+for s in config.series:
     g = _generate_variable(...)
     d[s.name] = g
 ```
@@ -171,7 +171,7 @@ for s in config.variables:
 for i in range(config.n_total):  # i is a standard index
     ...
 
-for spec in config.variables:  # spec is meaningful in context
+for spec in config.series:  # spec is meaningful in context
     ...
 
 from typing import TypeVar
@@ -581,7 +581,7 @@ def _run_one_location(
     """
     # Step 1: Generate all variables
     drivers = {}
-    for spec in config.variables:
+    for spec in config.series:
         var_name = spec.name
         generated_data = _generate_variable(config, spec, location, shared_cache)
         drivers[var_name] = generated_data
@@ -737,7 +737,7 @@ def build_disease_cases(...) -> np.ndarray:
 # state); nothing repeats the docstring after the return.
 def _run_one_location(...) -> pd.DataFrame:
     drivers = {}
-    for spec in config.variables:
+    for spec in config.series:
         drivers[spec.name] = _generate_variable(...)
     # Now drivers = {"rainfall": [50.5, 59.3, ...], "humidity": [65.2, ...]}
     ...
@@ -758,7 +758,7 @@ Break complex functions into numbered steps. Each step explains the next action 
 def _run_one_location(config, location, shared_cache):
     # Step 1: Generate all variables
     drivers = {}
-    for spec in config.variables:
+    for spec in config.series:
         var_name = spec.name
         generated_data = _generate_variable(config, spec, location, shared_cache)
         drivers[var_name] = generated_data
@@ -1003,7 +1003,7 @@ class ScenarioConfig(BaseModel):
     
     period: str
     n_total: int
-    variables: list[VariableSpec]
+    series: list[SeriesSpec]
 
     def population_for(self, location: str) -> int | PopulationSpec:
         """Resolve the population for a location.

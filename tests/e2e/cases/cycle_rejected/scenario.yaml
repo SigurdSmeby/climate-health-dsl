@@ -1,0 +1,29 @@
+_expect:
+  exit_code: 1
+  stderr_contains: cycle
+  files_absent:
+  - simulated_data.csv
+period: monthly
+n_total: 24
+seed: 0
+series:
+- name: rainfall
+  depends_on:
+  - series: temperature
+    lag: 1
+- name: temperature
+  depends_on:
+  - series: wind
+    lag: 1
+- name: wind
+  depends_on:
+  - series: rainfall
+    lag: 1
+- name: disease_cases
+  counts: {}
+  depends_on:
+  - series: rainfall
+    lag: 1
+locations:
+  loc:
+    population: 1000

@@ -29,16 +29,21 @@ def _list_blocks() -> int:
     Returns:
         Exit code: always 0.
     """
-    import dsl.generators  # import triggers registration
+    import dsl.emitters  # import triggers registration
+    import dsl.generators
     import dsl.transforms  # noqa: F401
+    from dsl.core.extension.emitter_base import emitter_registry
     from dsl.core.extension.generator_base import generator_registry
     from dsl.core.extension.transform_base import transform_registry
 
-    print("generators (variables -> generate:):")
+    print("generators (series -> generate:):")
     for name in generator_registry.names():
         print(f"  {name}")
     print("transforms (depends_on[].transforms / series modifiers):")
     for name in transform_registry.names():
+        print(f"  {name}")
+    print("emitters (a series' output type, written as a block):")
+    for name in emitter_registry.names():
         print(f"  {name}")
     print("\nParams for each: see docs/REFERENCE.md.")
     return 0

@@ -1,20 +1,23 @@
-"""Feature 0: transforms are drop-in — a depends_on entry can name registry
-transforms that reshape the driver before it's weighted.
+"""Transforms are drop-in: a depends_on entry can name any registered
+transform to reshape a parent's values before they are weighted in.
 
-TDD: these are written before the implementation and must fail first.
+The point is that the hook reaches the registry, not just the built-in
+lag/missing — so a transform added as one self-registering file is usable
+from a scenario with no change to the core.
 """
 import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from dsl.core.config.schema import DependencySpec, ScenarioConfig
+from dsl.core.config.schema import DependencySpec, parse_config
 from dsl.core.extension.transform_base import Transform, register_transform
-from dsl.core.pipeline.disease import build_disease_cases
+from dsl.core.pipeline.engine import run
+from tests.conftest import scenario_dict as make_config_dict
+from tests.conftest import series_dict
 
 
-# A tiny test-only transform: multiply the series by a constant. Registered
-# under a name unlikely to clash. Proves an arbitrary registry transform is
-# reachable from a scenario, not just the built-in lag/missing.
+# A tiny test-only transform: multiply the series by a constant, registered
+# under a name unlikely to clash.
 @register_transform("_test_scale")
 class _ScaleTransform(Transform):
     def __init__(self, factor: float = 1.0):
@@ -24,101 +27,63 @@ class _ScaleTransform(Transform):
         return series.astype(float) * self.factor
 
 
-def _spec(**kw):
-    from dsl.core.config.schema import DiseaseSpec
-
-    base = {"population": 100_000, "depends_on": [], "median_rate": 0.1, "max_rate": 0.3}
-    base.update(kw)
-    return DiseaseSpec(**base)
-
-
-def test_dependency_accepts_transforms_field():
-    dep = DependencySpec(
-        variable="rainfall",
-        transforms=[{"name": "_test_scale", "params": {"factor": 2.0}}],
+def _scenario(transforms):
+    """A two-series scenario whose child applies `transforms` to its parent."""
+    return make_config_dict(
+        series=[
+            series_dict("rain", generate="seasonal_spike"),
+            series_dict(
+                "dam",
+                depends_on=[
+                    {
+                        "series": "rain",
+                        "lag": 1,
+                        "weight": 1.0,
+                        "transforms": transforms,
+                    }
+                ],
+            ),
+        ]
     )
-    assert dep.transforms[0].name == "_test_scale"
-    assert dep.transforms[0].params == {"factor": 2.0}
 
 
-def test_transforms_defaults_to_empty():
-    dep = DependencySpec(variable="rainfall")
+def test_transforms_default_to_empty():
+    dep = DependencySpec(series="rain")
     assert dep.transforms == []
 
 
-def test_unknown_transform_key_rejected():
-    # extra="forbid" must still hold on the new nested model.
-    with pytest.raises(ValidationError):
-        DependencySpec(
-            variable="rainfall",
-            transforms=[{"name": "_test_scale", "typo": 1}],
-        )
-
-
-def test_transform_actually_reshapes_the_signal():
-    # Same seed, same driver: a transform that scales the driver by a large
-    # factor must change the disease signal versus no transform.
-    rng_a = np.random.default_rng(0)
-    rng_b = np.random.default_rng(0)
-    driver = np.linspace(0.0, 10.0, 60)
-    drivers = {"rainfall": driver}
-
-    plain = build_disease_cases(
-        dict(drivers), _spec(depends_on=[{"variable": "rainfall", "weight": 1.0}]),
-        rng_a, 60, "weekly",
+def test_registry_transform_is_reachable_from_a_scenario():
+    config = parse_config(
+        _scenario([{"name": "_test_scale", "params": {"factor": 3.0}}])
     )
-    scaled = build_disease_cases(
-        dict(drivers),
-        _spec(depends_on=[{
-            "variable": "rainfall", "weight": 1.0,
-            "transforms": [{"name": "_test_scale", "params": {"factor": 5.0}}],
-        }]),
-        rng_b, 60, "weekly",
+    assert config.series[1].depends_on[0].transforms[0].name == "_test_scale"
+    assert run(config)["dam"].notna().any()
+
+
+def test_unknown_transform_name_is_rejected():
+    config = parse_config(_scenario([{"name": "no_such_transform"}]))
+    with pytest.raises(KeyError, match="no_such_transform"):
+        run(config)
+
+
+def test_transform_params_reach_the_transform():
+    """An invalid param surfaces as the transform's own error."""
+    config = parse_config(
+        _scenario([{"name": "threshold", "params": {"mode": "not_a_mode"}}])
     )
-    # Standardize makes a pure scale a no-op, so use a NONLINEAR check instead:
-    # this test just asserts the transform path runs and is wired. A linear
-    # scale is intentionally invariant under z-score; see the offset test.
-    assert plain.shape == scaled.shape
+    with pytest.raises(ValueError, match="mode"):
+        run(config)
 
 
-def test_nonlinear_transform_changes_signal():
-    # A transform that is NOT invariant under standardize (adds a constant to
-    # only the high half) must move the disease signal.
-    @register_transform("_test_hinge")
-    class _Hinge(Transform):
-        def apply(self, series, rng):
-            out = series.astype(float)
-            out[out < 5.0] = 0.0
-            return out
-
-    driver = np.linspace(0.0, 10.0, 60)
-    plain = build_disease_cases(
-        {"rainfall": driver.copy()},
-        _spec(depends_on=[{"variable": "rainfall", "weight": 2.0}]),
-        np.random.default_rng(0), 60, "weekly",
-    )
-    hinged = build_disease_cases(
-        {"rainfall": driver.copy()},
-        _spec(depends_on=[{
-            "variable": "rainfall", "weight": 2.0,
-            "transforms": [{"name": "_test_hinge"}],
-        }]),
-        np.random.default_rng(0), 60, "weekly",
-    )
-    assert not np.array_equal(np.nan_to_num(plain), np.nan_to_num(hinged))
+def test_transforms_apply_in_order():
+    """Scaling then thresholding differs from thresholding then scaling."""
+    scale = {"name": "_test_scale", "params": {"factor": 5.0}}
+    hinge = {"name": "threshold", "params": {"mode": "hinge", "threshold": 10.0}}
+    first = run(parse_config(_scenario([scale, hinge])))["dam"].to_numpy()
+    second = run(parse_config(_scenario([hinge, scale])))["dam"].to_numpy()
+    assert not np.allclose(first[1:], second[1:])
 
 
-def test_transforms_recorded_in_metadata():
-    from dsl.core.pipeline.metadata import build_metadata
-
-    cfg = ScenarioConfig(
-        period="weekly", n_total=60,
-        variables=[{"name": "rainfall", "generate": "flat", "params": {"level": 5}}],
-        disease_cases=_spec(depends_on=[{
-            "variable": "rainfall", "lag": 1, "weight": 1.0,
-            "transforms": [{"name": "_test_scale", "params": {"factor": 2.0}}],
-        }]),
-    )
-    meta = build_metadata(cfg)
-    dep = meta["scenario"]["disease_cases"]["depends_on"][0]
-    assert dep["transforms"] == [{"name": "_test_scale", "params": {"factor": 2.0}}]
+def test_transform_spec_rejects_a_typoed_key():
+    with pytest.raises(ValidationError, match="parms"):
+        parse_config(_scenario([{"name": "_test_scale", "parms": {}}]))

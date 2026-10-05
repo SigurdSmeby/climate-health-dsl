@@ -1,12 +1,22 @@
-# The smallest possible scenario: one climate variable, one disease driver.
+# The smallest possible scenario: one climate series, one disease driver.
 # Everything else uses defaults. A good starting point to copy and extend.
 period: monthly
 n_total: 36
-variables:
+
+# A count series draws against the population where it happens, so population
+# belongs to the location rather than to the disease.
+locations:
+  loc:
+    population: 100000
+
+series:
   - name: rainfall
     generate: seasonal_spike
-disease_cases:
-  population: 100000
-  depends_on:
-    - variable: rainfall
-      lag: 2
+
+  # The `counts:` block is what makes this a disease signal rather than a
+  # plain float column; empty means "use the defaults".
+  - name: disease_cases
+    counts: {}
+    depends_on:
+      - series: rainfall
+        lag: 2 # disease reacts two months after the rain

@@ -60,6 +60,9 @@ class SeasonalSpikeGenerator(VariableGenerator):
         self.spike_width = spike_width
         self.noise = noise
         self.clamp_min = clamp_min
+        # Set by generate(); events() needs the span it was asked for.
+        self._n_periods: int | None = None
+        self._ppy: int | None = None
 
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
@@ -81,6 +84,9 @@ class SeasonalSpikeGenerator(VariableGenerator):
         """
         ppy = periods_per_year(period)  # 52 for weekly, 12 for monthly, ...
         t = np.arange(n_periods)
+        # Remembered so events() can report where the peaks landed.
+        self._n_periods = n_periods
+        self._ppy = ppy
         # Position within the current year, so the spike repeats annually.
         pos = t % ppy
         # The peak's position within the year. None → mid-year (works at any
@@ -98,3 +104,31 @@ class SeasonalSpikeGenerator(VariableGenerator):
         if self.clamp_min is not None:
             series = np.maximum(series, self.clamp_min)
         return series
+
+    def events(self) -> list[dict]:
+        """Report every yearly peak this generator placed.
+
+        The peaks are deterministic — the spike centre, then one per year
+        after it — so they are exact ground truth rather than something to
+        detect in the output.
+
+        Returns:
+            One dict per peak inside the generated span, each with the kind,
+            the period it sits at, and how far it rises above baseline.
+            Empty before generate() has run.
+            Example: [{"kind": "seasonal_spike", "index": 26,
+            "magnitude": 20.0}]
+        """
+        if self._n_periods is None:
+            return []
+        center = (
+            self._ppy // 2 if self.spike_center is None else self.spike_center
+        ) % self._ppy
+        return [
+            {
+                "kind": "seasonal_spike",
+                "index": int(index),
+                "magnitude": float(self.spike_height),
+            }
+            for index in range(center, self._n_periods, self._ppy)
+        ]

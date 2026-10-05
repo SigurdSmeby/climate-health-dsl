@@ -59,6 +59,8 @@ class OutbreakShocksGenerator(VariableGenerator):
         self.magnitude = magnitude
         self.duration = duration
         self.clamp_min = clamp_min
+        # Filled by generate(): the shock starts it actually drew.
+        self._starts: list[int] = []
 
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
@@ -79,6 +81,7 @@ class OutbreakShocksGenerator(VariableGenerator):
             magnitude=20, duration=2.
         """
         series = np.full(n_periods, float(self.baseline))
+        self._starts = []
         if self.noise > 0:
             series = series + rng.normal(0.0, self.noise, size=n_periods)
 
@@ -89,6 +92,8 @@ class OutbreakShocksGenerator(VariableGenerator):
             expected = self.rate * n_periods / ppy
             n_events = rng.poisson(expected)
             starts = rng.integers(0, n_periods, size=n_events)
+            # Remembered so events() can report exactly what was drawn.
+            self._starts = sorted(int(s) for s in starts)
             # Shock windows drawn independently can overlap; build a single
             # shock layer with np.maximum (not +=) so an overlap caps at one
             # magnitude per period, matching the "rise above baseline"
@@ -104,3 +109,28 @@ class OutbreakShocksGenerator(VariableGenerator):
         if self.clamp_min is not None:
             series = np.maximum(series, self.clamp_min)
         return series
+
+    def events(self) -> list[dict]:
+        """Report the shocks this generator drew.
+
+        The starts come from the draw itself, so they are exact — no
+        threshold detection, and overlapping windows are still reported as
+        the separate shocks they were drawn as.
+
+        Returns:
+            One dict per shock, each with the kind, the period the shock
+            starts at, how far it rises above baseline, and how many periods
+            it stays elevated. Empty before generate() has run, or when the
+            rate is 0.
+            Example: [{"kind": "outbreak", "index": 14, "magnitude": 20.0,
+            "duration": 2}]
+        """
+        return [
+            {
+                "kind": "outbreak",
+                "index": start,
+                "magnitude": float(self.magnitude),
+                "duration": int(self.duration),
+            }
+            for start in self._starts
+        ]

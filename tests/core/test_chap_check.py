@@ -211,3 +211,31 @@ def test_infinite_covariate_flagged():
     df.loc[0, "rainfall"] = np.inf
     findings = validate_chap(df)
     assert any("rainfall" in f for f in findings)
+
+
+def test_warmup_nan_in_a_covariate_is_not_a_finding():
+    """A series built from a lagged parent has no input for its opening
+    periods, so a LEADING run of NaN is the declared warm-up, not a defect."""
+    periods = [f"2010-{m:02d}" for m in range(1, 13)]
+    df = pd.DataFrame({
+        "time_period": periods,
+        "location": "loc",
+        "soil_moisture": [float("nan")] * 2 + [1.0] * 10,
+        "disease_cases": [5.0] * 12,
+        "population": [1000] * 12,
+    })
+    assert not any("soil_moisture" in f for f in validate_chap(df))
+
+
+def test_a_gap_after_the_warmup_is_still_a_finding():
+    periods = [f"2010-{m:02d}" for m in range(1, 13)]
+    values = [1.0] * 12
+    values[7] = float("nan")  # a hole in the middle, not warm-up
+    df = pd.DataFrame({
+        "time_period": periods,
+        "location": "loc",
+        "rainfall": values,
+        "disease_cases": [5.0] * 12,
+        "population": [1000] * 12,
+    })
+    assert any("rainfall" in f for f in validate_chap(df))
