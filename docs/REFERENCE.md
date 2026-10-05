@@ -4,33 +4,36 @@ Every YAML field, generator, transform and emitter, with types, defaults, and me
 
 ## Writing a scenario
 
-A scenario is one YAML file. The bundled example (`examples/basic_scenario.yaml`):
+**On this page:** [top-level fields](#top-level-fields) · [`split`](#split) ·
+[`series` entries](#series-entries) · [`counts`](#counts-fields) ·
+[`events`](#events) · [`depends_on`](#depends_on-entries) ·
+[generators](#generators) · [transforms](#transforms) · [emitters](#emitters) ·
+[commands](#commands) · [output files](#output-files)
+
+A scenario is one YAML file. Everything is declared in one `series:` list —
+climate and disease alike — and a series becomes a disease signal by carrying a
+`counts:` block:
 
 ```yaml
-period: weekly
-n_total: 78
+period: monthly
+n_total: 36
 seed: 42
-split:
-  kind: time
-  k: 5
+
 locations:
   loc:
     population: 100000
+
 series:
   - name: rainfall
     generate: seasonal_spike
-  - name: mean_temperature
-    generate: seasonal_smooth
   - name: disease_cases
     counts: {}
     depends_on:
-      - series: rainfall
-        lag: 3
-        weight: 1.0
-      - series: mean_temperature
-        lag: 3
-        weight: 1.0
+      - { series: rainfall, lag: 2, weight: 1.0 }
 ```
+
+That is [`examples/minimal.yaml`](../examples/minimal.yaml) with a seed. Every
+field below is optional unless marked required.
 
 ### Top-level fields
 
@@ -179,7 +182,7 @@ A straight line `start + slope · t`, optionally noisy. Models slow drift (popul
 | `noise` | `0.0` | Std. dev. of added Gaussian noise. |
 | `clamp_min` | unset | Floor for the values. |
 
-`examples/confounders_and_controls.yaml` uses `flat` and `linear_trend` as decoys the disease ignores.
+[`examples/cross_validation.yaml`](../examples/cross_validation.yaml) uses `flat` as a decoy the disease ignores.
 
 ### `outbreak_shocks` — rare extreme events
 
@@ -205,7 +208,7 @@ Reads the series' values from a long-format CSV instead of synthesizing them, fo
 | `source_location` | unset | Which location's rows to use. Set it to feed one CSV location to every output location. If unset and the CSV has several locations, each output location **auto-matches** the CSV rows of the same name (and errors if there's no match). |
 | `start_period` | first row | A `time_period` label to start reading from, e.g. `"2011-01"`. |
 
-A real multi-location sample is bundled at `examples/data/laos_subset.csv` (three Lao provinces, monthly 2010–2012, from the CHAP project's example data), used by `examples/real_data_demo/laos_real_climate_from_csv.yaml`. To align the output's `time_period` labels with the source dates, set the scenario's `start_period` to the source's first period (the Laos example uses `"2010-01"`).
+A real multi-location sample is bundled at `examples/data/laos_subset.csv` (three Lao provinces, monthly 2010–2012, from the CHAP project's example data), used by [`examples/from_real_climate.yaml`](../examples/from_real_climate.yaml). To align the output's `time_period` labels with the source dates, set the scenario's `start_period` to the source's first period (the Laos example uses `"2010-01"`).
 
 Note: reproducing a `from_csv` run from its `metadata.json` re-reads the source CSV by path, so byte-identical reproduction requires that file to be unchanged.
 
@@ -283,6 +286,39 @@ A series with no emitter block is written as floats.
 Because the block name selects the emitter, a new output type slots in beside
 `counts:` with no flag to keep in sync — see the [how-to](HOW_TO.md) for adding
 one. `dsl list` prints what is registered.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `dsl new [path]` | Write a commented starter scenario (default `scenario.yaml`). `-f` overwrites. |
+| `dsl run <scenario>` | Generate a dataset from a scenario YAML, or reproduce one from a `metadata.json`. |
+| `dsl list` | List the registered generators, transforms and emitters. |
+
+### `dsl run` options
+
+| Option | Default | Meaning |
+|---|---|---|
+| `-o`, `--out-dir DIR` | auto-named | Where to write. Omitted, an auto-named folder under `out/` keeps previous runs intact. |
+| `--plot` | off | Also write a plot of the dataset. |
+| `--plot-format FMT` | `html` | `html` (interactive), or `png`/`svg`/`pdf`. |
+| `--watch` | off | Re-run on every save; serves a live-reloading plot with `--plot`. |
+| `--new` | off | Skip the continue-or-new prompt; always a fresh folder. |
+| `--replicates`, `-n N` | 1 | N seeded replicates (seeds base, base+1, …) into `rep_00/`, `rep_01/`, … each independently reproducible. Incompatible with `--watch`. |
+
+## Output files
+
+| File | When | Contents |
+|---|---|---|
+| `simulated_data.csv` | always | The full dataset: `time_period`, `location`, one column per series, `population`. |
+| `folds/fold_N/train.csv`, `test.csv` | with `split:` | One directory per fold, each ready to use unsliced. |
+| `folds/report.md`, `report.json` | with `split:` | What each fold contains: sizes, coverage, missing values, and a count of every planted feature per side — plus a warning for any fold whose test half lacks one. |
+| `metadata.json` | always | The ground truth: seed, lags, weights, transforms, rates, generators, version, and the resolved scenario. Feed it back to `dsl run` to reproduce byte-for-byte. |
+| `plot.html` (or `.png`/`.svg`/`.pdf`) | with `--plot` | Faceted series over time, one line per location, the evaluation boundary marked. |
+
+Rerunning the same scenario gives identical files — all randomness comes from
+`seed`. Output is checked against the dataset rules a forecasting tool expects;
+findings print as warnings and the run still completes.
 
 ## See also
 

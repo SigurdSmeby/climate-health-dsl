@@ -19,9 +19,9 @@ uv pip install -e ".[dev]"
 uv run dsl new my_scenario.yaml
 ```
 
-(Prefer to start from a finished example? `examples/` has several ready to run, e.g. `uv run dsl run examples/basic_scenario.yaml`.)
+(Prefer to start from a finished one? `uv run dsl run examples/minimal.yaml`.)
 
-Open `my_scenario.yaml` now and skim it — every line is commented, and the comments explain the file as you read. You'll see one climate variable (`rainfall`) and a `disease_cases` section that depends on it with `lag: 2` — the disease responds 2 periods after rainfall moves. Keep this file open; the next steps refer back to it.
+Open `my_scenario.yaml` now and skim it — every line is commented, and the comments explain the file as you read. You'll see a `series:` list holding two entries: `rainfall`, and a `disease_cases` that depends on it with `lag: 2` — so the disease responds 2 periods after rainfall moves. Everything lives in that one list; a series becomes a disease signal by carrying a `counts:` block. Keep this file open; the next steps refer back to it.
 
 **2. Run it and look.** `--plot` writes an interactive `plot.html`; `--watch` re-runs every time you save the file:
 
@@ -75,10 +75,24 @@ uv run dsl run my_scenario.yaml -o out/study --replicates 20
 
 This writes `out/study/rep_00/`, `rep_01/`, … each a full dataset+metadata with seed `base, base+1, …`. Run your forecaster over all of them and report the spread.
 
-**7. Explore the worked examples.** `examples/real_data_demo/` has five fuller scenarios (real, synthetic, and mixed) — each with pre-generated output and a `README`:
+**7. Link series, and shock several at once.** A series can be built from other
+series, so a chain like rain → soil moisture → disease is a real column rather
+than a hidden weight. A named event then strikes several series in the *same*
+period — a storm raising rainfall while cooling the air, which no generator can
+do, since a generator sees only its own series:
 
 ```bash
-uv run dsl run examples/real_data_demo/01_vietnam_multiprovince.yaml --plot
+uv run dsl run examples/linked_series.yaml --plot
+```
+
+**8. Split it for evaluation.** `split:` writes one folder per
+cross-validation fold, plus a report of what each fold actually contains — so a
+fold whose test half holds no outbreak is visible, instead of quietly scoring
+well:
+
+```bash
+uv run dsl run examples/cross_validation.yaml
+cat out/cross_validation/folds/report.md
 ```
 
 ## Where to next

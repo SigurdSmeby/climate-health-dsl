@@ -18,7 +18,7 @@ from dsl.cli import main
 from tests.conftest import scenario_dict as base_scenario
 from tests.conftest import write_csv
 
-EXAMPLE = "examples/basic_scenario.yaml"
+EXAMPLE = "examples/cross_validation.yaml"
 
 
 def write_scenario(tmp_path, data):
@@ -255,7 +255,7 @@ def test_explicit_out_dir_used_directly(tmp_path):
     assert main(["run", EXAMPLE, "-o", str(out)]) == 0
     # Files land directly in the given dir, no auto-subfolder.
     assert (out / "simulated_data.csv").is_file()
-    assert not (out / "basic_scenario").exists()
+    assert not (out / "cross_validation").exists()
 
 
 def test_reproduce_without_out_dir_uses_source_folder_name(tmp_path, monkeypatch):

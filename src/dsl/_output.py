@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # A minimal, valid starter scenario `dsl new` writes for the user to edit.
-# Kept simpler than examples/basic_scenario.yaml (monthly, one driver) and
+# Kept simpler than the bundled examples (monthly, one driver) and
 # commented so the file itself teaches; it must parse and run with no warnings.
 STARTER_TEMPLATE = """\
 # A starter scenario. Run it, open the plot, then change a value and re-run:

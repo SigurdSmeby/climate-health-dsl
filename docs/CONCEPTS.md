@@ -16,7 +16,7 @@ The disease signal is a population-relative incidence model, not a plain weighte
 
 There is no built-in seasonal term: a disease is seasonal because its drivers are. That way the seasonal amplitude a model recovers is the one the scenario planted, rather than that plus an invisible constant.
 
-See `examples/overdispersed_outbreaks.yaml` for the negative-binomial counts.
+See [`examples/from_real_climate.yaml`](../examples/from_real_climate.yaml) for the negative-binomial counts.
 
 ## See also
 

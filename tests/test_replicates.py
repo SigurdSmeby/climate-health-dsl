@@ -8,7 +8,7 @@ import pandas as pd
 
 from dsl.cli import main
 
-EXAMPLE = "examples/basic_scenario.yaml"
+EXAMPLE = "examples/cross_validation.yaml"
 
 
 def test_replicates_write_one_folder_each(tmp_path):
@@ -32,7 +32,7 @@ def test_replicates_use_consecutive_seeds(tmp_path):
         ]
         for i in range(3)
     ]
-    # basic_scenario.yaml has seed 0 → replicates use 0, 1, 2.
+    # cross_validation.yaml has seed 5 → replicates use 5, 6, 7.
     assert seeds == [seeds[0], seeds[0] + 1, seeds[0] + 2]
 
 

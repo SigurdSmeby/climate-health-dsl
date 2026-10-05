@@ -1,7 +1,10 @@
-# The smallest possible scenario: one climate series, one disease driver.
-# Everything else uses defaults. A good starting point to copy and extend.
+# The smallest scenario that runs: rainfall drives disease, two months later.
+# Everything else is a default. Copy this and change one value at a time.
+#
+#   dsl run examples/minimal.yaml --plot
+
 period: monthly
-n_total: 36
+n_total: 36 # three years
 
 # A count series draws against the population where it happens, so population
 # belongs to the location rather than to the disease.
@@ -11,10 +14,10 @@ locations:
 
 series:
   - name: rainfall
-    generate: seasonal_spike
+    generate: seasonal_spike # a yearly rainy season
 
   # The `counts:` block is what makes this a disease signal rather than a
-  # plain float column; empty means "use the defaults".
+  # plain float column. Empty means "use the defaults".
   - name: disease_cases
     counts: {}
     depends_on:

@@ -1,0 +1,51 @@
+# Series that drive each other, and a shock that hits several at once.
+#
+# Rain fills a soil-moisture store, heat drains it, and the disease responds to
+# the STORE rather than to rainfall directly — so the chain
+# rain -> soil_moisture -> disease is in the data as its own column, not hidden
+# inside a weight. A storm then raises rainfall while cooling the air in the
+# SAME month, which no generator can express: a generator sees only its own
+# series.
+#
+#   dsl run examples/linked_series.yaml --plot
+
+period: monthly
+n_total: 60
+seed: 3
+
+locations:
+  north: { population: 300000 }
+  south: { population: 180000 }
+
+# Named shocks. `at:` fires on exact periods (deterministic); `rate:` fires
+# randomly. Events are regional — one draw, so every location is struck in the
+# same months, which is what makes the two provinces move together.
+events:
+  storm: { at: [14, 32, 47] }
+
+series:
+  - name: rainfall
+    generate: seasonal_spike
+    params: { spike_height: 30, clamp_min: 0 }
+    events:
+      storm: { multiplier: 2.5 } # up, proportionally
+
+  - name: temperature
+    generate: seasonal_smooth
+    params: { mean: 25, amplitude: 6 }
+    events:
+      storm: { add: -6.0 } # down, by a fixed amount
+
+  # No `generate:`, so this series starts flat and its parents give it all of
+  # its shape. `autoregressive` makes moisture carry over month to month
+  # instead of resetting — phi is itself a ground truth a model can recover.
+  - name: soil_moisture
+    autoregressive: { phi: 0.85, noise: 0.3 }
+    depends_on:
+      - { series: rainfall, lag: 1, weight: 1.0 }
+      - { series: temperature, lag: 1, weight: -0.4 }
+
+  - name: disease_cases
+    counts: {}
+    depends_on:
+      - { series: soil_moisture, lag: 2, weight: 2.0 }
