@@ -120,3 +120,30 @@ def test_cross_field_errors_drop_pydantic_boilerplate(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "Value error" not in err
     assert "need a population" in err
+
+
+def test_every_commented_option_in_the_starter_works_uncommented():
+    """The starter invites the reader to drop a `#`. Every option it offers
+    must then still parse and run — a comment that breaks when enabled is
+    worse than no comment."""
+    import re
+
+    import yaml
+
+    from dsl._output import STARTER_TEMPLATE
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+
+    # An option line is an indented comment whose body opens a YAML key or
+    # list item; the prose comments above them start with a capital.
+    option = re.compile(r"^(\s+)# ([a-z_]+:|[-{])")
+    lines = []
+    for line in STARTER_TEMPLATE.splitlines():
+        match = option.match(line)
+        lines.append(match.group(1) + line.lstrip()[2:] if match else line)
+
+    config = parse_config(yaml.safe_load("\n".join(lines)))
+    df = run(config)
+    # The options add a second location and a dependent series.
+    assert df["location"].nunique() == 2
+    assert "soil_moisture" in df.columns
