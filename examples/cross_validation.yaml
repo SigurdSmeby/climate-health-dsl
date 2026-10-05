@@ -12,7 +12,8 @@
 # the folds — so the report has something to say about all three:
 #
 #   seasonal_spike  one per year, so it is spread evenly by construction
-#   storm           per_fold: 1, so EVERY fold's test half holds exactly one
+#   storm           per_fold: [1, 1, 2, 1, 1], so every fold's test half holds
+#                   one — except fold 2, which gets two on purpose
 #   outbreak        random timing, so the spread is uneven and may leave a
 #                   fold with none — which the report warns about
 
@@ -35,23 +36,27 @@ split:
   scheme: expanding
 
 events:
-  # One storm in every fold's test half, placed from the split itself — so the
-  # periods move on their own if you change k or n_total. (`at: [14, 47]` names
-  # exact periods instead; `rate: 0.05` fires randomly.)
-  storm: { per_fold: 1 }
+  # One storm per fold's test half, placed from the split itself — so the
+  # periods move on their own if you change k or n_total. The list gives a
+  # count per fold, so fold 2 gets two: a deliberately uneven fold is
+  # interpretable, unlike a random count. (`at: [14, 47]` names exact periods
+  # instead; `rate: 0.05` fires randomly.)
+  storm: { per_fold: [1, 1, 2, 1, 1] }
 
 series:
   - name: rainfall
     generate: seasonal_spike
     params: { spike_center: 6, spike_height: 30, clamp_min: 0 }
     events:
-      storm: { multiplier: 2.5 } # up, proportionally
+      # A range, drawn per storm, so they are not all equally hard — a fixed
+      # 2.5 would let a model match the data by memorising the constant.
+      storm: { multiplier: { min: 2.0, max: 3.5 } }
 
   - name: temperature
     generate: seasonal_smooth
     params: { mean: 26, amplitude: 5 }
     events:
-      storm: { add: -4.0 } # down, by a fixed amount
+      storm: { add: { min: -6.0, max: -2.0 } } # down, and also by a range
 
   - name: heatwaves
     generate: outbreak_shocks

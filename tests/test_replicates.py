@@ -87,3 +87,15 @@ def test_stale_replicate_folders_are_cleared(tmp_path):
     assert (out / "rep_01").is_dir()
     assert not (out / "rep_02").exists()
     assert not (out / "rep_04").exists()
+
+
+def test_reusing_a_folder_clears_a_previous_single_run(tmp_path):
+    """A folder that held one run's output must not leave its CSVs and
+    folds/ beside the new rep_NN dirs, where they read as part of this run."""
+    out = tmp_path / "out"
+    assert main(["run", EXAMPLE, "-o", str(out)]) == 0
+    assert (out / "simulated_data.csv").is_file()
+
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 0
+    assert not (out / "simulated_data.csv").exists()
+    assert sorted(p.name for p in out.iterdir()) == ["rep_00", "rep_01"]

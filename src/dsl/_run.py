@@ -97,17 +97,18 @@ def _run_once(
         # The ground-truth sidecar: records the resolved scenario so the
         # dataset is self-describing and reproducible.
         write_metadata(config, out_dir)
+        print(f"Wrote {len(df)} rows to {out_dir}/")
+
+        if plot:
+            # Mark where evaluation begins, so the part a model is scored on
+            # is visible in the chart. Inside the guard: an unsupported
+            # --plot-format would otherwise traceback, and kill --watch.
+            plot_path = out_dir / f"plot.{plot_format}"
+            plot_dataset(df, plot_path, train_split=evaluation_boundary(config))
+            print(f"Wrote plot to {plot_path}")
     except (ValueError, FileNotFoundError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print(f"Wrote {len(df)} rows to {out_dir}/")
-
-    if plot:
-        # Mark where evaluation begins, so the part a model is scored on is
-        # visible in the chart.
-        plot_path = out_dir / f"plot.{plot_format}"
-        plot_dataset(df, plot_path, train_split=evaluation_boundary(config))
-        print(f"Wrote plot to {plot_path}")
     return 0
 
 
@@ -140,14 +141,19 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
         print(f"error: {msg}", file=sys.stderr)
         return 1
     base_seed = base_config.seed
-    # A reused folder may hold MORE rep_NN/ dirs than this run writes (e.g. a
-    # previous --replicates 5, now --replicates 2) — clear the ones this run
-    # won't overwrite so no stale replicate is left mixed in with fresh ones.
+    # A reused folder may hold a previous run's output — more rep_NN/ dirs
+    # than this run writes, or a single run's CSVs and folds/ from before
+    # --replicates was used. Either would be read as part of this run, so
+    # clear anything this run will not itself overwrite.
     if out_dir.is_dir():
-        for stale_rep in out_dir.iterdir():
-            n = _numbered_dir_suffix(stale_rep, "rep_")
-            if n is not None and n >= args.replicates:
-                shutil.rmtree(stale_rep)
+        keep = {f"rep_{i:02d}" for i in range(args.replicates)}
+        for stale in out_dir.iterdir():
+            if stale.name in keep:
+                continue
+            if stale.is_dir():
+                shutil.rmtree(stale)
+            else:
+                stale.unlink()
     for i in range(args.replicates):
         code = _run_once(
             args.scenario, out_dir / f"rep_{i:02d}", args.plot, args.plot_format,
@@ -200,9 +206,15 @@ _RELOAD_SCRIPT = """
 def _inject_reload(html_path: Path) -> None:
     """Append the live-reload script to a written plot.html (idempotent).
 
+    Does nothing when the file is absent: a failed run never wrote one, and
+    it has already reported why — crashing here would kill the watch loop
+    before the author could fix the scenario.
+
     Args:
         html_path: Path to the plot.html file to patch in place.
     """
+    if not html_path.is_file():
+        return
     html = html_path.read_text()
     if "__plot_version__" not in html:
         html = html.replace("</body>", _RELOAD_SCRIPT + "</body>", 1)
@@ -328,13 +340,16 @@ def _scenario_runs(scenario: str) -> list[Path]:
     """Existing out/ folders belonging to ``scenario`` (its base + _N siblings).
 
     Args:
-        scenario: Path to the scenario file (only its stem is used).
+        scenario: Path to the scenario file, or a metadata.json to reproduce.
 
     Returns:
         Existing run directories, sorted: base ``out/<name>`` first, then
         ``_1``, ``_2``, … numerically. Empty list if out/ doesn't exist.
     """
-    name = Path(scenario).stem
+    # Must match _resolve_out_dir: a metadata.json names its parent folder,
+    # not the file, or the prompt searches for out/metadata and finds nothing.
+    path = Path(scenario)
+    name = path.parent.name if path.name == "metadata.json" else path.stem
     out = Path("out")
     if not out.is_dir():
         return []

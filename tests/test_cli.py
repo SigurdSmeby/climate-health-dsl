@@ -466,3 +466,40 @@ def test_a_generator_error_is_a_clean_message_not_a_traceback(tmp_path):
     }
     path = write_scenario(tmp_path, data)
     assert main(["run", str(path), "-o", str(tmp_path / "out")]) == 1
+
+
+def test_a_bad_plot_format_is_a_clean_error(tmp_path, capsys):
+    """plot_dataset sat outside the error guard, so a bad extension gave a
+    traceback — and under --watch it killed the loop."""
+    path = write_scenario(tmp_path, base_scenario())
+    code = main([
+        "run", str(path), "-o", str(tmp_path / "out"),
+        "--plot", "--plot-format", "bogus",
+    ])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error:") or "\nerror:" in err
+    assert "Traceback" not in err
+
+
+def test_reproducing_from_metadata_finds_the_run_it_came_from(tmp_path):
+    """_resolve_out_dir uses a metadata.json's PARENT folder name, so the
+    continue prompt has to look there too — on the file stem it searched for
+    out/metadata and never offered the real run."""
+    from dsl._output import _resolve_out_dir
+    from dsl._run import _scenario_runs
+
+    monkey = tmp_path / "out" / "myrun"
+    monkey.mkdir(parents=True)
+    (monkey / "metadata.json").write_text("{}")
+    import os
+
+    cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        md = "out/myrun/metadata.json"
+        # Both sides must agree on the name they derive.
+        assert _resolve_out_dir(md, None).name.startswith("myrun")
+        assert [p.name for p in _scenario_runs(md)] == ["myrun"]
+    finally:
+        os.chdir(cwd)
