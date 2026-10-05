@@ -16,7 +16,6 @@ def example_config():
             "period": "weekly",
             "n_total": 78,
             "seed": 42,
-            "train_fraction": 0.8,
             "locations": {"loc": {"population": 100_000}},
             "series": [
                 {"name": "rainfall", "generate": "seasonal_spike"},
@@ -28,7 +27,7 @@ def example_config():
     )
 
 
-def test_chap_columns_in_order(example_config):
+def test_required_columns_in_order(example_config):
     df = run(example_config)
     assert list(df.columns) == [
         "time_period",
@@ -77,7 +76,7 @@ def test_different_seed_differs(example_config):
 
 
 def test_column_names_come_from_yaml_not_hardcoded():
-    # The engine must not hardcode CHAP names: a scenario with other variable
+    # The engine must not hardcode column names: a scenario with other series
     # names gets columns named after them.
     config = parse_config(
         {

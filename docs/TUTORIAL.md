@@ -2,7 +2,7 @@
 
 A hands-on path from install to a real-data experiment — one command or edit per step.
 
-New to the DSL? Start here. Looking something up instead? See the [reference](REFERENCE.md) (every field, generator, and transform), [how-to guides](HOW_TO.md) (extend the DSL), or [concepts](CONCEPTS.md) (how the disease model works). Quick install/commands: the [README](../README.md).
+New to the DSL? Start here. Looking something up instead? See the [reference](REFERENCE.md) (every field, generator, transform and emitter), [how-to guides](HOW_TO.md) (extend the DSL), or [concepts](CONCEPTS.md) (how the disease model works). Quick install/commands: the [README](../README.md).
 
 **0. Install.** Requires Python 3.11+. With [uv](https://docs.astral.sh/uv/):
 
@@ -58,8 +58,10 @@ series:
 series:
   - name: rainfall
     generate: from_csv
-    # laos_subset.csv holds three provinces; source_location picks one (or set
-    # locations: [Bokeo, ...] at the top to match the CSV names).
+    # laos_subset.csv holds three provinces; source_location picks one. To use
+    # several, name them at the top instead, each with its own population:
+    #   locations: { Bokeo: {population: 75000}, ... }
+    # and drop source_location so each output location reads its own rows.
     params: { file: examples/data/laos_subset.csv, column: rainfall, source_location: Bokeo }
 ```
 

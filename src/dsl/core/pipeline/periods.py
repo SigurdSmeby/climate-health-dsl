@@ -1,4 +1,4 @@
-"""Time-axis helpers: periods per year, and CHAP period labels.
+"""Time-axis helpers: periods per year, and period labels.
 
 Used by generators (to scale seasonality), the schema (to validate
 start_period), and the engine (to label rows).
@@ -33,10 +33,11 @@ def periods_per_year(period: str) -> int:
 
 
 def format_period(index: int, period: str, start_year: int = 2000) -> str:
-    """Turn a row index into a CHAP-compatible period label.
+    """Turn a row index into a period label.
 
     Index 0 is the first period of ``start_year``. Formats (verified against
-    chap_core): daily ``20000101``, weekly ``2000-W01`` (flat 52 weeks/year),
+    a real consumer, chap-core): daily ``20000101``, weekly ``2000-W01``
+    (flat 52 weeks/year),
     monthly ``2000-01``, yearly ``2000``.
     """
     if period == "daily":

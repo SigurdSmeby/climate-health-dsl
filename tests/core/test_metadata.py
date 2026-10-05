@@ -12,7 +12,6 @@ def sample_config():
             "period": "monthly",
             "n_total": 24,
             "seed": 7,
-            "train_fraction": 0.8,
             "start_period": "2010-01",
             "locations": {
                 "oslo": {"population": 1000},

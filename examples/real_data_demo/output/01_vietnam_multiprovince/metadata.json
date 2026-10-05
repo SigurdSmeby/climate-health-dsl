@@ -4,7 +4,6 @@
     "period": "monthly",
     "n_total": 120,
     "seed": 1,
-    "train_fraction": 0.8,
     "start_period": "2000-01",
     "locations": {
       "AN GIANG": {
@@ -19,6 +18,12 @@
       "KHANH HOA": {
         "population": 1174000
       }
+    },
+    "split": {
+      "kind": "time",
+      "k": 5,
+      "scheme": "expanding",
+      "min_train": null
     },
     "events": {},
     "series": [

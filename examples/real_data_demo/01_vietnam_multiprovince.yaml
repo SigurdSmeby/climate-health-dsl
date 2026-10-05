@@ -13,7 +13,9 @@ period: monthly
 n_total: 120
 seed: 1
 start_period: 2000-01
-train_fraction: 0.8
+split:
+  kind: time
+  k: 5
 locations:
   AN GIANG:
     population: 2211544

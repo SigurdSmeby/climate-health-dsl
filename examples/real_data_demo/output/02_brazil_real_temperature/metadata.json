@@ -4,7 +4,6 @@
     "period": "monthly",
     "n_total": 96,
     "seed": 7,
-    "train_fraction": null,
     "start_period": "2012-01",
     "locations": {
       "loc": {
@@ -17,6 +16,7 @@
         }
       }
     },
+    "split": null,
     "events": {},
     "series": [
       {

@@ -4,13 +4,13 @@
     "period": "monthly",
     "n_total": 36,
     "seed": 42,
-    "train_fraction": null,
     "start_period": "2010-01",
     "locations": {
       "loc": {
         "population": 75000
       }
     },
+    "split": null,
     "events": {},
     "series": [
       {

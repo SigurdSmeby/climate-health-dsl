@@ -4,7 +4,6 @@
     "period": "monthly",
     "n_total": 120,
     "seed": 42,
-    "train_fraction": null,
     "start_period": "2000-01",
     "locations": {
       "delta": {
@@ -17,6 +16,7 @@
         "population": 1500000
       }
     },
+    "split": null,
     "events": {},
     "series": [
       {

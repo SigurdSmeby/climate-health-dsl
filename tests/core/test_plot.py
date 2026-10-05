@@ -12,7 +12,7 @@ from dsl.core.pipeline.plot import _build_figure, _series_columns, plot_dataset
 
 
 def sample_frame(n=24, locations=("oslo",)):
-    """A CHAP-shaped frame, optionally multi-location, with a NaN warm-up."""
+    """An output-shaped frame, optionally multi-location, with a NaN warm-up."""
     periods = [f"{2000 + i // 12}-{i % 12 + 1:02d}" for i in range(n)]
     frames = []
     for loc in locations:

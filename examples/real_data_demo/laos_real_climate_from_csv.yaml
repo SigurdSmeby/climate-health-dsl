@@ -1,5 +1,5 @@
 # REAL CLIMATE, SYNTHETIC DISEASE: rainfall and temperature are read with the
-# from_csv generator from the bundled CHAP Laos subset (Bokeo province,
+# from_csv generator from the bundled Laos subset (Bokeo province,
 # 2010-2012); only disease_cases is generated, with a controlled lag/weight
 # relationship on top of the real weather.
 #

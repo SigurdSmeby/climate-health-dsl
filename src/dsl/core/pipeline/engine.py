@@ -87,9 +87,7 @@ def series_events(config: ScenarioConfig) -> list[dict]:
         for spec in config.series:
             if spec.generate is None:
                 continue
-            generator = _build_generator(
-                spec.generate, dict(spec.params), spec.name
-            )
+            generator = _series_generator(config, spec, location)
             generator.generate(
                 config.n_total,
                 config.period,
@@ -165,7 +163,7 @@ def _run_one_location(
     else:
         start_year, offset = 2000, 0
 
-    # Tidy frame: CHAP label column first, then location, the series in
+    # Tidy frame: the period label first, then location, the series in
     # DECLARATION order (not generation order), and population.
     columns: dict[str, object] = {
         "time_period": [
@@ -266,6 +264,32 @@ def _generate_base(
         ValueError: If the generator rejects a param, or a from_csv series
             can't be matched to this output location.
     """
+    generator = _series_generator(config, spec, location)
+    return generator.generate(
+        config.n_total,
+        config.period,
+        _child_rng(config.seed, location, "series", spec.name),
+    )
+
+
+def _series_generator(config: ScenarioConfig, spec: SeriesSpec, location: str):
+    """Build a series' generator, resolved for one location.
+
+    Shared by generation and by event collection, so the two cannot drift:
+    a from_csv series needs its per-location source resolved either way.
+
+    Args:
+        config: The validated scenario configuration.
+        spec: The series whose generator to build.
+        location: The location identifier.
+
+    Returns:
+        The instantiated generator, ready for .generate(...).
+
+    Errors Caught (raised to caller):
+        ValueError: If the generator rejects a param, or a from_csv series
+            can't be matched to this output location.
+    """
     params = dict(spec.params)
     if spec.generate == "from_csv":
         _inject_start_period(params, config.start_period)
@@ -285,13 +309,7 @@ def _generate_base(
                         f"the location to match."
                     )
                 params["source_location"] = location
-
-    generator = _build_generator(spec.generate, params, spec.name)
-    return generator.generate(
-        config.n_total,
-        config.period,
-        _child_rng(config.seed, location, "series", spec.name),
-    )
+    return _build_generator(spec.generate, params, spec.name)
 
 
 def _resolve_population(

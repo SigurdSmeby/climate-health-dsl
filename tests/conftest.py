@@ -62,7 +62,7 @@ def series_dict(name: str, **fields) -> dict:
 
 
 def write_csv(path, periods, **columns) -> str:
-    """Write a CHAP-format CSV with a ``time_period`` column plus the given
+    """Write a long-format CSV with a ``time_period`` column plus the given
     data columns, and return its path as a string.
 
     Scalars are broadcast to every period; lists must match ``periods``'s

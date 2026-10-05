@@ -1,0 +1,33 @@
+# A seasonal peak every year over twenty years, split once: both halves hold
+# ten peaks, so nothing is skewed and the report raises no warning.
+_expect:
+  exit_code: 0
+  files_exist: [folds/report.md, folds/report.json]
+  report:
+    folds: 1
+    total_events: 20
+    warnings: 0
+    fold_events:
+      0: { rainfall: { seasonal_spike: { train: 10, test: 10 } } }
+
+period: monthly
+n_total: 240
+seed: 4
+
+split:
+  kind: time
+  k: 1
+
+locations:
+  loc:
+    population: 100000
+
+series:
+  - name: rainfall
+    generate: seasonal_spike
+    params: { spike_center: 6 }
+  - name: disease_cases
+    counts: {}
+    depends_on:
+      - series: rainfall
+        lag: 1

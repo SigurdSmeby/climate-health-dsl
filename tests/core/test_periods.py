@@ -1,4 +1,4 @@
-"""Tests for the time-axis helpers: periods-per-year and CHAP period labels."""
+"""Tests for the time-axis helpers: periods-per-year and period labels."""
 import pytest
 
 from dsl.core.pipeline.periods import format_period, parse_period, periods_per_year
@@ -45,7 +45,7 @@ def test_monthly_year_rollover():
 
 
 def test_daily_format_is_yyyymmdd():
-    # CHAP daily periods are compact YYYYMMDD strings, not ISO dates.
+    # Daily periods are compact YYYYMMDD strings, not ISO dates.
     assert format_period(0, "daily") == "20000101"
     assert format_period(31, "daily") == "20000201"
 
@@ -95,7 +95,7 @@ def test_parse_period_values():
 
 
 def test_parse_period_date_range_week_gives_helpful_error():
-    # CHAP's date-range weekly form is valid in a CSV but is NOT a
+    # the format's date-range weekly form is valid in a CSV but is NOT a
     # usable start_period label here (the DSL's canonical weekly form is
     # YYYY-Wnn). The error must say so, not just "invalid".
     with pytest.raises(ValueError, match="YYYY-Wnn"):

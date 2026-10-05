@@ -1,4 +1,4 @@
-# Real-data demo — simulating datasets from real CHAP climate
+# Real-data demo — simulating datasets from real climate data
 
 This folder shows the DSL generating several synthetic and semi-synthetic
 datasets from **real climate data** taken from the CHAP project (the
@@ -76,10 +76,10 @@ population.*
 
 ## What each run produces
 
-Every run writes `simulated_data.csv` (CHAP-ready), a `metadata.json` recording
+Every run writes `simulated_data.csv`, a `metadata.json` recording
 the exact ground truth (seed, lags, weights, generators — enough to reproduce
 the dataset), and with `--plot` an interactive `plot.html`. Demos that set
-`train_fraction` also write `train.csv`/`test.csv`.
+`split:` also write one `folds/fold_N/` directory per fold.
 
 ## Per-location real climate
 
