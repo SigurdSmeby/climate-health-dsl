@@ -72,19 +72,19 @@ def build_report(config: ScenarioConfig, df: pd.DataFrame) -> dict | None:
 
     entries = []
     for fold in folds:
-        entries.append(
-            {
-                "index": fold.index,
-                "train": _side(
-                    df, labels, events, fold.train_periods, fold.train_locations,
-                    count_columns,
-                ),
-                "test": _side(
-                    df, labels, events, fold.test_periods, fold.test_locations,
-                    count_columns,
-                ),
-            }
-        )
+        entry = {
+            "index": fold.index,
+            "train": _side(
+                df, labels, events, fold.train_periods, fold.train_locations,
+                count_columns,
+            ),
+            "test": _side(
+                df, labels, events, fold.test_periods, fold.test_locations,
+                count_columns,
+            ),
+        }
+        entry["summary"] = _summary(entry)
+        entries.append(entry)
 
     report = {
         "split": {
@@ -157,7 +157,7 @@ def render_markdown(report: dict) -> str:
             )
     lines.append("")
 
-    lines += ["## Planted features per fold", ""]
+    lines += ["## Planted features", ""]
     if report["total_events"] == 0:
         lines += [
             "This scenario plants no countable features — no seasonal peaks,",
@@ -165,9 +165,38 @@ def render_markdown(report: dict) -> str:
             "",
         ]
     else:
+        # One row per fold: the question is whether each fold tests every
+        # kind, which a row per (series, kind) buries.
+        kinds = sorted(
+            {k for fold in report["folds"] for k in fold["summary"]}
+        )
+        header = "| fold |" + "".join(
+            f" {k} train | {k} test |" for k in kinds
+        )
         lines += [
-            "Counts come from the generators themselves, so these periods "
-            + "are exact.",
+            "How many of each feature fall on each side of every fold:",
+            "",
+            "- **train** — in the periods the model learns from.",
+            "- **test** — in the periods it is scored on. A fold can only "
+            + "measure a feature its test half actually contains, so a `0` "
+            + "here means that fold says nothing about it.",
+            "",
+            header,
+            "|---|" + "---|" * (2 * len(kinds)),
+        ]
+        for fold in report["folds"]:
+            row = f"| {fold['index']} |"
+            for kind in kinds:
+                counts = fold["summary"].get(kind, {"train": 0, "test": 0})
+                row += f" {counts['train']} | {counts['test']} |"
+            lines.append(row)
+        lines += [
+            "",
+            "### Where each one sits",
+            "",
+            "Periods come from the generators themselves, so they are exact. "
+            + "A kind counted per location repeats a period once per place; "
+            + "`where` says which.",
             "",
             "| fold | series | kind | where | train | test | "
             + "train periods | test periods |",
@@ -232,6 +261,40 @@ def _periods(entry: "dict | None", limit: int = 4) -> str:
     if len(periods) <= limit:
         return ", ".join(periods)
     return ", ".join(periods[:limit]) + f", +{len(periods) - limit} more"
+
+
+def _summary(fold: dict) -> dict[str, dict[str, int]]:
+    """Total each feature KIND across the series it touched.
+
+    One row per fold answers "does this fold test everything I planted?",
+    which one row per (series, kind) does not. Totalling per kind also keeps
+    a shock that strikes two series reading as the one event it is.
+
+    Args:
+        fold: A fold entry with its "train" and "test" summaries.
+
+    Returns:
+        kind -> {"train": n, "test": n}, empty when nothing was planted.
+        Example: {"storm": {"train": 0, "test": 1}}
+    """
+    totals: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"train": 0, "test": 0}
+    )
+    for side in ("train", "test"):
+        for kinds in fold[side]["events"].values():
+            for kind, entry in kinds.items():
+                if entry["locations"]:
+                    # A generator draws per location, so each is its own
+                    # feature: a yearly peak in two provinces is two.
+                    totals[kind][side] += entry["count"]
+                else:
+                    # A regional event is ONE event however many series react
+                    # to it — summing per series would make `per_fold: 1`
+                    # read as 2 when a storm hits rainfall and temperature.
+                    totals[kind][side] = max(
+                        totals[kind][side], entry["count"]
+                    )
+    return dict(totals)
 
 
 def _side(

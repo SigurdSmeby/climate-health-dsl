@@ -496,3 +496,96 @@ def test_a_regional_event_is_not_attributed_to_one_location():
     entry = fold["train"]["events"]["rainfall"]["storm"]
     assert entry["count"] == 1  # once, not once per location
     assert entry["locations"] == []
+
+
+# ------------------------------------------------- the summary matrix
+
+
+def test_markdown_opens_with_a_fold_by_kind_matrix():
+    """The question a reader has first — does every fold test every kind? —
+    needs one row per fold, not one per (fold, series, kind)."""
+    config = _spiky()
+    text = render_markdown(build_report(config, run(config)))
+    matrix = text[text.index("## Planted features") : text.index("### Where")]
+    # One row per fold, not one per (fold, series, kind).
+    assert matrix.count("\n| ") == len(config.folds()) + 1
+    assert "seasonal_spike train" in matrix
+    assert "seasonal_spike test" in matrix
+
+
+def test_the_matrix_counts_a_kind_once_across_series():
+    """A storm striking rainfall and temperature is one event. Counting it
+    per series makes `per_fold: 1` read as 2."""
+    config = _config(
+        split={"kind": "time", "k": 2},
+        period="monthly",
+        n_total=60,
+        events={"storm": {"at": [40]}},
+        series=[
+            series_dict(
+                "rainfall", generate="flat", events={"storm": {"multiplier": 2.0}}
+            ),
+            series_dict(
+                "temperature", generate="flat", events={"storm": {"add": -4.0}}
+            ),
+            series_dict(
+                "disease_cases",
+                counts={},
+                depends_on=[{"series": "rainfall", "lag": 1}],
+            ),
+        ],
+    )
+    report = build_report(config, run(config))
+    # The event fired once, in whichever fold's test half holds period 40 —
+    # counted once, though two series react to it.
+    totals = [
+        f["summary"].get("storm", {}).get("test", 0) for f in report["folds"]
+    ]
+    assert sum(totals) == 1, totals
+
+
+def test_the_matrix_is_in_the_json_too():
+    config = _spiky()
+    fold = build_report(config, run(config))["folds"][0]
+    assert set(fold["summary"]) == {"seasonal_spike", "outbreak"}
+    assert set(fold["summary"]["outbreak"]) == {"train", "test"}
+
+
+def test_a_regional_event_counts_once_however_many_series_react():
+    """`per_fold: 1` must read as 1 in the matrix even when the storm hits
+    two series — otherwise the number contradicts what was asked for."""
+    config = _config(
+        split={"kind": "time", "k": 4},
+        period="monthly",
+        n_total=120,
+        events={"storm": {"per_fold": 1}},
+        series=[
+            series_dict(
+                "rainfall", generate="flat", events={"storm": {"multiplier": 2.0}}
+            ),
+            series_dict(
+                "temperature", generate="flat", events={"storm": {"add": -4.0}}
+            ),
+            series_dict(
+                "disease_cases",
+                counts={},
+                depends_on=[{"series": "rainfall", "lag": 1}],
+            ),
+        ],
+    )
+    for fold in build_report(config, run(config))["folds"]:
+        assert fold["summary"]["storm"]["test"] == 1, fold["index"]
+
+
+def test_the_matrix_explains_its_columns_before_the_table():
+    """A reader meets the numbers before any legend below them, so what
+    `train` and `test` count has to be said first."""
+    config = _spiky()
+    text = render_markdown(build_report(config, run(config)))
+    heading = text.index("## Planted features")
+    table = text.index("| fold |", heading)
+    preamble = text[heading:table]
+    assert "train" in preamble and "test" in preamble
+    # It must say which side is which, not just name them.
+    assert "learn from" in preamble or "learns from" in preamble
+    assert "scored on" in preamble or "measured on" in preamble

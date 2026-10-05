@@ -149,15 +149,21 @@ recovery — there was nothing to recover. The number looks like success. So
 every run with a `split:` writes a report counting each planted feature on both
 sides of every fold:
 
-| fold | series | kind | where | train | test | train periods | test periods |
-|---|---|---|---|---|---|---|---|
-| 0 | rainfall | seasonal_spike | north, south | 4 | 2 | 2015-07, 2015-07, 2016-07, 2016-07 | 2017-07, 2017-07 |
-| 0 | rainfall | storm | all | 0 | 1 | — | 2017-07 |
+| fold | seasonal_spike train | seasonal_spike test | storm train | storm test |
+|---|---|---|---|---|
+| 0 | 4 | 2 | 0 | 1 |
+| 1 | 6 | 4 | 1 | 1 |
+| 2 | 10 | 4 | 2 | 1 |
 
-The periods are named, not just counted, so a feature can be lined up against
-the data. `where` says which locations drew it: a generator runs per location,
-so one yearly peak across two provinces is two features — while an event is
-regional, drawn once, and reads `all`.
+One row per fold, so a `0` in a **test** column is visible at a glance — that
+fold cannot measure the feature, whatever a model scores on it. The train
+column grows because an expanding split hands each fold the previous fold's
+test periods.
+
+A second table below names the exact periods, so a feature can be lined up
+against the data, and says which locations drew it: a generator runs per
+location, so one yearly peak across two provinces is two features — while an
+event is regional, drawn once.
 
 and warns where a fold cannot measure something:
 
