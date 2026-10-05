@@ -1,6 +1,6 @@
-# Reference: scenario fields, generators, transforms
+# Reference: scenario fields, generators, transforms, emitters
 
-Every YAML field, generator, and transform, with types, defaults, and meanings. New to the DSL? Start with the [tutorial](TUTORIAL.md) instead — this page is for looking things up. See also: [how-to guides](HOW_TO.md) (extend the DSL), [concepts](CONCEPTS.md) (how the disease model works).
+Every YAML field, generator, transform and emitter, with types, defaults, and meanings. New to the DSL? Start with the [tutorial](TUTORIAL.md) instead — this page is for looking things up. See also: [how-to guides](HOW_TO.md) (extend the DSL), [concepts](CONCEPTS.md) (how the disease model works).
 
 ## Writing a scenario
 
@@ -10,7 +10,9 @@ A scenario is one YAML file. The bundled example (`examples/basic_scenario.yaml`
 period: weekly
 n_total: 78
 seed: 42
-train_fraction: 0.8
+split:
+  kind: time
+  k: 5
 locations:
   loc:
     population: 100000
@@ -37,11 +39,26 @@ series:
 | `period` | `daily` \| `weekly` \| `monthly` \| `yearly` | required | Time resolution. Sets the period labels (`20000101`, `2000-W01`, `2000-01`, `2000`) and the length of one seasonal cycle (365/52/12/1). |
 | `n_total` | int ≥ 1 | required | Number of time periods to generate. |
 | `seed` | int | `0` | Seed for all randomness. Same scenario + same seed → identical output. |
-| `train_fraction` | float, 0 < x < 1 | unset | If set, also write `train.csv`/`test.csv`. |
+| `split` | mapping | unset | If set, also write one `folds/fold_N/` directory per cross-validation fold — see below. |
 | `start_period` | str | first period of 2000 | Where the series starts on the real calendar, in the scenario's resolution: `"2010-07"` (monthly), `"2015-W10"` (weekly), `"20100615"` (daily), `"2003"` (yearly). Relabels the output but does **not** shift the seasonal *phase* — a mid-year start still begins the seasonal cycle at index 0 (the run warns when this applies). |
 | `locations` | mapping (or list of str) | `["loc"]` | Named locations, each an independently drawn series of `n_total` periods, stacked in long format with a `location` column. The **mapping** form declares each location's population: `{Bokeo: {population: 75000}, ...}`, which may itself be a generator. Required as soon as any series counts, since a count series draws against the population where it happens. The bare **list** form is only for scenarios with no count series. |
 | `events` | mapping | `{}` | Named shocks a series can react to — see below. |
 | `series` | list | required | Every series the scenario builds, climate and disease alike — see below. |
+
+### `split`
+
+Divides the dataset for evaluation, writing `folds/fold_N/train.csv` and
+`test.csv` beside the full dataset. Omit it to write only the full dataset.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `kind` | `time` \| `location` | required | `time` cuts the periods, asking a model to forecast forward; `location` holds whole places out, asking it to generalise sideways. |
+| `k` | int ≥ 1 | 1, or the location count | Number of folds. `k: 1` is a plain holdout. For a location split it defaults to one fold per location; a smaller `k` divides them into groups. |
+| `scheme` | `expanding` \| `blocked` | `expanding` | Time split only. `expanding` trains on everything **before** the test block, which is what evaluating a forecaster requires. `blocked` tests every period exactly once but trains on periods after the block too, so it can leak the future — the run warns when you choose it. |
+| `min_train` | int ≥ 1 | unset | Time split only. A floor on the first fold's training size. An expanding split already reserves its opening periods for training (fold 0 has nothing to learn from otherwise); this raises that floor. |
+
+With `kind: time, k: 5` over 120 periods, fold *i* trains on periods 0–19,
+0–39, 0–59, 0–79, 0–99 and tests on the 20 periods that follow.
 
 ### `series` entries
 
@@ -50,7 +67,7 @@ One list holds everything. A series is a plain float column unless it carries a
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `name` | str | required | Becomes the output column name. For CHAP datasets use CHAP's names: `rainfall`, `mean_temperature`, `disease_cases`. |
+| `name` | str | required | Becomes the output column name. Forecasting tools generally expect the conventional names: `rainfall`, `mean_temperature`, `disease_cases`. |
 | `generate` | str | optional | Which generator produces the series' base (see [Generators](#generators)). May be omitted when the series has `depends_on`, in which case its base is flat 0 and its parents give it all of its shape. |
 | `params` | mapping | `{}` | Passed straight to that generator; each generator validates its own. |
 | `depends_on` | list | `[]` | Parents this series is built from — any number, each with its own lag, weight and transforms (see below). A series may depend on any other series, so `rain -> soil_moisture -> disease` is expressible directly. Cycles of any length are rejected. |
@@ -179,7 +196,7 @@ A low baseline punctuated by rare, randomly-timed (Poisson) sharp spikes — the
 
 ### `from_csv` — real data
 
-Reads the variable's values from a CHAP-format CSV instead of synthesizing them, for semi-synthetic experiments: real climate, synthetic disease with a controlled relationship. The data is used as-is — if the file holds fewer periods than `n_total`, the run fails rather than wrapping or extrapolating.
+Reads the series' values from a long-format CSV instead of synthesizing them, for semi-synthetic experiments: real climate, synthetic disease with a controlled relationship. The data is used as-is — if the file holds fewer periods than `n_total`, the run fails rather than wrapping or extrapolating.
 
 | Param | Default | Meaning |
 |---|---|---|
@@ -188,16 +205,16 @@ Reads the variable's values from a CHAP-format CSV instead of synthesizing them,
 | `source_location` | unset | Which location's rows to use. Set it to feed one CSV location to every output location. If unset and the CSV has several locations, each output location **auto-matches** the CSV rows of the same name (and errors if there's no match). |
 | `start_period` | first row | A `time_period` label to start reading from, e.g. `"2011-01"`. |
 
-A real multi-location sample is bundled at `examples/data/laos_subset.csv` (three Lao provinces, monthly 2010–2012, from CHAP), used by `examples/real_data_demo/laos_real_climate_from_csv.yaml`. To align the output's `time_period` labels with the source dates, set the scenario's `start_period` to the source's first period (the Laos example uses `"2010-01"`).
+A real multi-location sample is bundled at `examples/data/laos_subset.csv` (three Lao provinces, monthly 2010–2012, from the CHAP project's example data), used by `examples/real_data_demo/laos_real_climate_from_csv.yaml`. To align the output's `time_period` labels with the source dates, set the scenario's `start_period` to the source's first period (the Laos example uses `"2010-01"`).
 
 Note: reproducing a `from_csv` run from its `metadata.json` re-reads the source CSV by path, so byte-identical reproduction requires that file to be unchanged.
 
-**CHAP validation warnings.** Every run checks its output against CHAP's dataset rules before writing; a violation prints a `warning:` and the run still completes. The synthetic generators always produce CHAP-valid output — these only arise from `from_csv` data with gaps or an unexpected shape:
+**Dataset-rule warnings.** Every run checks its output against the rules a forecasting tool expects before writing; a violation prints a `warning:` and the run still completes. The synthetic generators always satisfy them — these only arise from `from_csv` data with gaps or an unexpected shape:
 
 - Required columns: `time_period`, `location`, `disease_cases` (`population` is optional; covariate columns may have any name).
-- `time_period` must be in a resolution CHAP's own parser accepts.
-- Periods should be consecutive and identical across locations (advisory — CHAP can auto-fill a gap, but a mismatch often signals a real problem in the source data).
-- No `NaN` in covariate columns (`NaN` in `disease_cases` is fine — CHAP treats those as masked/missing case counts).
+- `time_period` must be in a standard, parseable label format for its resolution.
+- Periods should be consecutive and identical across locations (advisory — a consumer can often auto-fill a gap, but a mismatch usually signals a real problem in the source data).
+- No `NaN` in driver columns, apart from a leading lag warm-up (`NaN` in `disease_cases` is fine — a missing case count is ordinarily treated as masked, not zero).
 
 ## Transforms
 
@@ -252,6 +269,20 @@ Blanks whole contiguous runs to NaN, modelling a reporting outage — unlike `mi
 ### `lag` and `missing`
 
 These underlie the built-in `depends_on[].lag` and `disease_cases.missing_rate` shortcuts and can also be named explicitly in a `transforms` list: `lag` (`n`) delays a series causally, `missing` (`rate`) blanks a random fraction of points.
+
+## Emitters
+
+An emitter turns a series' finished float signal into its output column. The
+**block name** selects it, so a series carrying `counts:` is a count series.
+A series with no emitter block is written as floats.
+
+| Name (the YAML block) | Effect |
+|---|---|
+| `counts` | Population-relative incidence: shift the signal so a typical period sits at `median_rate`, sigmoid it under `max_rate`, scale by the location's population, and draw whole case counts. Fields are listed under [`counts`](#counts-fields) above. |
+
+Because the block name selects the emitter, a new output type slots in beside
+`counts:` with no flag to keep in sync — see the [how-to](HOW_TO.md) for adding
+one. `dsl list` prints what is registered.
 
 ## See also
 

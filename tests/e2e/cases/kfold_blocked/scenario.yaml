@@ -1,0 +1,30 @@
+# The blocked scheme tests every period exactly once, but trains on periods
+# after the test block too — so it must warn that a fold can leak the future.
+_expect:
+  exit_code: 0
+  files_exist: [folds/fold_0/train.csv, folds/fold_3/test.csv, folds/report.json]
+  stderr_contains: "leak the future"
+  report:
+    folds: 4
+
+period: monthly
+n_total: 48
+seed: 2
+
+split:
+  kind: time
+  k: 4
+  scheme: blocked
+
+locations:
+  loc:
+    population: 100000
+
+series:
+  - name: rainfall
+    generate: seasonal_spike
+  - name: disease_cases
+    counts: {}
+    depends_on:
+      - series: rainfall
+        lag: 1

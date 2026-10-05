@@ -9,7 +9,7 @@ from tests.conftest import write_csv
 
 @pytest.fixture
 def csv_file(tmp_path):
-    """A small single-location CHAP-format CSV (24 monthly periods)."""
+    """A small single-location long-format CSV (24 monthly periods)."""
     periods = [f"{2010 + i // 12}-{i % 12 + 1:02d}" for i in range(24)]
     return write_csv(
         tmp_path / "real.csv", periods,
@@ -19,7 +19,7 @@ def csv_file(tmp_path):
 
 @pytest.fixture
 def multi_location_csv(tmp_path):
-    """A CHAP-format CSV with two locations, 12 monthly periods each."""
+    """A long-format CSV with two locations, 12 monthly periods each."""
     periods = [f"2010-{m + 1:02d}" for m in range(12)]
     return write_csv(
         tmp_path / "multi.csv", periods * 2,
@@ -116,7 +116,7 @@ def test_output_is_seed_independent(csv_file):
 
 
 def test_works_with_bundled_laos_data(rng):
-    # The shipped example: real CHAP data, 36 monthly periods per province.
+    # The shipped example: real data, 36 monthly periods per province.
     gen = FromCsvGenerator(
         file="examples/data/laos_subset.csv",
         column="rainfall",

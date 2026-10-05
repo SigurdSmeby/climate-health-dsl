@@ -20,7 +20,6 @@ generators are added. Two pragmatic name-based exceptions look inside params:
 the lag-adding transforms (``_transform_lag``) and the from_csv
 multi-location warning in ``validate_scenario``.
 """
-import math
 from collections import Counter
 from graphlib import CycleError, TopologicalSorter
 from typing import Literal
@@ -224,6 +223,67 @@ class EventEffectSpec(BaseModel):
         return out
 
 
+class Fold(BaseModel):
+    """One train/test division of the dataset.
+
+    A time split names periods and keeps every location on both sides; a
+    location split names locations and keeps every period. Both are expressed
+    here so the writer needs no case per kind.
+    """
+
+    model_config = _STRICT
+
+    index: int
+    train_periods: list[int]
+    test_periods: list[int]
+    train_locations: list[str]
+    test_locations: list[str]
+
+
+class SplitSpec(BaseModel):
+    """The ``split:`` block — how the dataset is divided for evaluation.
+
+    ``time`` cuts the periods, asking a model to forecast forward;
+    ``location`` holds whole places out, asking it to generalise sideways.
+    """
+
+    model_config = _STRICT
+
+    kind: Literal["time", "location"]
+    # None for a location split: it defaults to one fold per location.
+    k: int | None = Field(default=None, ge=1)
+    # Only meaningful for a time split; holding a location out has no ordering.
+    scheme: Literal["expanding", "blocked"] | None = None
+    # A floor on the first fold's training size, so early folds are not too
+    # short to learn anything from.
+    min_train: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _check_shape(self) -> "SplitSpec":
+        """Check the options given suit the kind of split chosen.
+
+        Returns:
+            self, with scheme defaulted for a time split.
+
+        Errors Caught (raised to caller):
+            ValueError: If a location split is given time-only options.
+        """
+        if self.kind == "location":
+            if self.scheme is not None:
+                raise ValueError(
+                    "'scheme' applies only to a time split; holding a "
+                    "location out has no period ordering to scheme."
+                )
+            if self.min_train is not None:
+                raise ValueError(
+                    "'min_train' applies only to a time split."
+                )
+        elif self.scheme is None:
+            # Expanding is the forecasting default: never train on the future.
+            object.__setattr__(self, "scheme", "expanding")
+        return self
+
+
 class TransformSpec(BaseModel):
     """A registry transform applied to a driver — the generator envelope's
     twin: ``name`` is looked up in the transform registry, ``params`` is
@@ -308,9 +368,6 @@ class ScenarioConfig(BaseModel):
     n_total: int = Field(ge=1)
     # ge=0: numpy's default_rng requires a non-negative seed.
     seed: int = Field(default=0, ge=0)
-    # None → only the single full CSV; a value in (0, 1) also writes
-    # train.csv/test.csv as a row split.
-    train_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
     # Real-world period the series starts at (e.g. "2010-07"). None means
     # the first period of the year 2000.
     start_period: str | None = None
@@ -322,6 +379,8 @@ class ScenarioConfig(BaseModel):
     location_overrides: dict[str, LocationSpec] = Field(
         default_factory=dict, exclude=True
     )
+    # How the dataset is divided for evaluation; None writes no folds.
+    split: SplitSpec | None = None
     # Named shocks a series can opt into; regional, so every location is
     # struck in the same periods.
     events: dict[str, EventSpec] = Field(default_factory=dict)
@@ -368,12 +427,12 @@ class ScenarioConfig(BaseModel):
         """
         self._check_start_period()
         self._check_locations()
-        self._check_train_fraction()
         defined = [spec.name for spec in self.series]
         self._check_series_names(defined)
         self._check_dependencies(defined)
         self._check_acyclic()
         self._check_events()
+        self._check_split()
         return self
 
     def _check_start_period(self) -> None:
@@ -447,23 +506,6 @@ class ScenarioConfig(BaseModel):
                 f"it as 'locations: {{{missing[0]}: {{population: 100000}}}}'."
             )
 
-    def _check_train_fraction(self) -> None:
-        """Check both the train and test partitions end up non-empty.
-
-        Errors Caught (raised to caller):
-            ValueError: If train_fraction with n_total gives an empty train
-                or test split.
-        """
-        if self.train_fraction is None:
-            return
-        n_train = math.floor(self.n_total * self.train_fraction)
-        if n_train < 1 or self.n_total - n_train < 1:
-            raise ValueError(
-                f"train_fraction {self.train_fraction} with n_total "
-                f"{self.n_total} gives an empty train or test split "
-                f"(train={n_train}, test={self.n_total - n_train})."
-            )
-
     def _check_series_names(self, defined: list[str]) -> None:
         """Check series names won't clash with each other or built-in columns.
 
@@ -530,6 +572,172 @@ class ScenarioConfig(BaseModel):
                         f"{dep.lag} plus lag added by its transforms), but "
                         f"n_total is {self.n_total}; every value would be NaN."
                     )
+
+    def _check_split(self) -> None:
+        """Check the split divides this scenario into usable folds.
+
+        The size checks ask ``folds()`` for the real boundaries rather than
+        re-deriving them, so validation cannot drift from what is actually
+        written: every fold must have something to train on AND something to
+        test on, on both the period and the location axis.
+
+        Errors Caught (raised to caller):
+            ValueError: If a location split has too few locations, if
+                min_train leaves no room to test, or if the requested k
+                produces a fold with an empty train or test side.
+        """
+        if self.split is None:
+            return
+
+        if self.split.kind == "location":
+            if len(self.locations) < 2:
+                raise ValueError(
+                    f"a location split needs at least 2 locations to hold "
+                    f"one out, but the scenario has {len(self.locations)}."
+                )
+            if self.split.k is not None and self.split.k > len(self.locations):
+                raise ValueError(
+                    f"split k is {self.split.k}, but the scenario has only "
+                    f"{len(self.locations)} locations to divide."
+                )
+        else:
+            min_train = self.split.min_train or 0
+            if min_train >= self.n_total:
+                raise ValueError(
+                    f"split min_train is {min_train}, but n_total is "
+                    f"{self.n_total}; there would be no periods left to "
+                    f"test on."
+                )
+
+        self._check_folds_are_usable()
+
+    def _check_folds_are_usable(self) -> None:
+        """Reject a k that yields a fold with an empty side.
+
+        Both axes matter. A time split with too many folds leaves fold 0 no
+        periods before its test block; a location split holding out every
+        location leaves nothing to train on.
+
+        Errors Caught (raised to caller):
+            ValueError: If any fold has an empty train or test side, naming
+                the axis that collapsed.
+        """
+        k = len(self.folds())
+        for fold in self.folds():
+            empty = (
+                not fold.train_periods
+                or not fold.test_periods
+                or not fold.train_locations
+                or not fold.test_locations
+            )
+            if not empty:
+                continue
+            if self.split.kind == "location":
+                side = "train on" if not fold.train_locations else "test on"
+                raise ValueError(
+                    f"split k is {k} over {len(self.locations)} locations, "
+                    f"which leaves fold {fold.index} with no location to "
+                    f"{side}; every fold needs at least one location on each "
+                    f"side, so k must be between 2 and "
+                    f"{len(self.locations)}."
+                )
+            side = "train on" if not fold.train_periods else "test on"
+            raise ValueError(
+                f"split k is {k} with n_total {self.n_total}, which leaves "
+                f"fold {fold.index} with no periods to {side}. An expanding "
+                f"split keeps its first n_total // (k + 1) periods for "
+                f"training only, which is 0 here; use a smaller k or a "
+                f"longer n_total."
+            )
+
+    def folds(self) -> list[Fold]:
+        """Divide the scenario into train/test folds.
+
+        The single place fold boundaries are decided, so the writer and the
+        report agree on what a fold is.
+
+        Returns:
+            One Fold per division, in order. Empty when no split is declared.
+            Example: 5 folds, each naming the periods and locations on both
+            sides.
+        """
+        if self.split is None:
+            return []
+        if self.split.kind == "location":
+            return self._location_folds()
+        return self._time_folds()
+
+    def _time_folds(self) -> list[Fold]:
+        """Divide the periods, keeping every location on both sides.
+
+        Returns:
+            One Fold per test block. "expanding" trains on everything before
+            the block (so a model never sees the future); "blocked" trains on
+            everything outside it.
+        """
+        k = self.split.k or 1
+        everyone = list(self.locations)
+        if self.split.scheme == "blocked":
+            # Every period is tested on exactly once, and training is
+            # whatever lies outside the block — including later periods.
+            reserved = 0
+        else:
+            # Fold 0 must have something to train on, so the opening periods
+            # are never tested. min_train raises that floor.
+            reserved = max(self.split.min_train or 0, self.n_total // (k + 1))
+        span = self.n_total - reserved
+        base, extra = divmod(span, k)
+
+        folds, start = [], reserved
+        for index in range(k):
+            size = base + (1 if index < extra else 0)
+            test = list(range(start, start + size))
+            if self.split.scheme == "blocked":
+                # Built once per fold, not once per period: this runs on
+                # every folds() call, and the report calls it repeatedly.
+                held_out = set(test)
+                train = [p for p in range(self.n_total) if p not in held_out]
+            else:
+                train = list(range(start))
+            start += size
+            folds.append(
+                Fold(
+                    index=index,
+                    train_periods=train,
+                    test_periods=test,
+                    train_locations=everyone,
+                    test_locations=everyone,
+                )
+            )
+        return folds
+
+    def _location_folds(self) -> list[Fold]:
+        """Hold locations out, keeping every period on both sides.
+
+        Returns:
+            One Fold per held-out group. With k below the location count the
+            locations are divided into k groups rather than dropped.
+        """
+        names = list(self.locations)
+        k = self.split.k or len(names)
+        periods = list(range(self.n_total))
+        base, extra = divmod(len(names), k)
+
+        folds, start = [], 0
+        for index in range(k):
+            size = base + (1 if index < extra else 0)
+            held = names[start : start + size]
+            start += size
+            folds.append(
+                Fold(
+                    index=index,
+                    train_periods=periods,
+                    test_periods=periods,
+                    train_locations=[n for n in names if n not in held],
+                    test_locations=held,
+                )
+            )
+        return folds
 
     def _check_events(self) -> None:
         """Check every referenced event exists and fits inside the series.
@@ -703,12 +911,6 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
                 f"half or more of its values will be NaN."
             )
 
-    if config.train_fraction is not None and config.train_fraction >= 0.95:
-        warnings.append(
-            f"train_fraction is {config.train_fraction}; the test split will "
-            f"contain very few rows."
-        )
-
     cycle = periods_per_year(config.period)
     if config.n_total < cycle:
         warnings.append(
@@ -732,15 +934,26 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
     # If the largest lag covers the whole training split, every training
     # target is warm-up NaN — nothing to learn from.
     deps = [dep for spec in config.series for dep in spec.depends_on]
-    if config.train_fraction is not None and deps:
-        n_train = math.floor(config.n_total * config.train_fraction)
-        max_lag = max(d.lag + _transform_lag(d.transforms) for d in deps)
-        if max_lag >= n_train:
+    max_lag = max(
+        (d.lag + _transform_lag(d.transforms) for d in deps), default=0
+    )
+    if config.split is not None:
+        if config.split.scheme == "blocked":
             warnings.append(
-                f"max dependency lag ({max_lag}) covers the whole training "
-                f"split ({n_train} periods); train.csv will have no observed "
-                f"values (all warm-up NaN)."
+                "split scheme 'blocked' trains on periods that come AFTER "
+                "the test block, so a fold can leak the future into training; "
+                "use 'expanding' to evaluate forecasting."
             )
+        folds = config.folds()
+        if deps and folds:
+            shortest = min(len(f.train_periods) for f in folds)
+            if max_lag >= shortest:
+                warnings.append(
+                    f"max dependency lag ({max_lag}) covers the whole "
+                    f"training split of the shortest fold ({shortest} "
+                    f"periods); that fold has no observed values to learn "
+                    f"from (all warm-up NaN)."
+                )
 
     # A fixed source_location feeds ONE real series to every output location
     # — a likely surprise with several locations.

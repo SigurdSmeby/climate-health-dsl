@@ -1,8 +1,10 @@
 # DSL — synthetic climate-health data
 
-A YAML-based DSL for generating synthetic climate-health datasets. A scenario file declares how climate variables (e.g. rainfall, temperature) relate to disease case counts — how many periods later disease reacts, how strongly, and how noisy or incomplete the data is. The tool then generates a dataset that actually embeds those relationships, so a forecasting model's output can be checked against the *exact*, known relationship you wrote — the "ground truth" — instead of an unknown real-world one.
+A YAML-based DSL for generating synthetic climate-health datasets. A scenario file declares one list of series — climate and disease alike — and how they relate: how many periods later one reacts to another, how strongly, and how noisy or incomplete the data is. The tool then generates a dataset that actually embeds those relationships, so a forecasting model's output can be checked against the *exact*, known relationship you wrote — the "ground truth" — instead of an unknown real-world one.
 
-Output is plain CSV, formatted for [CHAP](https://chap.dhis2.org/) (a disease forecasting platform) but usable with anything that reads a CSV.
+Any series can drive any other, so a chain like rain → soil moisture → disease is expressible directly; named events couple series in the *same* period (one storm raising rainfall while dropping temperature); and a `split:` block writes cross-validation folds with a report of what each fold actually contains.
+
+Output is plain CSV in long format — one row per location and period — so anything that reads a CSV can use it. The column conventions match what disease-forecasting tools expect; [CHAP](https://chap.dhis2.org/) is one such consumer.
 
 **New here?** The [tutorial](docs/TUTORIAL.md) walks from install to a real-data experiment. This page is the quick reference — see [Learn more](#learn-more) for the full docs.
 
@@ -33,7 +35,7 @@ uv run dsl run examples/basic_scenario.yaml        # or run a bundled example
 |---|---|
 | `dsl new [path]` | Write a commented starter scenario to edit (default `scenario.yaml`). |
 | `dsl run <scenario>` | Generate a dataset from a scenario YAML (or reproduce one from a `metadata.json`). |
-| `dsl list` | List the registered generators and transforms. |
+| `dsl list` | List the registered generators, transforms and emitters. |
 
 **`dsl new [path]`** — `-f`, `--force`: overwrite the file if it already exists.
 
@@ -53,12 +55,12 @@ uv run dsl run examples/basic_scenario.yaml        # or run a bundled example
 
 | File | When | Contents |
 |---|---|---|
-| `simulated_data.csv` | always | The full dataset: `time_period`, `location`, one column per variable, `disease_cases`, `population`. Give this to CHAP — it does its own train/test hiding. |
-| `train.csv`, `test.csv` | only if `train_fraction` is set | A split in time (the first `train_fraction` of each location's periods against the rest) for evaluation outside CHAP. |
+| `simulated_data.csv` | always | The full dataset: `time_period`, `location`, one column per series, `population`. Give this to a forecasting tool — most do their own train/test hiding. |
+| `folds/fold_N/train.csv`, `test.csv` | only if `split:` is set | One directory per cross-validation fold, each ready to hand to a model unsliced. |
 | `metadata.json` | always | The ground truth behind the dataset: seed, lags, weights, transforms, rates, generators, tool version, and the full resolved scenario. Feed it back to `dsl run` to reproduce the data byte-for-byte — no original YAML needed. |
 | `plot.html` (or `.png`/`.svg`/`.pdf`) | only with `--plot` | A faceted plot of the covariates and `disease_cases` over time, one line per location, train/test boundary marked. |
 
-Rerunning the same scenario produces identical files — all randomness comes from the `seed`. Output is checked against CHAP's dataset rules; findings print as warnings and the run still writes output (they only arise with `from_csv` data that has gaps — synthetic output is always CHAP-valid).
+Rerunning the same scenario produces identical files — all randomness comes from the `seed`. Output is checked against the dataset rules a forecasting tool expects; findings print as warnings and the run still writes output (they only arise with `from_csv` data that has gaps — synthetic output always satisfies them).
 
 ## Learn more
 
@@ -73,11 +75,12 @@ Rerunning the same scenario produces identical files — all randomness comes fr
 ```
 src/dsl/
 ├── core/                  # locked machinery — not edited when adding features
-│   ├── extension/         #   registry + the two abstract base classes
+│   ├── extension/         #   registry + the three abstract base classes
 │   ├── config/            #   YAML loader + Pydantic schema/validation
-│   └── pipeline/          #   periods, disease model, engine, CSV output
-├── generators/            # extension zone: one file = one variable shape
+│   └── pipeline/          #   periods, signal, engine, CSV output, fold report
+├── generators/            # extension zone: one file = one series shape
 ├── transforms/            # extension zone: one file = one series modification
+├── emitters/              # extension zone: one file = one output type
 └── cli.py                 # the `dsl run` / `dsl new` commands
 tests/                     # mirrors the package; conftest.py has shared fixtures
 docs/                      # tutorial, reference, how-to guides, concepts

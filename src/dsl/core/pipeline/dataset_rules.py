@@ -1,15 +1,17 @@
-"""Checks the finished DataFrame against CHAP's dataset rules.
+"""Checks the finished DataFrame against the rules a forecasting tool expects.
 
-Catches datasets that are valid but not usable by CHAP, before the files are
-written. Rules verified against the chap-core source:
+Catches datasets that are internally valid but awkward or unusable downstream,
+before the files are written. The rules are the ones long-format epidemiological
+data generally has to satisfy; they were checked against a real consumer
+(chap-core) so they are not invented:
 
 - Required columns: ``time_period``, ``location``, ``disease_cases``.
-  ``population`` is optional and covariates may have any name.
-- ``time_period`` in any resolution CHAP's ``TimePeriod.parse`` accepts.
-- Periods consecutive and identical across locations (advisory — CHAP can
+  ``population`` is optional and driver columns may have any name.
+- ``time_period`` in a standard, parseable label format for its resolution.
+- Periods consecutive and identical across locations (advisory — a consumer may
   auto-fill, but a mismatch often signals a mistake).
-- No NaN in covariate columns (NaN in ``disease_cases`` is fine: CHAP masks
-  missing case counts itself).
+- No NaN in driver columns (NaN in the case counts is fine: a missing case
+  count is ordinarily treated as masked rather than as zero).
 
 Returns human-readable findings and never raises; the CLI prints them as
 warnings.
@@ -23,7 +25,7 @@ import pandas as pd
 
 REQUIRED_COLUMNS = ("time_period", "location", "disease_cases")
 
-# Label formats CHAP accepts, by resolution. Weekly covers Monday-start (-W),
+# Accepted label formats, by resolution. Weekly covers Monday-start (-W),
 # Sunday-start (-S), and the start/end date-range form.
 _PERIOD_FORMATS = {
     "monthly": re.compile(r"^\d{4}-(0[1-9]|1[0-2])$"),
@@ -34,13 +36,13 @@ _PERIOD_FORMATS = {
 }
 
 
-def validate_chap(df: pd.DataFrame) -> list[str]:
-    """Check the DataFrame against CHAP's dataset requirements.
+def check_dataset(df: pd.DataFrame) -> list[str]:
+    """Check the DataFrame against the dataset rules.
 
-    Validates: required columns present, time_period in a CHAP-parseable
-    format and consecutive/aligned across locations, covariates numeric
-    with no NaN/Inf, disease_cases non-negative. Never raises — the CLI
-    prints the findings as warnings.
+    Validates: required columns present, time_period in a parseable format
+    and consecutive/aligned across locations, driver columns numeric with no
+    NaN/Inf, disease_cases non-negative. Never raises — the CLI prints the
+    findings as warnings.
 
     Args:
         df: The output DataFrame.
@@ -54,7 +56,7 @@ def validate_chap(df: pd.DataFrame) -> list[str]:
     # Step 1: Check required columns.
     for column in REQUIRED_COLUMNS:
         if column not in df.columns:
-            findings.append(f"CHAP requires a '{column}' column, which is missing.")
+            findings.append(f"the '{column}' column is required and missing.")
 
     # Step 2: Check time_period format/consecutiveness and data values.
     if "time_period" in df.columns:
@@ -78,7 +80,7 @@ def _check_periods(df: pd.DataFrame) -> list[str]:
     resolution = _detect_resolution(periods)
     if resolution is None:
         findings.append(
-            "time_period values are not in a CHAP-parseable format "
+            "time_period values are not in a parseable format "
             "(expected daily YYYYMMDD, weekly YYYY-Wnn, monthly YYYY-MM, "
             "yearly YYYY, or a YYYY-MM-DD/YYYY-MM-DD week range)."
         )
@@ -92,7 +94,7 @@ def _check_periods(df: pd.DataFrame) -> list[str]:
 
     if groups.nunique() > 1:
         findings.append(
-            "locations do not share the same set of time periods (CHAP can "
+            "locations do not share the same set of time periods (a consumer can "
             "auto-fill, but this is often a mistake)."
         )
 
@@ -151,7 +153,7 @@ def _consecutive(current: str, following: str, resolution: str) -> bool:
 def _weekly_consecutive(current: str, following: str) -> bool:
     """Accept BOTH weekly conventions the ecosystem uses.
 
-    The DSL emits flat-52 labels (W52 rolls straight to W01); CHAP also
+    The DSL emits flat-52 labels (W52 rolls straight to W01); consumers also
     accepts ISO weeks (W53 in 53-week years). A step is consecutive if it
     advances the week by one within the year, or rolls from W52/W53 to
     W01 of the next.
@@ -217,7 +219,7 @@ def _has_gap_after_warmup(df: pd.DataFrame, column: str) -> bool:
 
     A series built from a lagged parent has no input for its first few
     periods, so a LEADING run of NaN is the declared warm-up rather than a
-    defect. A gap further in is real missing data, which CHAP cannot use.
+    defect. A gap further in is real missing data, which a consumer cannot use.
 
     Args:
         df: The output DataFrame.
@@ -261,7 +263,7 @@ def _check_values(df: pd.DataFrame) -> list[str]:
         if _has_gap_after_warmup(df, column):
             findings.append(
                 f"covariate '{column}' contains NaN values after its opening "
-                f"periods; CHAP requires complete covariates."
+                f"periods; driver columns must be complete."
             )
         if np.isinf(df[column].to_numpy(dtype=float)).any():
             findings.append(
@@ -269,7 +271,7 @@ def _check_values(df: pd.DataFrame) -> list[str]:
             )
 
     # Step 2: disease_cases must be numeric and non-negative (NaN is fine —
-    # CHAP masks missing case counts itself).
+    # a missing case count is ordinarily treated as masked).
     if "disease_cases" in df.columns:
         cases = df["disease_cases"]
         if not pd.api.types.is_numeric_dtype(cases):

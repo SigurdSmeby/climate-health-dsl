@@ -8,7 +8,6 @@ dirs with varying seeds, or re-run it automatically on every save and
 import argparse
 import functools
 import http.server
-import math
 import shutil
 import sys
 import threading
@@ -21,8 +20,9 @@ from pydantic import ValidationError
 from dsl._output import _numbered_dir_suffix
 from dsl._scenario import _friendly_error, _load_and_parse
 from dsl.core.config.schema import ScenarioConfig, validate_scenario
-from dsl.core.pipeline.chap_check import validate_chap
+from dsl.core.pipeline.dataset_rules import check_dataset
 from dsl.core.pipeline.engine import run as run_engine
+from dsl.core.pipeline.folds import evaluation_boundary, write_report
 from dsl.core.pipeline.metadata import write_metadata
 from dsl.core.pipeline.output import write_output
 from dsl.core.pipeline.plot import plot_dataset
@@ -77,35 +77,36 @@ def _run_once(
     for warning in validate_scenario(config):
         print(f"warning: {warning}", file=sys.stderr)
 
-    # Generate, check CHAP compatibility, write. Generation can fail on input
+    # Generate, check the dataset rules, write. Generation can fail on input
     # the schema can't catch (a bad generator param, a malformed from_csv
     # source) — surface those as clean CLI errors, not a raw traceback.
     try:
         df = run_engine(config)
+
+        # Dataset-rule findings are advisory: print them and proceed.
+        for finding in check_dataset(df):
+            print(f"warning: {finding}", file=sys.stderr)
+
+        write_output(df, config, out_dir)
+        # What each fold actually contains, so a fold that cannot measure
+        # what the scenario planted is visible rather than silently scored
+        # well. This re-runs the generators to read what they planted, so it
+        # can hit the same input errors generation can — and under --watch an
+        # escaping exception would kill the watch loop.
+        write_report(config, df, out_dir)
+        # The ground-truth sidecar: records the resolved scenario so the
+        # dataset is self-describing and reproducible.
+        write_metadata(config, out_dir)
     except (ValueError, FileNotFoundError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-
-    # CHAP-compatibility findings are advisory: print them and proceed.
-    for finding in validate_chap(df):
-        print(f"warning: {finding}", file=sys.stderr)
-
-    write_output(df, config, out_dir)
-    # The ground-truth sidecar: records the resolved scenario so the dataset
-    # is self-describing and reproducible.
-    write_metadata(config, out_dir)
     print(f"Wrote {len(df)} rows to {out_dir}/")
 
     if plot:
-        # The train/test boundary, as a period index, so the plot can mark it
-        # (same floor() rule the output split uses).
-        split = (
-            math.floor(config.n_total * config.train_fraction)
-            if config.train_fraction is not None
-            else None
-        )
+        # Mark where evaluation begins, so the part a model is scored on is
+        # visible in the chart.
         plot_path = out_dir / f"plot.{plot_format}"
-        plot_dataset(df, plot_path, train_split=split)
+        plot_dataset(df, plot_path, train_split=evaluation_boundary(config))
         print(f"Wrote plot to {plot_path}")
     return 0
 

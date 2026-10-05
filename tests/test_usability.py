@@ -106,3 +106,17 @@ def test_dsl_list_shows_generators_and_transforms(capsys):
     assert "seasonal_spike" in out
     assert "lag" in out
     assert "missing" in out
+
+
+def test_cross_field_errors_drop_pydantic_boilerplate(tmp_path, capsys):
+    """A validator's own message is already written for a scenario author;
+    Pydantic's "Value error, " prefix in front of it is noise."""
+    from tests.conftest import scenario_dict
+
+    data = scenario_dict(locations={"loc": {}})
+    path = tmp_path / "scenario.yaml"
+    path.write_text(yaml.safe_dump(data))
+    assert main(["run", str(path), "-o", str(tmp_path / "out")]) != 0
+    err = capsys.readouterr().err
+    assert "Value error" not in err
+    assert "need a population" in err

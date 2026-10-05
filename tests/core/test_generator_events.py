@@ -190,3 +190,50 @@ def test_collecting_events_does_not_disturb_the_data():
     before = run(config)["rainfall"].to_numpy()
     series_events(config)
     np.testing.assert_array_equal(before, run(config)["rainfall"].to_numpy())
+
+
+def test_collecting_events_resolves_per_location_sources():
+    """Event collection runs the generators again, so it must resolve a
+    from_csv series' per-location source exactly as generation does — not
+    fall over on a multi-location CSV."""
+    import pandas as pd
+
+    periods = [f"2010-{m:02d}" for m in range(1, 13)]
+    frame = pd.DataFrame(
+        {
+            "time_period": periods * 2,
+            "location": ["north"] * 12 + ["south"] * 12,
+            "rainfall": list(range(12)) + list(range(12, 24)),
+        }
+    )
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = f"{tmp}/multi.csv"
+        frame.to_csv(path, index=False)
+        config = parse_config(
+            {
+                "period": "monthly",
+                "n_total": 12,
+                "start_period": "2010-01",
+                "locations": {
+                    "north": {"population": 1000},
+                    "south": {"population": 1000},
+                },
+                "series": [
+                    {
+                        "name": "rainfall",
+                        "generate": "from_csv",
+                        "params": {"file": path, "column": "rainfall"},
+                    },
+                    {
+                        "name": "disease_cases",
+                        "counts": {},
+                        "depends_on": [{"series": "rainfall", "lag": 1}],
+                    },
+                ],
+            }
+        )
+        # Neither call may raise: both resolve source_location per location.
+        run(config)
+        assert series_events(config) == []

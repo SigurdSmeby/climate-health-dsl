@@ -1,4 +1,4 @@
-"""Real-data-backed covariates: read a variable's values from a CHAP CSV.
+"""Real-data-backed series: read a series' values from a long-format CSV.
 
 Instead of synthesizing a series, this generator takes it from a real
 dataset (e.g. real Laos rainfall), while the disease signal is still
@@ -31,7 +31,7 @@ _LABEL_SHAPE = {
 
 @register_generator("from_csv")  # this string is what you write in YAML
 class FromCsvGenerator(VariableGenerator):
-    """Reads a column from a CHAP-format CSV instead of synthesizing it.
+    """Reads a column from a long-format CSV instead of synthesizing it.
 
     Registered as "from_csv" in the generator registry. generate() returns
     the column's first n_periods values, unmodified — never wrapped,
@@ -74,7 +74,7 @@ class FromCsvGenerator(VariableGenerator):
         """Store the YAML params: for this variable.
 
         Args:
-            file: Path to the CSV (CHAP format: a time_period column plus
+            file: Path to the CSV (a time_period column plus
                 data columns; a location column if multi-location).
             column: Which column to use as this variable's values.
             source_location: Which location's rows to use. Required when
@@ -162,7 +162,7 @@ class FromCsvGenerator(VariableGenerator):
             )
 
         # Reject infinities — numeric, but not a valid covariate value (and
-        # CHAP would treat them as data). NaN (a blank cell) is allowed.
+        # a consumer would treat them as data). NaN (a blank cell) is allowed.
         if np.isinf(values).any():
             raise ValueError(
                 f"from_csv: column '{self.column}' in {self.path.name} has a "

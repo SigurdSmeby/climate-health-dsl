@@ -1,0 +1,196 @@
+{
+  "split": {
+    "kind": "time",
+    "k": 5,
+    "scheme": "expanding"
+  },
+  "total_events": 0,
+  "folds": [
+    {
+      "index": 0,
+      "train": {
+        "rows": 80,
+        "periods": 20,
+        "locations": 4,
+        "location_names": [
+          "AN GIANG",
+          "DAK LAK",
+          "HA GIANG",
+          "KHANH HOA"
+        ],
+        "first_period": "2000-01",
+        "last_period": "2001-08",
+        "missing": {
+          "disease_cases": 8
+        },
+        "events": {}
+      },
+      "test": {
+        "rows": 80,
+        "periods": 20,
+        "locations": 4,
+        "location_names": [
+          "AN GIANG",
+          "DAK LAK",
+          "HA GIANG",
+          "KHANH HOA"
+        ],
+        "first_period": "2001-09",
+        "last_period": "2003-04",
+        "missing": {
+          "disease_cases": 0
+        },
+        "events": {}
+      }
+    },
+    {
+      "index": 1,
+      "train": {
+        "rows": 160,
+        "periods": 40,
+        "locations": 4,
+        "location_names": [
+          "AN GIANG",
+          "DAK LAK",
+          "HA GIANG",
+          "KHANH HOA"
+        ],
+        "first_period": "2000-01",
+        "last_period": "2003-04",
+        "missing": {
+          "disease_cases": 8
+        },
+        "events": {}
+      },
+      "test": {
+        "rows": 80,
+        "periods": 20,
+        "locations": 4,
+        "location_names": [
+          "AN GIANG",
+          "DAK LAK",
+          "HA GIANG",
+          "KHANH HOA"
+        ],
+        "first_period": "2003-05",
+        "last_period": "2004-12",
+        "missing": {
+          "disease_cases": 0
+        },
+        "events": {}
+      }
+    },
+    {
+      "index": 2,
+      "train": {
+        "rows": 240,
+        "periods": 60,
+        "locations": 4,
+        "location_names": [
+          "AN GIANG",
+          "DAK LAK",
+          "HA GIANG",
+          "KHANH HOA"
+        ],
+        "first_period": "2000-01",
+        "last_period": "2004-12",
+        "missing": {
+          "disease_cases": 8
+        },
+        "events": {}
+      },
+      "test": {
+        "rows": 80,
+        "periods": 20,
+        "locations": 4,
+        "location_names": [
+          "AN GIANG",
+          "DAK LAK",
+          "HA GIANG",
+          "KHANH HOA"
+        ],
+        "first_period": "2005-01",
+        "last_period": "2006-08",
+        "missing": {
+          "disease_cases": 0
+        },
+        "events": {}
+      }
+    },
+    {
+      "index": 3,
+      "train": {
+        "rows": 320,
+        "periods": 80,
+        "locations": 4,
+        "location_names": [
+          "AN GIANG",
+          "DAK LAK",
+          "HA GIANG",
+          "KHANH HOA"
+        ],
+        "first_period": "2000-01",
+        "last_period": "2006-08",
+        "missing": {
+          "disease_cases": 8
+        },
+        "events": {}
+      },
+      "test": {
+        "rows": 80,
+        "periods": 20,
+        "locations": 4,
+        "location_names": [
+          "AN GIANG",
+          "DAK LAK",
+          "HA GIANG",
+          "KHANH HOA"
+        ],
+        "first_period": "2006-09",
+        "last_period": "2008-04",
+        "missing": {
+          "disease_cases": 0
+        },
+        "events": {}
+      }
+    },
+    {
+      "index": 4,
+      "train": {
+        "rows": 400,
+        "periods": 100,
+        "locations": 4,
+        "location_names": [
+          "AN GIANG",
+          "DAK LAK",
+          "HA GIANG",
+          "KHANH HOA"
+        ],
+        "first_period": "2000-01",
+        "last_period": "2008-04",
+        "missing": {
+          "disease_cases": 8
+        },
+        "events": {}
+      },
+      "test": {
+        "rows": 80,
+        "periods": 20,
+        "locations": 4,
+        "location_names": [
+          "AN GIANG",
+          "DAK LAK",
+          "HA GIANG",
+          "KHANH HOA"
+        ],
+        "first_period": "2008-05",
+        "last_period": "2009-12",
+        "missing": {
+          "disease_cases": 0
+        },
+        "events": {}
+      }
+    }
+  ],
+  "warnings": []
+}

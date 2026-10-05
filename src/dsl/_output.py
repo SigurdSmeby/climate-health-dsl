@@ -26,7 +26,7 @@ locations:            # a count series draws against where it happens, so
   #   population: 300000
 
 series:
-  - name: rainfall            # becomes a column; CHAP uses 'rainfall'
+  - name: rainfall            # becomes a column in the output CSV
     generate: seasonal_spike  # a yearly rainy-season bump
     params:                   # every generator takes `params:` -- tune its shape
       spike_center: 7         # peak month of the rainy season (1-12)
@@ -36,7 +36,7 @@ series:
 
   # A second climate series -- uncomment to add it (no code needed, just YAML).
   # 'seasonal_smooth' is a yearly sine wave, good for temperature.
-  # - name: mean_temperature      # CHAP's column name (not "temperature")
+  # - name: mean_temperature      # the conventional name (not "temperature")
   #   generate: seasonal_smooth
   #   params:
   #     mean: 25                  # average temperature

@@ -1,1 +1,1 @@
-"""dsl.core.pipeline — run the simulation and write the CHAP-formatted output."""
+"""dsl.core.pipeline — run the simulation and write the output dataset."""

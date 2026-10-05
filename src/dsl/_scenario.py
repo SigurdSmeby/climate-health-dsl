@@ -166,5 +166,9 @@ def _friendly_error(exc: ValidationError) -> str:
             lines.append(f"unknown field '{key}'{at}{hint}")
         else:
             loc = ".".join(str(p) for p in err["loc"])
-            lines.append(f"{loc}: {err['msg']}" if loc else err["msg"])
+            # Pydantic prefixes a validator's own ValueError with "Value
+            # error, "; the message below it is already written for a
+            # scenario author, so the prefix is noise.
+            msg = err["msg"].removeprefix("Value error, ")
+            lines.append(f"{loc}: {msg}" if loc else msg)
     return "; ".join(lines)
