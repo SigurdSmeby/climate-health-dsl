@@ -44,6 +44,13 @@ split:
   kind: time
   k: 5
 
+# A shock that strikes SEVERAL series in the same period — the one thing a
+# generator cannot do. `per_fold: 1` puts one in every fold's test half; a
+# list like [1, 1, 2, 1, 1] gives fold 2 two (one value per fold, k=5 here).
+# Uncomment this AND the two `events:` lines below. See REFERENCE for `at:`,
+# `rate:` and varying the strength.
+# events: { storm: { per_fold: 1 } }
+
 # Everything the scenario builds lives in this one list — climate and disease
 # alike. A series becomes a disease signal by carrying a `counts:` block.
 series:
@@ -53,6 +60,7 @@ series:
       spike_center: 7         # peak month of the wet season (1-12)
       spike_height: 25        # how far the peak rises above baseline
       clamp_min: 0            # rainfall can't go negative
+    # events: { storm: { multiplier: 2.5 } }   # or { min: 2, max: 4 } to vary
     # missing_rate: 0.02      # blank ~2% of periods, as a broken gauge would
 
   - name: mean_temperature    # the conventional name (not "temperature")
@@ -60,6 +68,7 @@ series:
     params:
       mean: 25                # average temperature
       amplitude: 6            # how far it swings across the year
+    # events: { storm: { add: -6.0 } }         # six degrees cooler, same storm
 
   # `counts:` turns this series' values into whole case counts, drawn against
   # the location's population. Empty uses the defaults (REFERENCE lists them).

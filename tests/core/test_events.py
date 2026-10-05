@@ -380,3 +380,196 @@ def test_events_apply_before_dependencies_read_the_parent():
     assert not np.allclose(
         run(without)["dam"].to_numpy(), run(with_event)["dam"].to_numpy()
     )
+
+
+# ------------------------------------------------- one shock per fold
+
+
+def _split_scenario(event, **overrides):
+    return make_config_dict(
+        events={"storm": event},
+        split={"kind": "time", "k": 4},
+        n_total=120,
+        period="monthly",
+        series=[
+            _flat("rain", events={"storm": {"multiplier": 3.0}}),
+            series_dict(
+                "cases", counts={}, depends_on=[{"series": "rain", "lag": 1}]
+            ),
+        ],
+        **overrides,
+    )
+
+
+def test_per_fold_puts_one_event_in_every_test_half():
+    """Guaranteeing a shock per fold by hand means computing the fold
+    boundaries yourself, and redoing it whenever k or n_total changes."""
+    from dsl.core.pipeline.engine import run as run_engine
+    from dsl.core.pipeline.folds import build_report
+
+    config = parse_config(_split_scenario({"per_fold": 1}))
+    report = build_report(config, run_engine(config))
+    for fold in report["folds"]:
+        entry = fold["test"]["events"].get("rain", {}).get("storm")
+        assert entry and entry["count"] == 1, fold["index"]
+    assert report["warnings"] == []
+
+
+def test_per_fold_adapts_when_k_changes():
+    """The whole point: the periods are derived, not written down."""
+    from dsl.core.pipeline.engine import run as run_engine
+    from dsl.core.pipeline.folds import build_report
+
+    for k in (2, 3, 5, 6):
+        data = _split_scenario({"per_fold": 1})
+        data["split"]["k"] = k
+        config = parse_config(data)
+        report = build_report(config, run_engine(config))
+        assert len(report["folds"]) == k
+        assert report["warnings"] == [], (k, report["warnings"])
+
+
+def test_per_fold_can_place_several():
+    config = parse_config(_split_scenario({"per_fold": 2}))
+    assert len(config.events["storm"].at or []) == 8  # 2 per fold, 4 folds
+
+
+def test_per_fold_needs_a_split():
+    with pytest.raises(ValidationError, match="split"):
+        parse_config(
+            make_config_dict(
+                events={"storm": {"per_fold": 1}},
+                series=[_flat("rain", events={"storm": {"multiplier": 2.0}})],
+            )
+        )
+
+
+def test_per_fold_rejects_a_location_split():
+    """A location split has no period boundaries to place a shock between."""
+    data = _split_scenario(
+        {"per_fold": 1},
+        locations={"a": {"population": 1000}, "b": {"population": 1000}},
+    )
+    data["split"] = {"kind": "location"}
+    with pytest.raises(ValidationError, match="per_fold"):
+        parse_config(data)
+
+
+def test_per_fold_excludes_rate_and_at():
+    with pytest.raises(ValidationError, match="per_fold"):
+        parse_config(_split_scenario({"per_fold": 1, "at": [3]}))
+
+
+# ------------------------------------------------- variable effect strength
+
+
+def _strength_scenario(effect, n_total=200):
+    return make_config_dict(
+        events={"storm": {"rate": 0.3}},
+        n_total=n_total,
+        period="monthly",
+        series=[
+            _flat("rain", events={"storm": effect}),
+            series_dict(
+                "cases", counts={}, depends_on=[{"series": "rain", "lag": 1}]
+            ),
+        ],
+    )
+
+
+def test_a_fixed_multiplier_is_identical_every_time():
+    """The baseline: every storm scales by exactly the same factor, so a model
+    could memorise the constant rather than learn the mechanism."""
+    config = parse_config(_strength_scenario({"multiplier": 2.5}))
+    rain = run(config)["rain"].to_numpy()
+    struck = rain[rain > 10.0]
+    assert struck.size > 10
+    assert np.allclose(struck, 25.0)
+
+
+def test_a_multiplier_range_varies_each_event():
+    config = parse_config(
+        _strength_scenario({"multiplier": {"min": 2.0, "max": 4.0}})
+    )
+    rain = run(config)["rain"].to_numpy()
+    struck = rain[rain > 10.0]
+    assert struck.size > 10
+    assert np.unique(struck).size > 5, "every storm got the same factor"
+    # A level of 10 scaled by 2-4 lands in 20-40.
+    assert struck.min() >= 20.0 - 1e-9
+    assert struck.max() <= 40.0 + 1e-9
+
+
+def test_an_add_range_varies_each_event():
+    config = parse_config(
+        _strength_scenario({"add": {"min": -8.0, "max": -3.0}})
+    )
+    rain = run(config)["rain"].to_numpy()
+    struck = rain[rain < 10.0]
+    assert struck.size > 10
+    assert np.unique(struck).size > 5
+    assert struck.min() >= 2.0 - 1e-9  # 10 - 8
+    assert struck.max() <= 7.0 + 1e-9  # 10 - 3
+
+
+def test_a_strength_range_is_reproducible():
+    config = parse_config(
+        _strength_scenario({"multiplier": {"min": 2.0, "max": 4.0}})
+    )
+    np.testing.assert_array_equal(
+        run(config)["rain"].to_numpy(), run(config)["rain"].to_numpy()
+    )
+
+
+def test_a_range_needs_min_below_max():
+    with pytest.raises(ValidationError, match="min"):
+        parse_config(_strength_scenario({"multiplier": {"min": 4.0, "max": 2.0}}))
+
+
+def test_a_range_rejects_a_missing_bound():
+    with pytest.raises(ValidationError, match="max"):
+        parse_config(_strength_scenario({"multiplier": {"min": 2.0}}))
+
+
+# ------------------------------------------------- a count per fold
+
+
+def test_per_fold_accepts_a_count_per_fold():
+    """Giving one fold more than the others is a deliberate experiment — you
+    know fold 2 has two, so a score difference there is interpretable."""
+    from dsl.core.pipeline.engine import run as run_engine
+    from dsl.core.pipeline.folds import build_report
+
+    config = parse_config(_split_scenario({"per_fold": [1, 1, 2, 1]}))
+    report = build_report(config, run_engine(config))
+    assert [f["summary"]["storm"]["test"] for f in report["folds"]] == [1, 1, 2, 1]
+
+
+def test_a_per_fold_list_must_match_the_fold_count():
+    """Otherwise changing k silently leaves some folds unspecified."""
+    with pytest.raises(ValidationError, match="per_fold"):
+        parse_config(_split_scenario({"per_fold": [1, 1, 2]}))  # k is 4
+
+
+def test_a_per_fold_list_may_hold_zero():
+    """Leaving one fold empty is a legitimate thing to test. The FOLD REPORT
+    is what warns about it — validate_scenario runs before generation and
+    does not know what landed where."""
+    from dsl.core.pipeline.engine import run as run_engine
+    from dsl.core.pipeline.folds import build_report
+
+    config = parse_config(_split_scenario({"per_fold": [1, 0, 1, 1]}))
+    assert len(config.events["storm"].at) == 3
+    report = build_report(config, run_engine(config))
+    assert [f["summary"]["storm"]["test"] for f in report["folds"]] == [1, 0, 1, 1]
+    assert any("fold 1" in w and "storm" in w for w in report["warnings"])
+
+
+def test_a_per_fold_list_rejects_negative_counts():
+    with pytest.raises(ValidationError, match="per_fold"):
+        parse_config(_split_scenario({"per_fold": [1, -1, 1, 1]}))
+
+
+def test_a_plain_per_fold_number_still_works():
+    config = parse_config(_split_scenario({"per_fold": 2}))
+    assert len(config.events["storm"].at) == 8  # 2 per fold, 4 folds

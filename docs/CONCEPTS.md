@@ -149,12 +149,21 @@ recovery — there was nothing to recover. The number looks like success. So
 every run with a `split:` writes a report counting each planted feature on both
 sides of every fold:
 
-```
-fold,series,kind,train,test
-0,rainfall,seasonal_spike,2,1
-0,rainfall,storm,1,0
-0,heatwaves,outbreak,1,1
-```
+| fold | seasonal_spike train | seasonal_spike test | storm train | storm test |
+|---|---|---|---|---|
+| 0 | 4 | 2 | 0 | 1 |
+| 1 | 6 | 4 | 1 | 1 |
+| 2 | 10 | 4 | 2 | 1 |
+
+One row per fold, so a `0` in a **test** column is visible at a glance — that
+fold cannot measure the feature, whatever a model scores on it. The train
+column grows because an expanding split hands each fold the previous fold's
+test periods.
+
+A second table below names the exact periods, so a feature can be lined up
+against the data, and says which locations drew it: a generator runs per
+location, so one yearly peak across two provinces is two features — while an
+event is regional, drawn once.
 
 and warns where a fold cannot measure something:
 
@@ -165,7 +174,35 @@ cannot measure how well a model recovers it.
 
 **The counts are exact, not detected.** Each generator reports the periods it
 placed a feature at, so two overlapping outbreak shocks are still counted as
-two — which no threshold detector could recover from the output.
+two — which no threshold detector could recover from the output. That is also
+why a period can appear twice in the list: it is two features, not a typo.
+
+**Guaranteeing a fold tests something.** Working out which periods fall in
+which fold by hand is error-prone, and the answer changes whenever `k` or
+`n_total` does. `per_fold: 1` on an event places one in every fold's test half,
+derived from the split itself:
+
+```yaml
+split: { kind: time, k: 5 }
+events:
+  storm: { per_fold: 1 }
+```
+
+With 120 monthly periods and `k: 5` that resolves to periods 30, 50, 70, 90 and
+110. Change `k` to 3 and it becomes 45, 75 and 105 — no edit needed.
+
+A list gives a count per fold, for coverage that is uneven **on purpose**:
+`per_fold: [1, 1, 2, 1, 1]` hands fold 2 two storms, and `0` leaves a fold
+empty so you can see what a model does without the signal. That differs from a
+*random* count, which would make the folds incomparable — if fold 2 scores
+worse you could not tell the model from the data it was given.
+
+**Event strength can vary too.** A fixed `multiplier: 2.5` means every storm
+scales by exactly 2.5, so a model can match the data by memorising the
+constant. `{min: 2.0, max: 4.0}` draws per firing, which asks whether the
+model recovered how hard each event was — not just when it happened. It stays
+opt-in: a declared number has to mean that number, or the ground truth is a
+distribution you never wrote.
 
 ### Expanding, not shuffled
 

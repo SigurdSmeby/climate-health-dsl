@@ -132,6 +132,11 @@ class EventSpec(BaseModel):
 
     rate: float | None = Field(default=None, ge=0.0, le=1.0)
     at: list[int] | None = None
+    # Resolved into `at` once the split is known, so every fold's TEST half
+    # holds this many — otherwise the author must work out the fold
+    # boundaries by hand and redo it whenever k or n_total changes. A list
+    # gives a count per fold, in order, for deliberately uneven coverage.
+    per_fold: int | list[int] | None = None
 
     @model_validator(mode="after")
     def _check_timing(self) -> "EventSpec":
@@ -141,14 +146,36 @@ class EventSpec(BaseModel):
             self, unchanged, if the timing is well formed.
 
         Errors Caught (raised to caller):
-            ValueError: If neither or both of rate/at are set, or any listed
-                period is negative.
+            ValueError: If not exactly one of rate/at/per_fold is set, or any
+                listed period is negative.
         """
-        if (self.rate is None) == (self.at is None):
+        given = sum(
+            x is not None for x in (self.rate, self.at, self.per_fold)
+        )
+        if given != 1:
             raise ValueError(
-                "an event needs exactly one of 'rate' (fires randomly) or "
-                "'at' (fires at these periods)."
+                "an event needs exactly one of 'rate' (fires randomly), 'at' "
+                "(fires at these periods) or 'per_fold' (one per fold's test "
+                f"half); {given} were given."
             )
+        if self.per_fold is not None:
+            counts = (
+                self.per_fold
+                if isinstance(self.per_fold, list)
+                else [self.per_fold]
+            )
+            if not counts:
+                raise ValueError("'per_fold' must not be an empty list.")
+            if any(n < 0 for n in counts):
+                raise ValueError(
+                    f"'per_fold' counts must be >= 0, got {self.per_fold}."
+                )
+            if not isinstance(self.per_fold, list) and self.per_fold < 1:
+                raise ValueError(
+                    "'per_fold' must be >= 1; use a list like [1, 0, 1] to "
+                    "leave a specific fold empty on purpose."
+                )
+            return self
         if self.at is not None:
             if not self.at:
                 raise ValueError("'at' must list at least one period.")
@@ -174,6 +201,49 @@ class EventSpec(BaseModel):
         return rng.random(n_total) < self.rate
 
 
+class RangeSpec(BaseModel):
+    """A uniform range, drawn per event rather than fixed.
+
+    A single number means every event has exactly that strength, so a model
+    can match it by memorising the constant. A range makes each one differ,
+    which asks the harder question: did the model recover how *hard* the
+    event was, not just when it happened.
+    """
+
+    model_config = _STRICT
+
+    min: float
+    max: float
+
+    @model_validator(mode="after")
+    def _check_order(self) -> "RangeSpec":
+        """Check the range is non-empty.
+
+        Returns:
+            self, unchanged, if min < max.
+
+        Errors Caught (raised to caller):
+            ValueError: If min is not below max.
+        """
+        if self.min >= self.max:
+            raise ValueError(
+                f"min ({self.min}) must be below max ({self.max})."
+            )
+        return self
+
+    def draw(self, size: int, rng: np.random.Generator) -> np.ndarray:
+        """Draw ``size`` values uniformly from the range.
+
+        Args:
+            size: How many values to draw.
+            rng: Seeded generator, so the draws are reproducible.
+
+        Returns:
+            An array of ``size`` floats in [min, max).
+        """
+        return rng.uniform(self.min, self.max, size=size)
+
+
 class EventEffectSpec(BaseModel):
     """What an event does to one series when it fires.
 
@@ -185,8 +255,10 @@ class EventEffectSpec(BaseModel):
 
     model_config = _STRICT
 
-    multiplier: float | None = None
-    add: float | None = None
+    # A number is exact; a {min, max} range is drawn per event, so each one
+    # differs.
+    multiplier: float | RangeSpec | None = None
+    add: float | RangeSpec | None = None
 
     @model_validator(mode="after")
     def _check_effect(self) -> "EventEffectSpec":
@@ -205,21 +277,41 @@ class EventEffectSpec(BaseModel):
             )
         return self
 
-    def apply(self, values: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    def apply(
+        self,
+        values: np.ndarray,
+        mask: np.ndarray,
+        rng: "np.random.Generator | None" = None,
+    ) -> np.ndarray:
         """Apply this effect wherever the event fires.
 
         Args:
             values: The series so far.
             mask: Boolean mask of the periods the event fires in.
+            rng: Seeded generator, needed only when the effect is a range —
+                each firing then gets its own strength.
 
         Returns:
             A copy of values with the effect applied at the masked periods.
+
+        Errors Caught (raised to caller):
+            ValueError: If the effect is a range but no rng was given.
         """
         out = values.copy()
-        if self.multiplier is not None:
-            out[mask] = out[mask] * self.multiplier
+        effect = self.multiplier if self.multiplier is not None else self.add
+        if isinstance(effect, RangeSpec):
+            if rng is None:
+                raise ValueError(
+                    "a {min, max} event effect needs a random generator; "
+                    "this is an internal error, not a scenario problem."
+                )
+            strength = effect.draw(int(mask.sum()), rng)
         else:
-            out[mask] = out[mask] + self.add
+            strength = effect
+        if self.multiplier is not None:
+            out[mask] = out[mask] * strength
+        else:
+            out[mask] = out[mask] + strength
         return out
 
 
@@ -433,6 +525,7 @@ class ScenarioConfig(BaseModel):
         self._check_acyclic()
         self._check_events()
         self._check_split()
+        self._resolve_per_fold_events()
         return self
 
     def _check_start_period(self) -> None:
@@ -572,6 +665,58 @@ class ScenarioConfig(BaseModel):
                         f"{dep.lag} plus lag added by its transforms), but "
                         f"n_total is {self.n_total}; every value would be NaN."
                     )
+
+    def _resolve_per_fold_events(self) -> None:
+        """Turn each ``per_fold`` event into the periods it fires at.
+
+        Spreads the requested count evenly inside every fold's TEST half, so
+        the periods follow from the split instead of being written down — and
+        move on their own when k or n_total changes.
+
+        Errors Caught (raised to caller):
+            ValueError: If a per_fold event has no time split to place it in.
+        """
+        wanted = [name for name, e in self.events.items() if e.per_fold]
+        if not wanted:
+            return
+        if self.split is None:
+            raise ValueError(
+                f"events {wanted} use 'per_fold', which needs a 'split:' "
+                f"block to know where the folds are; add one, or use 'at'."
+            )
+        if self.split.kind != "time":
+            raise ValueError(
+                f"events {wanted} use 'per_fold', but the split is by "
+                f"{self.split.kind}, which has no period boundaries to place "
+                f"an event between; use 'at' or 'rate' instead."
+            )
+
+        folds = self.folds()
+        for name in wanted:
+            event = self.events[name]
+            if isinstance(event.per_fold, list):
+                if len(event.per_fold) != len(folds):
+                    raise ValueError(
+                        f"event '{name}' gives 'per_fold' "
+                        f"{event.per_fold} ({len(event.per_fold)} values), "
+                        f"but the split has {len(folds)} folds; give one "
+                        f"count per fold, or a single number for all."
+                    )
+                counts = event.per_fold
+            else:
+                counts = [event.per_fold] * len(folds)
+
+            periods: list[int] = []
+            for fold, count in zip(folds, counts):
+                test = fold.test_periods
+                # Evenly inside the block, away from both edges: with n=1
+                # that is the middle, with n=2 the thirds, and so on.
+                for i in range(count):
+                    periods.append(test[(len(test) * (2 * i + 1)) // (2 * count)])
+            # Pydantic models are not frozen here, but assignment revalidates;
+            # set both fields at once so the one-of check still holds.
+            object.__setattr__(event, "at", sorted(set(periods)))
+            object.__setattr__(event, "per_fold", None)
 
     def _check_split(self) -> None:
         """Check the split divides this scenario into usable folds.

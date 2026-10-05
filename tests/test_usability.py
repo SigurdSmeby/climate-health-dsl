@@ -134,9 +134,11 @@ def test_every_commented_option_in_the_starter_works_uncommented():
     from dsl.core.config.schema import parse_config
     from dsl.core.pipeline.engine import run
 
-    # An option line is an indented comment whose body opens a YAML key or
-    # list item; the prose comments above them start with a capital.
-    option = re.compile(r"^(\s+)# ([a-z_]+:|[-{])")
+    # An option line is a comment whose body opens a YAML key or list item,
+    # at any indent — the prose comments around them start with a capital.
+    # Top-level options count: uncommenting a series' `events:` without the
+    # `events:` block it refers to is exactly the kind of trap this catches.
+    option = re.compile(r"^(\s*)# ([a-z_]+:|[-{])")
     lines = []
     for line in STARTER_TEMPLATE.splitlines():
         match = option.match(line)

@@ -74,7 +74,7 @@ the one thing a generator cannot do.
 
 ```yaml
 events:
-  storm: { rate: 0.05 }        # or { at: [14, 47, 88] }
+  storm: { rate: 0.05 }        # or { at: [14, 47, 88] }, or { per_fold: 1 }
 
 series:
   - name: rainfall
@@ -85,10 +85,26 @@ series:
 
 | Field | Meaning |
 |---|---|
-| `rate` | Probability per period, seeded. Exactly one of `rate`/`at`. |
+| `rate` | Probability per period, seeded. Exactly one of `rate`/`at`/`per_fold`. |
 | `at` | Explicit period offsets, fully deterministic. |
+| `per_fold` | Place this many in **every fold's test half**, derived from the `split:` — so the periods follow k and `n_total` instead of being written down. A list gives a count per fold in order (`[1, 1, 2, 1, 1]` gives fold 2 two), and `0` leaves a fold empty on purpose. Time splits only. |
 | `multiplier` | On a reacting series: scales it. Cannot move a series sitting at zero. |
 | `add` | On a reacting series: shifts by a fixed amount, any level. |
+
+Either effect takes a number, which is exact, or a `{min, max}` range drawn per
+firing — so each event differs:
+
+```yaml
+events: { storm: { per_fold: 1 } }
+series:
+  - name: rainfall
+    events: { storm: { multiplier: { min: 2.0, max: 4.0 } } }
+```
+
+A fixed `2.5` means every storm scales by exactly 2.5, which a model can match
+by memorising the constant. A range asks the harder question: did it recover
+how *hard* each event was? Variance is opt-in, so a declared number stays the
+ground truth you can check against.
 
 Both effects are signed; each series gives one or the other. Events are
 regional — one draw shared by every location.
@@ -283,7 +299,7 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 |---|---|---|
 | `simulated_data.csv` | always | `time_period`, `location`, one column per series, `population`. |
 | `folds/fold_N/{train,test}.csv` | with `split:` | One folder per fold, ready to use unsliced. |
-| `folds/report.{md,json}` | with `split:` | Per-fold sizes, coverage, missing values, and a count of every planted feature per side — plus a warning for any fold whose test half lacks one. |
+| `folds/report.{md,json}` | with `split:` | Per-fold sizes, coverage, missing values, and every planted feature per side — the count, the exact periods it sits at, and which locations drew it. Plus a warning for any fold whose test half lacks a kind the scenario plants. |
 | `metadata.json` | always | The ground truth: seed, lags, weights, transforms, rates, generators, version, resolved scenario. Feed back to `dsl run` to reproduce byte-for-byte. |
 | `plot.{html,png,svg,pdf}` | with `--plot` | Faceted series over time, one line per location, the evaluation boundary marked. |
 
