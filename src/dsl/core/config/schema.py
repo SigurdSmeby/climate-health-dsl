@@ -576,13 +576,19 @@ class ScenarioConfig(BaseModel):
     def _check_split(self) -> None:
         """Check the split divides this scenario into usable folds.
 
+        The size checks ask ``folds()`` for the real boundaries rather than
+        re-deriving them, so validation cannot drift from what is actually
+        written: every fold must have something to train on AND something to
+        test on, on both the period and the location axis.
+
         Errors Caught (raised to caller):
-            ValueError: If a location split has too few locations, or a time
-                split asks for more folds (or a longer minimum training run)
-                than the series can supply.
+            ValueError: If a location split has too few locations, if
+                min_train leaves no room to test, or if the requested k
+                produces a fold with an empty train or test side.
         """
         if self.split is None:
             return
+
         if self.split.kind == "location":
             if len(self.locations) < 2:
                 raise ValueError(
@@ -594,22 +600,54 @@ class ScenarioConfig(BaseModel):
                     f"split k is {self.split.k}, but the scenario has only "
                     f"{len(self.locations)} locations to divide."
                 )
-            return
+        else:
+            min_train = self.split.min_train or 0
+            if min_train >= self.n_total:
+                raise ValueError(
+                    f"split min_train is {min_train}, but n_total is "
+                    f"{self.n_total}; there would be no periods left to "
+                    f"test on."
+                )
 
-        k = self.split.k or 1
-        min_train = self.split.min_train or 0
-        if min_train >= self.n_total:
-            raise ValueError(
-                f"split min_train is {min_train}, but n_total is "
-                f"{self.n_total}; there would be no periods left to test on."
+        self._check_folds_are_usable()
+
+    def _check_folds_are_usable(self) -> None:
+        """Reject a k that yields a fold with an empty side.
+
+        Both axes matter. A time split with too many folds leaves fold 0 no
+        periods before its test block; a location split holding out every
+        location leaves nothing to train on.
+
+        Errors Caught (raised to caller):
+            ValueError: If any fold has an empty train or test side, naming
+                the axis that collapsed.
+        """
+        k = len(self.folds())
+        for fold in self.folds():
+            empty = (
+                not fold.train_periods
+                or not fold.test_periods
+                or not fold.train_locations
+                or not fold.test_locations
             )
-        # Every fold needs at least one training and one test period.
-        if min_train + k > self.n_total:
+            if not empty:
+                continue
+            if self.split.kind == "location":
+                side = "train on" if not fold.train_locations else "test on"
+                raise ValueError(
+                    f"split k is {k} over {len(self.locations)} locations, "
+                    f"which leaves fold {fold.index} with no location to "
+                    f"{side}; every fold needs at least one location on each "
+                    f"side, so k must be between 2 and "
+                    f"{len(self.locations)}."
+                )
+            side = "train on" if not fold.train_periods else "test on"
             raise ValueError(
-                f"split k is {k} with n_total {self.n_total}"
-                + (f" and min_train {min_train}" if min_train else "")
-                + "; there are not enough periods to give every fold a "
-                "non-empty train and test split."
+                f"split k is {k} with n_total {self.n_total}, which leaves "
+                f"fold {fold.index} with no periods to {side}. An expanding "
+                f"split keeps its first n_total // (k + 1) periods for "
+                f"training only, which is 0 here; use a smaller k or a "
+                f"longer n_total."
             )
 
     def folds(self) -> list[Fold]:

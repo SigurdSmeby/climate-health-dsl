@@ -271,3 +271,54 @@ def test_a_scenario_with_no_counts_may_still_split():
         )
     )
     assert len(config.folds()) == 2
+
+
+# ------------------------------------------------- degenerate fold rejection
+
+
+def test_k_equal_to_n_total_rejected():
+    """Every period would be tested on, leaving fold 0 nothing to train on."""
+    with pytest.raises(ValidationError, match="k"):
+        parse_config(_scenario({"kind": "time", "k": 3}, n_total=3))
+
+
+def test_k_leaving_no_reserved_training_block_rejected():
+    """An expanding split reserves n_total // (k+1) periods; that must be >= 1."""
+    with pytest.raises(ValidationError, match="k"):
+        parse_config(_scenario({"kind": "time", "k": 12}, n_total=12))
+
+
+def test_the_smallest_workable_expanding_split_is_accepted():
+    """n_total = 4, k = 2 reserves 1 period, leaving 3 to test over."""
+    folds = parse_config(
+        _scenario({"kind": "time", "k": 2}, n_total=4)
+    ).folds()
+    assert all(f.train_periods and f.test_periods for f in folds)
+
+
+def test_every_expanding_fold_has_something_to_train_on():
+    for n_total, k in ((10, 3), (12, 5), (24, 7), (100, 20)):
+        folds = parse_config(
+            _scenario({"kind": "time", "k": k}, n_total=n_total)
+        ).folds()
+        assert all(f.train_periods for f in folds), (n_total, k)
+        assert all(f.test_periods for f in folds), (n_total, k)
+
+
+def test_location_split_holding_out_every_location_rejected():
+    """k=1 over all locations leaves no location to train on."""
+    with pytest.raises(ValidationError, match="k"):
+        parse_config(
+            _scenario(
+                {"kind": "location", "k": 1}, locations=_locations("a", "b")
+            )
+        )
+
+
+def test_location_split_keeps_a_training_location_in_every_fold():
+    for names, k in ((("a", "b"), 2), (("a", "b", "c"), 2), (("a", "b", "c", "d"), 3)):
+        folds = parse_config(
+            _scenario({"kind": "location", "k": k}, locations=_locations(*names))
+        ).folds()
+        assert all(f.train_locations for f in folds), (names, k)
+        assert all(f.test_locations for f in folds), (names, k)
