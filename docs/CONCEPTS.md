@@ -191,6 +191,19 @@ events:
 With 120 monthly periods and `k: 5` that resolves to periods 30, 50, 70, 90 and
 110. Change `k` to 3 and it becomes 45, 75 and 105 — no edit needed.
 
+A list gives a count per fold, for coverage that is uneven **on purpose**:
+`per_fold: [1, 1, 2, 1, 1]` hands fold 2 two storms, and `0` leaves a fold
+empty so you can see what a model does without the signal. That differs from a
+*random* count, which would make the folds incomparable — if fold 2 scores
+worse you could not tell the model from the data it was given.
+
+**Event strength can vary too.** A fixed `multiplier: 2.5` means every storm
+scales by exactly 2.5, so a model can match the data by memorising the
+constant. `{min: 2.0, max: 4.0}` draws per firing, which asks whether the
+model recovered how hard each event was — not just when it happened. It stays
+opt-in: a declared number has to mean that number, or the ground truth is a
+distribution you never wrote.
+
 ### Expanding, not shuffled
 
 The default time split trains each fold only on the periods *before* its test

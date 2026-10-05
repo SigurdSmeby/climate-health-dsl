@@ -134,8 +134,9 @@ class EventSpec(BaseModel):
     at: list[int] | None = None
     # Resolved into `at` once the split is known, so every fold's TEST half
     # holds this many — otherwise the author must work out the fold
-    # boundaries by hand and redo it whenever k or n_total changes.
-    per_fold: int | None = Field(default=None, ge=1)
+    # boundaries by hand and redo it whenever k or n_total changes. A list
+    # gives a count per fold, in order, for deliberately uneven coverage.
+    per_fold: int | list[int] | None = None
 
     @model_validator(mode="after")
     def _check_timing(self) -> "EventSpec":
@@ -158,6 +159,22 @@ class EventSpec(BaseModel):
                 f"half); {given} were given."
             )
         if self.per_fold is not None:
+            counts = (
+                self.per_fold
+                if isinstance(self.per_fold, list)
+                else [self.per_fold]
+            )
+            if not counts:
+                raise ValueError("'per_fold' must not be an empty list.")
+            if any(n < 0 for n in counts):
+                raise ValueError(
+                    f"'per_fold' counts must be >= 0, got {self.per_fold}."
+                )
+            if not isinstance(self.per_fold, list) and self.per_fold < 1:
+                raise ValueError(
+                    "'per_fold' must be >= 1; use a list like [1, 0, 1] to "
+                    "leave a specific fold empty on purpose."
+                )
             return self
         if self.at is not None:
             if not self.at:
@@ -674,15 +691,28 @@ class ScenarioConfig(BaseModel):
                 f"an event between; use 'at' or 'rate' instead."
             )
 
+        folds = self.folds()
         for name in wanted:
             event = self.events[name]
+            if isinstance(event.per_fold, list):
+                if len(event.per_fold) != len(folds):
+                    raise ValueError(
+                        f"event '{name}' gives 'per_fold' "
+                        f"{event.per_fold} ({len(event.per_fold)} values), "
+                        f"but the split has {len(folds)} folds; give one "
+                        f"count per fold, or a single number for all."
+                    )
+                counts = event.per_fold
+            else:
+                counts = [event.per_fold] * len(folds)
+
             periods: list[int] = []
-            for fold in self.folds():
+            for fold, count in zip(folds, counts):
                 test = fold.test_periods
                 # Evenly inside the block, away from both edges: with n=1
                 # that is the middle, with n=2 the thirds, and so on.
-                for i in range(event.per_fold):
-                    periods.append(test[(len(test) * (2 * i + 1)) // (2 * event.per_fold)])
+                for i in range(count):
+                    periods.append(test[(len(test) * (2 * i + 1)) // (2 * count)])
             # Pydantic models are not frozen here, but assignment revalidates;
             # set both fields at once so the one-of check still holds.
             object.__setattr__(event, "at", sorted(set(periods)))

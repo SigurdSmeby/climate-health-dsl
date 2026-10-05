@@ -529,3 +529,47 @@ def test_a_range_needs_min_below_max():
 def test_a_range_rejects_a_missing_bound():
     with pytest.raises(ValidationError, match="max"):
         parse_config(_strength_scenario({"multiplier": {"min": 2.0}}))
+
+
+# ------------------------------------------------- a count per fold
+
+
+def test_per_fold_accepts_a_count_per_fold():
+    """Giving one fold more than the others is a deliberate experiment — you
+    know fold 2 has two, so a score difference there is interpretable."""
+    from dsl.core.pipeline.engine import run as run_engine
+    from dsl.core.pipeline.folds import build_report
+
+    config = parse_config(_split_scenario({"per_fold": [1, 1, 2, 1]}))
+    report = build_report(config, run_engine(config))
+    assert [f["summary"]["storm"]["test"] for f in report["folds"]] == [1, 1, 2, 1]
+
+
+def test_a_per_fold_list_must_match_the_fold_count():
+    """Otherwise changing k silently leaves some folds unspecified."""
+    with pytest.raises(ValidationError, match="per_fold"):
+        parse_config(_split_scenario({"per_fold": [1, 1, 2]}))  # k is 4
+
+
+def test_a_per_fold_list_may_hold_zero():
+    """Leaving one fold empty is a legitimate thing to test. The FOLD REPORT
+    is what warns about it — validate_scenario runs before generation and
+    does not know what landed where."""
+    from dsl.core.pipeline.engine import run as run_engine
+    from dsl.core.pipeline.folds import build_report
+
+    config = parse_config(_split_scenario({"per_fold": [1, 0, 1, 1]}))
+    assert len(config.events["storm"].at) == 3
+    report = build_report(config, run_engine(config))
+    assert [f["summary"]["storm"]["test"] for f in report["folds"]] == [1, 0, 1, 1]
+    assert any("fold 1" in w and "storm" in w for w in report["warnings"])
+
+
+def test_a_per_fold_list_rejects_negative_counts():
+    with pytest.raises(ValidationError, match="per_fold"):
+        parse_config(_split_scenario({"per_fold": [1, -1, 1, 1]}))
+
+
+def test_a_plain_per_fold_number_still_works():
+    config = parse_config(_split_scenario({"per_fold": 2}))
+    assert len(config.events["storm"].at) == 8  # 2 per fold, 4 folds
