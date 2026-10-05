@@ -132,6 +132,10 @@ class EventSpec(BaseModel):
 
     rate: float | None = Field(default=None, ge=0.0, le=1.0)
     at: list[int] | None = None
+    # Resolved into `at` once the split is known, so every fold's TEST half
+    # holds this many — otherwise the author must work out the fold
+    # boundaries by hand and redo it whenever k or n_total changes.
+    per_fold: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _check_timing(self) -> "EventSpec":
@@ -141,14 +145,20 @@ class EventSpec(BaseModel):
             self, unchanged, if the timing is well formed.
 
         Errors Caught (raised to caller):
-            ValueError: If neither or both of rate/at are set, or any listed
-                period is negative.
+            ValueError: If not exactly one of rate/at/per_fold is set, or any
+                listed period is negative.
         """
-        if (self.rate is None) == (self.at is None):
+        given = sum(
+            x is not None for x in (self.rate, self.at, self.per_fold)
+        )
+        if given != 1:
             raise ValueError(
-                "an event needs exactly one of 'rate' (fires randomly) or "
-                "'at' (fires at these periods)."
+                "an event needs exactly one of 'rate' (fires randomly), 'at' "
+                "(fires at these periods) or 'per_fold' (one per fold's test "
+                f"half); {given} were given."
             )
+        if self.per_fold is not None:
+            return self
         if self.at is not None:
             if not self.at:
                 raise ValueError("'at' must list at least one period.")
@@ -433,6 +443,7 @@ class ScenarioConfig(BaseModel):
         self._check_acyclic()
         self._check_events()
         self._check_split()
+        self._resolve_per_fold_events()
         return self
 
     def _check_start_period(self) -> None:
@@ -572,6 +583,45 @@ class ScenarioConfig(BaseModel):
                         f"{dep.lag} plus lag added by its transforms), but "
                         f"n_total is {self.n_total}; every value would be NaN."
                     )
+
+    def _resolve_per_fold_events(self) -> None:
+        """Turn each ``per_fold`` event into the periods it fires at.
+
+        Spreads the requested count evenly inside every fold's TEST half, so
+        the periods follow from the split instead of being written down — and
+        move on their own when k or n_total changes.
+
+        Errors Caught (raised to caller):
+            ValueError: If a per_fold event has no time split to place it in.
+        """
+        wanted = [name for name, e in self.events.items() if e.per_fold]
+        if not wanted:
+            return
+        if self.split is None:
+            raise ValueError(
+                f"events {wanted} use 'per_fold', which needs a 'split:' "
+                f"block to know where the folds are; add one, or use 'at'."
+            )
+        if self.split.kind != "time":
+            raise ValueError(
+                f"events {wanted} use 'per_fold', but the split is by "
+                f"{self.split.kind}, which has no period boundaries to place "
+                f"an event between; use 'at' or 'rate' instead."
+            )
+
+        for name in wanted:
+            event = self.events[name]
+            periods: list[int] = []
+            for fold in self.folds():
+                test = fold.test_periods
+                # Evenly inside the block, away from both edges: with n=1
+                # that is the middle, with n=2 the thirds, and so on.
+                for i in range(event.per_fold):
+                    periods.append(test[(len(test) * (2 * i + 1)) // (2 * event.per_fold)])
+            # Pydantic models are not frozen here, but assignment revalidates;
+            # set both fields at once so the one-of check still holds.
+            object.__setattr__(event, "at", sorted(set(periods)))
+            object.__setattr__(event, "per_fold", None)
 
     def _check_split(self) -> None:
         """Check the split divides this scenario into usable folds.

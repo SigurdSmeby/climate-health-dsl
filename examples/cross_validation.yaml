@@ -8,17 +8,22 @@
 #   dsl run examples/cross_validation.yaml
 #   cat out/cross_validation/folds/report.md
 #
-# This scenario plants three countable things: a yearly rainfall peak, random
-# heatwave shocks, and three exact storms — so the report has something to
-# count, and will warn about any fold that misses one.
+# Three countable things are planted here, each behaving differently across
+# the folds — so the report has something to say about all three:
+#
+#   seasonal_spike  one per year, so it is spread evenly by construction
+#   storm           per_fold: 1, so EVERY fold's test half holds exactly one
+#   outbreak        random timing, so the spread is uneven and may leave a
+#                   fold with none — which the report warns about
 
 period: monthly
 n_total: 120 # ten years
 seed: 5
+start_period: 2015-01 # so the report's periods read as real months
 
 locations:
-  loc:
-    population: 100000
+  north: { population: 300000 }
+  south: { population: 180000 }
 
 # expanding: fold i trains on everything BEFORE its test block, which is what
 # evaluating a forecaster requires. `blocked` tests every period exactly once
@@ -30,14 +35,23 @@ split:
   scheme: expanding
 
 events:
-  storm: { at: [14, 47, 88] }
+  # One storm in every fold's test half, placed from the split itself — so the
+  # periods move on their own if you change k or n_total. (`at: [14, 47]` names
+  # exact periods instead; `rate: 0.05` fires randomly.)
+  storm: { per_fold: 1 }
 
 series:
   - name: rainfall
     generate: seasonal_spike
-    params: { spike_center: 6 } # peaks in July
+    params: { spike_center: 6, spike_height: 30, clamp_min: 0 }
     events:
-      storm: { multiplier: 2.0 }
+      storm: { multiplier: 2.5 } # up, proportionally
+
+  - name: temperature
+    generate: seasonal_smooth
+    params: { mean: 26, amplitude: 5 }
+    events:
+      storm: { add: -4.0 } # down, by a fixed amount
 
   - name: heatwaves
     generate: outbreak_shocks
@@ -49,8 +63,29 @@ series:
     generate: flat
     params: { level: 80, noise: 4 }
 
-  - name: disease_cases
-    counts: { max_rate: 0.3, median_rate: 0.05 }
+  # A store rain fills and heat drains, carrying over month to month. The
+  # disease responds to THIS, not to rainfall directly, so the chain
+  # rain -> soil_moisture -> disease is its own column in the output.
+  - name: soil_moisture
+    autoregressive: { phi: 0.8, noise: 0.3 }
     depends_on:
-      - { series: rainfall, lag: 2, weight: 1.5 }
+      - { series: rainfall, lag: 1, weight: 1.0 }
+      - { series: temperature, lag: 1, weight: -0.4 }
+
+  - name: disease_cases
+    counts:
+      median_rate: 0.05
+      max_rate: 0.3
+      distribution: negative_binomial # overdispersed, like real surveillance
+      overdispersion: 6.0
+    missing_rate: 0.02 # a few reporting gaps
+    depends_on:
+      - series: soil_moisture
+        lag: 2
+        weight: 2.0
+        transforms:
+          # Disease responds only above a threshold, and the effect spreads
+          # over the following months rather than landing all at once.
+          - { name: threshold, params: { mode: hinge, threshold: 0.3 } }
+          - { name: distributed_lag, params: { weights: [0.5, 0.3, 0.2] } }
       - { series: heatwaves, lag: 1, weight: 0.8 }

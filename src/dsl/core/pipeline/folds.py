@@ -142,19 +142,20 @@ def render_markdown(report: dict) -> str:
         "",
         "## Size and coverage",
         "",
-        "```",
-        "fold,split,rows,periods,locations,first_period,last_period,missing",
+        "| fold | split | rows | periods | locations | from | to | missing |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for fold in report["folds"]:
         for side in ("train", "test"):
             entry = fold[side]
             missing = sum(entry["missing"].values())
             lines.append(
-                f"{fold['index']},{side},{entry['rows']},{entry['periods']},"
-                f"{entry['locations']},{entry['first_period']},"
-                f"{entry['last_period']},{missing}"
+                f"| {fold['index']} | {side} | {entry['rows']} | "
+                f"{entry['periods']} | {entry['locations']} | "
+                f"{entry['first_period']} | {entry['last_period']} | "
+                f"{missing} |"
             )
-    lines += ["```", ""]
+    lines.append("")
 
     lines += ["## Planted features per fold", ""]
     if report["total_events"] == 0:
@@ -164,16 +165,27 @@ def render_markdown(report: dict) -> str:
             "",
         ]
     else:
-        lines += ["```", "fold,series,kind,train,test"]
+        lines += [
+            "Counts come from the generators themselves, so these periods "
+            + "are exact.",
+            "",
+            "| fold | series | kind | where | train | test | "
+            + "train periods | test periods |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
         for fold in report["folds"]:
             for series, kinds in _merged_kinds(fold).items():
                 for kind in sorted(kinds):
-                    train = fold["train"]["events"].get(series, {}).get(kind, 0)
-                    test = fold["test"]["events"].get(series, {}).get(kind, 0)
+                    train = fold["train"]["events"].get(series, {}).get(kind)
+                    test = fold["test"]["events"].get(series, {}).get(kind)
+                    where = _where(train, test)
                     lines.append(
-                        f"{fold['index']},{series},{kind},{train},{test}"
+                        f"| {fold['index']} | {series} | {kind} | {where} | "
+                        f"{train['count'] if train else 0} | "
+                        f"{test['count'] if test else 0} | "
+                        f"{_periods(train)} | {_periods(test)} |"
                     )
-        lines += ["```", ""]
+        lines.append("")
 
     lines += ["## Warnings", ""]
     if report["warnings"]:
@@ -182,6 +194,44 @@ def render_markdown(report: dict) -> str:
         lines.append("None — every fold tests every kind of planted feature.")
     lines.append("")
     return "\n".join(lines)
+
+
+def _where(train: "dict | None", test: "dict | None") -> str:
+    """Which locations a feature was drawn in, across both sides of a fold.
+
+    Args:
+        train: The train side's entry for this series/kind, or None.
+        test: The test side's entry, or None.
+
+    Returns:
+        The location names, or "all" for a regional event — one draw shared
+        by every location, so attributing it to one would be wrong.
+    """
+    names = sorted(
+        set((train or {}).get("locations", []))
+        | set((test or {}).get("locations", []))
+    )
+    return ", ".join(names) if names else "all"
+
+
+def _periods(entry: "dict | None", limit: int = 4) -> str:
+    """Render a feature's periods for one side of a fold.
+
+    Args:
+        entry: The {"count", "periods"} dict, or None when this side has none.
+        limit: How many to name before summarising the rest, so a long run
+            does not make the table unreadable.
+
+    Returns:
+        A comma-separated list, em dash when empty, or the first ``limit``
+        followed by "+N more".
+    """
+    if not entry or not entry["periods"]:
+        return "—"
+    periods = entry["periods"]
+    if len(periods) <= limit:
+        return ", ".join(periods)
+    return ", ".join(periods[:limit]) + f", +{len(periods) - limit} more"
 
 
 def _side(
@@ -217,7 +267,17 @@ def _side(
         if column in rows
     }
 
-    counted: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    # Keep the periods, not just a tally: a count says a fold has a storm,
+    # the period says which month, so it can be lined up against the data.
+    counted: dict[str, dict[str, list[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    # A generator draws per location, so the same yearly peak is a separate
+    # feature in each place. Naming the locations explains why a period
+    # repeats in the list.
+    places: dict[str, dict[str, set[str]]] = defaultdict(
+        lambda: defaultdict(set)
+    )
     for event in events:
         # A scenario event is regional (location None), so it counts once
         # wherever its periods fall; a generator's feature belongs to the
@@ -225,7 +285,9 @@ def _side(
         if event["location"] is not None and event["location"] not in locations:
             continue
         if event["index"] in wanted:
-            counted[event["series"]][event["kind"]] += 1
+            counted[event["series"]][event["kind"]].append(labels[event["index"]])
+            if event["location"] is not None:
+                places[event["series"]][event["kind"]].add(event["location"])
 
     return {
         "rows": len(rows),
@@ -235,7 +297,17 @@ def _side(
         "first_period": labels[min(periods)] if periods else None,
         "last_period": labels[max(periods)] if periods else None,
         "missing": missing,
-        "events": {series: dict(kinds) for series, kinds in counted.items()},
+        "events": {
+            series: {
+                kind: {
+                    "count": len(periods),
+                    "periods": sorted(periods),
+                    "locations": sorted(places[series][kind]),
+                }
+                for kind, periods in kinds.items()
+            }
+            for series, kinds in counted.items()
+        },
     }
 
 
@@ -262,16 +334,30 @@ def _warnings(entries: list[dict], events: list[dict]) -> list[str]:
     for fold in entries:
         for series, kinds in sorted(planted.items()):
             for kind in sorted(kinds):
-                test = fold["test"]["events"].get(series, {}).get(kind, 0)
+                test = _count(fold["test"], series, kind)
                 if test:
                     continue
-                train = fold["train"]["events"].get(series, {}).get(kind, 0)
+                train = _count(fold["train"], series, kind)
                 warnings.append(
                     f"fold {fold['index']}: no '{kind}' in the test half of "
                     f"'{series}' ({train} in train); this fold cannot measure "
                     f"how well a model recovers it."
                 )
     return warnings
+
+
+def _count(side: dict, series: str, kind: str) -> int:
+    """How many of ``kind`` this side of a fold holds for ``series``.
+
+    Args:
+        side: One fold's "train" or "test" summary.
+        series: The series name.
+        kind: The feature kind.
+
+    Returns:
+        The count, or 0 when that series/kind is absent from this side.
+    """
+    return side["events"].get(series, {}).get(kind, {}).get("count", 0)
 
 
 def _merged_kinds(fold: dict) -> dict[str, set[str]]:

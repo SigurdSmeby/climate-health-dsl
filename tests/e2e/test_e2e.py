@@ -132,7 +132,8 @@ def test_e2e_case(case_dir, tmp_path):
             for series, kinds in series_counts.items():
                 for kind, sides in kinds.items():
                     for side, count in sides.items():
-                        actual = fold[side]["events"].get(series, {}).get(kind, 0)
+                        entry = fold[side]["events"].get(series, {}).get(kind)
+                        actual = entry["count"] if entry else 0
                         assert actual == count, (
                             f"fold {index} {side} {series}/{kind}: "
                             f"{actual}, expected {count}"

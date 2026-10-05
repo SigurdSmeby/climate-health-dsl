@@ -149,12 +149,15 @@ recovery — there was nothing to recover. The number looks like success. So
 every run with a `split:` writes a report counting each planted feature on both
 sides of every fold:
 
-```
-fold,series,kind,train,test
-0,rainfall,seasonal_spike,2,1
-0,rainfall,storm,1,0
-0,heatwaves,outbreak,1,1
-```
+| fold | series | kind | where | train | test | train periods | test periods |
+|---|---|---|---|---|---|---|---|
+| 0 | rainfall | seasonal_spike | north, south | 4 | 2 | 2015-07, 2015-07, 2016-07, 2016-07 | 2017-07, 2017-07 |
+| 0 | rainfall | storm | all | 0 | 1 | — | 2017-07 |
+
+The periods are named, not just counted, so a feature can be lined up against
+the data. `where` says which locations drew it: a generator runs per location,
+so one yearly peak across two provinces is two features — while an event is
+regional, drawn once, and reads `all`.
 
 and warns where a fold cannot measure something:
 
@@ -165,7 +168,22 @@ cannot measure how well a model recovers it.
 
 **The counts are exact, not detected.** Each generator reports the periods it
 placed a feature at, so two overlapping outbreak shocks are still counted as
-two — which no threshold detector could recover from the output.
+two — which no threshold detector could recover from the output. That is also
+why a period can appear twice in the list: it is two features, not a typo.
+
+**Guaranteeing a fold tests something.** Working out which periods fall in
+which fold by hand is error-prone, and the answer changes whenever `k` or
+`n_total` does. `per_fold: 1` on an event places one in every fold's test half,
+derived from the split itself:
+
+```yaml
+split: { kind: time, k: 5 }
+events:
+  storm: { per_fold: 1 }
+```
+
+With 120 monthly periods and `k: 5` that resolves to periods 30, 50, 70, 90 and
+110. Change `k` to 3 and it becomes 45, 75 and 105 — no edit needed.
 
 ### Expanding, not shuffled
 

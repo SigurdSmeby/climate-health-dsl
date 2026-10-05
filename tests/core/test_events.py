@@ -380,3 +380,81 @@ def test_events_apply_before_dependencies_read_the_parent():
     assert not np.allclose(
         run(without)["dam"].to_numpy(), run(with_event)["dam"].to_numpy()
     )
+
+
+# ------------------------------------------------- one shock per fold
+
+
+def _split_scenario(event, **overrides):
+    return make_config_dict(
+        events={"storm": event},
+        split={"kind": "time", "k": 4},
+        n_total=120,
+        period="monthly",
+        series=[
+            _flat("rain", events={"storm": {"multiplier": 3.0}}),
+            series_dict(
+                "cases", counts={}, depends_on=[{"series": "rain", "lag": 1}]
+            ),
+        ],
+        **overrides,
+    )
+
+
+def test_per_fold_puts_one_event_in_every_test_half():
+    """Guaranteeing a shock per fold by hand means computing the fold
+    boundaries yourself, and redoing it whenever k or n_total changes."""
+    from dsl.core.pipeline.engine import run as run_engine
+    from dsl.core.pipeline.folds import build_report
+
+    config = parse_config(_split_scenario({"per_fold": 1}))
+    report = build_report(config, run_engine(config))
+    for fold in report["folds"]:
+        entry = fold["test"]["events"].get("rain", {}).get("storm")
+        assert entry and entry["count"] == 1, fold["index"]
+    assert report["warnings"] == []
+
+
+def test_per_fold_adapts_when_k_changes():
+    """The whole point: the periods are derived, not written down."""
+    from dsl.core.pipeline.engine import run as run_engine
+    from dsl.core.pipeline.folds import build_report
+
+    for k in (2, 3, 5, 6):
+        data = _split_scenario({"per_fold": 1})
+        data["split"]["k"] = k
+        config = parse_config(data)
+        report = build_report(config, run_engine(config))
+        assert len(report["folds"]) == k
+        assert report["warnings"] == [], (k, report["warnings"])
+
+
+def test_per_fold_can_place_several():
+    config = parse_config(_split_scenario({"per_fold": 2}))
+    assert len(config.events["storm"].at or []) == 8  # 2 per fold, 4 folds
+
+
+def test_per_fold_needs_a_split():
+    with pytest.raises(ValidationError, match="split"):
+        parse_config(
+            make_config_dict(
+                events={"storm": {"per_fold": 1}},
+                series=[_flat("rain", events={"storm": {"multiplier": 2.0}})],
+            )
+        )
+
+
+def test_per_fold_rejects_a_location_split():
+    """A location split has no period boundaries to place a shock between."""
+    data = _split_scenario(
+        {"per_fold": 1},
+        locations={"a": {"population": 1000}, "b": {"population": 1000}},
+    )
+    data["split"] = {"kind": "location"}
+    with pytest.raises(ValidationError, match="per_fold"):
+        parse_config(data)
+
+
+def test_per_fold_excludes_rate_and_at():
+    with pytest.raises(ValidationError, match="per_fold"):
+        parse_config(_split_scenario({"per_fold": 1, "at": [3]}))
