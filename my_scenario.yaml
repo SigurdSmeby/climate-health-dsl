@@ -8,9 +8,9 @@
 # generators and transforms see docs/REFERENCE.md; for WHY the disease signal
 # is built the way it is, docs/CONCEPTS.md.
 
-period: monthly       # daily | weekly | monthly | yearly
-n_total: 60           # how many periods to generate (here: 5 years)
-seed: 42              # same scenario + same seed -> identical data, every time
+period: monthly # daily | weekly | monthly | yearly
+n_total: 60 # how many periods to generate (here: 5 years)
+seed: 42 # same scenario + same seed -> identical data, every time
 
 # A disease is counted against the people who live somewhere, so population
 # belongs to the location rather than to the disease. Add more locations to
@@ -28,22 +28,38 @@ split:
   kind: time
   k: 5
 
+# A named shock that strikes SEVERAL series in the same period — the one thing
+# a generator cannot do, since a generator only ever sees its own series.
+# `per_fold: 1` puts one in every fold's test half, worked out from the split
+# above, so the periods follow k and n_total instead of being written down.
+# (`at: [14, 47]` names exact periods instead; `rate: 0.05` fires randomly.)
+events:
+  storm: { per_fold: 3 }
+
 # Everything the scenario builds lives in this one list — climate and disease
 # alike. A series becomes a disease signal by carrying a `counts:` block.
 series:
-  - name: rainfall            # becomes a column in the output CSV
-    generate: seasonal_spike  # a sharp yearly rainy season
-    params:                   # every generator takes `params:`
-      spike_center: 7         # peak month of the wet season (1-12)
-      spike_height: 25        # how far the peak rises above baseline
-      clamp_min: 0            # rainfall can't go negative
+  - name: rainfall # becomes a column in the output CSV
+    generate: seasonal_spike # a sharp yearly rainy season
+    params: # every generator takes `params:`
+      spike_center: 7 # peak month of the wet season (1-12)
+      spike_height: 25 # how far the peak rises above baseline
+      clamp_min: 0 # rainfall can't go negative
+    events:
+      storm:
+        { multiplier: 2.5 } # 2.5x the rain that month — proportional,
+        # so it scales with whatever the level is
     # missing_rate: 0.02      # blank ~2% of periods, as a broken gauge would
 
-  - name: mean_temperature    # the conventional name (not "temperature")
+  - name: mean_temperature # the conventional name (not "temperature")
     generate: seasonal_smooth # a yearly sine wave, good for temperature
     params:
-      mean: 25                # average temperature
-      amplitude: 6            # how far it swings across the year
+      mean: 25 # average temperature
+      amplitude: 6 # how far it swings across the year
+    events:
+      storm:
+        { add: -6.0 } # six degrees cooler — absolute, so it works
+        # the same whatever the temperature was
 
   # `counts:` turns this series' values into whole case counts, drawn against
   # the location's population. Empty uses the defaults (REFERENCE lists them).
@@ -51,15 +67,15 @@ series:
     counts:
       # Empty would work too — these are the defaults, shown so you can tune
       # them. REFERENCE lists the rest.
-      median_rate: 0.1                  # where a typical period sits
-      max_rate: 0.3                     # ceiling, as a fraction of population
+      median_rate: 0.1 # where a typical period sits
+      max_rate: 0.3 # ceiling, as a fraction of population
       # distribution: negative_binomial # spikier than the default poisson
     depends_on:
       # One entry per driver. The lag is the ground truth you are planting:
       # change it, re-run, and see the disease peak move.
       - series: rainfall
-        lag: 2                # disease reacts 2 months after the rain
-        weight: 1.5           # strength relative to the other drivers
+        lag: 2 # disease reacts 2 months after the rain
+        weight: 1.5 # strength relative to the other drivers
         # Reshape a driver before it is weighted in — a threshold makes the
         # effect kick in only above 5 mm. REFERENCE lists every transform.
         # transforms: [{ name: threshold, params: { mode: hinge, threshold: 5 } }]

@@ -458,3 +458,74 @@ def test_per_fold_rejects_a_location_split():
 def test_per_fold_excludes_rate_and_at():
     with pytest.raises(ValidationError, match="per_fold"):
         parse_config(_split_scenario({"per_fold": 1, "at": [3]}))
+
+
+# ------------------------------------------------- variable effect strength
+
+
+def _strength_scenario(effect, n_total=200):
+    return make_config_dict(
+        events={"storm": {"rate": 0.3}},
+        n_total=n_total,
+        period="monthly",
+        series=[
+            _flat("rain", events={"storm": effect}),
+            series_dict(
+                "cases", counts={}, depends_on=[{"series": "rain", "lag": 1}]
+            ),
+        ],
+    )
+
+
+def test_a_fixed_multiplier_is_identical_every_time():
+    """The baseline: every storm scales by exactly the same factor, so a model
+    could memorise the constant rather than learn the mechanism."""
+    config = parse_config(_strength_scenario({"multiplier": 2.5}))
+    rain = run(config)["rain"].to_numpy()
+    struck = rain[rain > 10.0]
+    assert struck.size > 10
+    assert np.allclose(struck, 25.0)
+
+
+def test_a_multiplier_range_varies_each_event():
+    config = parse_config(
+        _strength_scenario({"multiplier": {"min": 2.0, "max": 4.0}})
+    )
+    rain = run(config)["rain"].to_numpy()
+    struck = rain[rain > 10.0]
+    assert struck.size > 10
+    assert np.unique(struck).size > 5, "every storm got the same factor"
+    # A level of 10 scaled by 2-4 lands in 20-40.
+    assert struck.min() >= 20.0 - 1e-9
+    assert struck.max() <= 40.0 + 1e-9
+
+
+def test_an_add_range_varies_each_event():
+    config = parse_config(
+        _strength_scenario({"add": {"min": -8.0, "max": -3.0}})
+    )
+    rain = run(config)["rain"].to_numpy()
+    struck = rain[rain < 10.0]
+    assert struck.size > 10
+    assert np.unique(struck).size > 5
+    assert struck.min() >= 2.0 - 1e-9  # 10 - 8
+    assert struck.max() <= 7.0 + 1e-9  # 10 - 3
+
+
+def test_a_strength_range_is_reproducible():
+    config = parse_config(
+        _strength_scenario({"multiplier": {"min": 2.0, "max": 4.0}})
+    )
+    np.testing.assert_array_equal(
+        run(config)["rain"].to_numpy(), run(config)["rain"].to_numpy()
+    )
+
+
+def test_a_range_needs_min_below_max():
+    with pytest.raises(ValidationError, match="min"):
+        parse_config(_strength_scenario({"multiplier": {"min": 4.0, "max": 2.0}}))
+
+
+def test_a_range_rejects_a_missing_bound():
+    with pytest.raises(ValidationError, match="max"):
+        parse_config(_strength_scenario({"multiplier": {"min": 2.0}}))

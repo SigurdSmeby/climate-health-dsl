@@ -184,6 +184,49 @@ class EventSpec(BaseModel):
         return rng.random(n_total) < self.rate
 
 
+class RangeSpec(BaseModel):
+    """A uniform range, drawn per event rather than fixed.
+
+    A single number means every event has exactly that strength, so a model
+    can match it by memorising the constant. A range makes each one differ,
+    which asks the harder question: did the model recover how *hard* the
+    event was, not just when it happened.
+    """
+
+    model_config = _STRICT
+
+    min: float
+    max: float
+
+    @model_validator(mode="after")
+    def _check_order(self) -> "RangeSpec":
+        """Check the range is non-empty.
+
+        Returns:
+            self, unchanged, if min < max.
+
+        Errors Caught (raised to caller):
+            ValueError: If min is not below max.
+        """
+        if self.min >= self.max:
+            raise ValueError(
+                f"min ({self.min}) must be below max ({self.max})."
+            )
+        return self
+
+    def draw(self, size: int, rng: np.random.Generator) -> np.ndarray:
+        """Draw ``size`` values uniformly from the range.
+
+        Args:
+            size: How many values to draw.
+            rng: Seeded generator, so the draws are reproducible.
+
+        Returns:
+            An array of ``size`` floats in [min, max).
+        """
+        return rng.uniform(self.min, self.max, size=size)
+
+
 class EventEffectSpec(BaseModel):
     """What an event does to one series when it fires.
 
@@ -195,8 +238,10 @@ class EventEffectSpec(BaseModel):
 
     model_config = _STRICT
 
-    multiplier: float | None = None
-    add: float | None = None
+    # A number is exact; a {min, max} range is drawn per event, so each one
+    # differs.
+    multiplier: float | RangeSpec | None = None
+    add: float | RangeSpec | None = None
 
     @model_validator(mode="after")
     def _check_effect(self) -> "EventEffectSpec":
@@ -215,21 +260,41 @@ class EventEffectSpec(BaseModel):
             )
         return self
 
-    def apply(self, values: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    def apply(
+        self,
+        values: np.ndarray,
+        mask: np.ndarray,
+        rng: "np.random.Generator | None" = None,
+    ) -> np.ndarray:
         """Apply this effect wherever the event fires.
 
         Args:
             values: The series so far.
             mask: Boolean mask of the periods the event fires in.
+            rng: Seeded generator, needed only when the effect is a range —
+                each firing then gets its own strength.
 
         Returns:
             A copy of values with the effect applied at the masked periods.
+
+        Errors Caught (raised to caller):
+            ValueError: If the effect is a range but no rng was given.
         """
         out = values.copy()
-        if self.multiplier is not None:
-            out[mask] = out[mask] * self.multiplier
+        effect = self.multiplier if self.multiplier is not None else self.add
+        if isinstance(effect, RangeSpec):
+            if rng is None:
+                raise ValueError(
+                    "a {min, max} event effect needs a random generator; "
+                    "this is an internal error, not a scenario problem."
+                )
+            strength = effect.draw(int(mask.sum()), rng)
         else:
-            out[mask] = out[mask] + self.add
+            strength = effect
+        if self.multiplier is not None:
+            out[mask] = out[mask] * strength
+        else:
+            out[mask] = out[mask] + strength
         return out
 
 

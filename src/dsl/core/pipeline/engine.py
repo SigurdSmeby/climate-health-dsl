@@ -217,7 +217,14 @@ def _build_series(
     # Before anything downstream reads this series, so a child sees the
     # post-event values and a count draw responds to the shock.
     for name, effect in spec.events.items():
-        signal = effect.apply(signal, event_masks[name])
+        # Its own stream, keyed by series and event, so a range-valued
+        # strength is reproducible and adding an event elsewhere does not
+        # shift this one's draws.
+        signal = effect.apply(
+            signal,
+            event_masks[name],
+            _child_rng(config.seed, location, "event-strength", spec.name, name),
+        )
 
     population = None
     if spec.counts is not None:
