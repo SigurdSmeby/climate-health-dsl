@@ -70,12 +70,12 @@ def test_missing_file_fails_cleanly(tmp_path, capsys):
     assert "nope.yaml" in capsys.readouterr().err
 
 
-def nan_covariate_scenario(tmp_path):
-    """A scenario whose covariate carries a NaN (a real CHAP finding).
+def nan_driver_scenario(tmp_path):
+    """A scenario whose covariate carries a NaN (a real dataset-rule finding).
 
-    A from_csv covariate reads a column containing a NaN, which the CHAP
-    check flags — CHAP requires complete covariates. Engine output is
-    otherwise always CHAP-valid, so this is how we exercise the strict path.
+    A from_csv driver reads a column containing a NaN, which the dataset
+    check flags — driver columns must be complete. Engine output is
+    otherwise always valid, so this is how we exercise the strict path.
     """
     csv = tmp_path / "real.csv"
     periods = [f"2010-{m + 1:02d}" for m in range(12)]
@@ -95,15 +95,15 @@ def nan_covariate_scenario(tmp_path):
     }
 
 
-def test_chap_finding_warns_but_succeeds(tmp_path, capsys):
-    # A CHAP-compatibility finding (here: a NaN in real covariate data) is
+def test_dataset_rule_finding_warns_but_succeeds(tmp_path, capsys):
+    # A dataset-rule finding (here: a NaN in real covariate data) is
     # advisory — it prints a warning but the run still writes output.
-    path = write_scenario(tmp_path, nan_covariate_scenario(tmp_path))
+    path = write_scenario(tmp_path, nan_driver_scenario(tmp_path))
     out = tmp_path / "out"
     code = main(["run", str(path), "-o", str(out)])
     assert code == 0
     assert (out / "simulated_data.csv").is_file()
-    assert "rainfall" in capsys.readouterr().err  # CHAP finding, as warning
+    assert "rainfall" in capsys.readouterr().err  # dataset-rule finding, as warning
 
 
 def test_relative_from_csv_path_resolves_to_scenario_dir(tmp_path, monkeypatch):
@@ -173,9 +173,9 @@ def test_generation_error_is_clean_cli_error(tmp_path, capsys):
     assert not (out / "simulated_data.csv").exists()
 
 
-def test_daily_scenario_has_no_chap_warning(tmp_path, capsys):
-    # Daily output is valid CHAP (TimePeriod.parse accepts YYYYMMDD); it must
-    # not produce a CHAP period-format warning.
+def test_daily_scenario_has_no_rule_warning(tmp_path, capsys):
+    # Daily output is a valid label format (YYYYMMDD); it must
+    # not produce a period-format warning.
     data = {
         "period": "daily",
         "n_total": 400,
@@ -439,3 +439,30 @@ def test_run_picker_applies_without_watch(tmp_path, monkeypatch):
     assert main(["run", str(scenario)]) == 0
     assert (existing / "simulated_data.csv").is_file()  # wrote into the chosen one
     assert not (tmp_path / "out" / "scenario_1").exists()  # no new folder spawned
+
+
+def test_a_generator_error_is_a_clean_message_not_a_traceback(tmp_path):
+    """Everything that can hit bad input — generation, the fold report —
+    must surface as `error:` rather than an unhandled exception."""
+    csv = tmp_path / "multi.csv"
+    pd.DataFrame(
+        {
+            "time_period": [f"2010-{m:02d}" for m in range(1, 7)] * 2,
+            "location": ["a"] * 6 + ["b"] * 6,
+            "rainfall": list(range(12)),
+        }
+    ).to_csv(csv, index=False)
+    data = {
+        "period": "monthly", "n_total": 6, "start_period": "2010-01",
+        # Output location names do NOT match the CSV's, so from_csv cannot
+        # pick a source for them.
+        "locations": {"north": {"population": 1000}},
+        "series": [
+            {"name": "rainfall", "generate": "from_csv",
+             "params": {"file": str(csv), "column": "rainfall"}},
+            {"name": "disease_cases", "counts": {},
+             "depends_on": [{"series": "rainfall", "lag": 1}]},
+        ],
+    }
+    path = write_scenario(tmp_path, data)
+    assert main(["run", str(path), "-o", str(tmp_path / "out")]) == 1
