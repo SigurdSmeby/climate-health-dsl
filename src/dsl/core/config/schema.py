@@ -693,7 +693,10 @@ class ScenarioConfig(BaseModel):
             size = base + (1 if index < extra else 0)
             test = list(range(start, start + size))
             if self.split.scheme == "blocked":
-                train = [p for p in range(self.n_total) if p not in set(test)]
+                # Built once per fold, not once per period: this runs on
+                # every folds() call, and the report calls it repeatedly.
+                held_out = set(test)
+                train = [p for p in range(self.n_total) if p not in held_out]
             else:
                 train = list(range(start))
             start += size

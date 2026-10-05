@@ -22,7 +22,7 @@ from dsl._scenario import _friendly_error, _load_and_parse
 from dsl.core.config.schema import ScenarioConfig, validate_scenario
 from dsl.core.pipeline.chap_check import validate_chap
 from dsl.core.pipeline.engine import run as run_engine
-from dsl.core.pipeline.folds import write_report
+from dsl.core.pipeline.folds import evaluation_boundary, write_report
 from dsl.core.pipeline.metadata import write_metadata
 from dsl.core.pipeline.output import write_output
 from dsl.core.pipeline.plot import plot_dataset
@@ -82,30 +82,31 @@ def _run_once(
     # source) — surface those as clean CLI errors, not a raw traceback.
     try:
         df = run_engine(config)
+
+        # CHAP-compatibility findings are advisory: print them and proceed.
+        for finding in validate_chap(df):
+            print(f"warning: {finding}", file=sys.stderr)
+
+        write_output(df, config, out_dir)
+        # What each fold actually contains, so a fold that cannot measure
+        # what the scenario planted is visible rather than silently scored
+        # well. This re-runs the generators to read what they planted, so it
+        # can hit the same input errors generation can — and under --watch an
+        # escaping exception would kill the watch loop.
+        write_report(config, df, out_dir)
+        # The ground-truth sidecar: records the resolved scenario so the
+        # dataset is self-describing and reproducible.
+        write_metadata(config, out_dir)
     except (ValueError, FileNotFoundError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-
-    # CHAP-compatibility findings are advisory: print them and proceed.
-    for finding in validate_chap(df):
-        print(f"warning: {finding}", file=sys.stderr)
-
-    write_output(df, config, out_dir)
-    # What each fold actually contains, so a fold that cannot measure what
-    # the scenario planted is visible rather than silently scored well.
-    write_report(config, df, out_dir)
-    # The ground-truth sidecar: records the resolved scenario so the dataset
-    # is self-describing and reproducible.
-    write_metadata(config, out_dir)
     print(f"Wrote {len(df)} rows to {out_dir}/")
 
     if plot:
-        # Mark where the first fold stops training, so the split a model is
-        # evaluated against is visible in the chart.
-        folds = config.folds()
-        split = len(folds[0].train_periods) if folds else None
+        # Mark where evaluation begins, so the part a model is scored on is
+        # visible in the chart.
         plot_path = out_dir / f"plot.{plot_format}"
-        plot_dataset(df, plot_path, train_split=split)
+        plot_dataset(df, plot_path, train_split=evaluation_boundary(config))
         print(f"Wrote plot to {plot_path}")
     return 0
 

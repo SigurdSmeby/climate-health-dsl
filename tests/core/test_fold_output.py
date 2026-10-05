@@ -220,3 +220,36 @@ def test_a_scenario_with_no_counts_still_writes_folds(tmp_path):
         series=[series_dict("rain", generate="flat")],
     )
     assert (out / "folds" / "fold_0" / "train.csv").is_file()
+
+
+def test_plot_marker_is_the_first_test_period_not_a_train_count(tmp_path):
+    """The marker shows where evaluation begins. A train-period COUNT only
+    coincides with that for an expanding split; for blocked it lands in the
+    wrong place, and for a location split there is no period boundary."""
+    from dsl.core.pipeline.folds import evaluation_boundary
+
+    expanding = parse_config(
+        make_config_dict(n_total=48, split={"kind": "time", "k": 4})
+    )
+    assert evaluation_boundary(expanding) == expanding.folds()[0].test_periods[0]
+
+    blocked = parse_config(
+        make_config_dict(
+            n_total=48, split={"kind": "time", "k": 4, "scheme": "blocked"}
+        )
+    )
+    # Fold 0 tests periods 0-11 while training on 12-47, so a train count
+    # (36) would put the marker nowhere near the boundary.
+    assert evaluation_boundary(blocked) == 0
+
+    location = parse_config(
+        make_config_dict(
+            n_total=24,
+            locations={"a": {"population": 1000}, "b": {"population": 1000}},
+            split={"kind": "location"},
+        )
+    )
+    # Holding a location out has no period boundary to draw.
+    assert evaluation_boundary(location) is None
+
+    assert evaluation_boundary(parse_config(make_config_dict())) is None

@@ -322,3 +322,16 @@ def test_location_split_keeps_a_training_location_in_every_fold():
         ).folds()
         assert all(f.train_locations for f in folds), (names, k)
         assert all(f.test_locations for f in folds), (names, k)
+
+
+def test_blocked_folds_are_not_quadratic():
+    """`folds()` is called repeatedly by the report, so the blocked scheme
+    must not rebuild its test-period set once per period."""
+    import time
+
+    config = parse_config(
+        _scenario({"kind": "time", "k": 10, "scheme": "blocked"}, n_total=3650)
+    )
+    start = time.perf_counter()
+    config.folds()
+    assert time.perf_counter() - start < 0.05

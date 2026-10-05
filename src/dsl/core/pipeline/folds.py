@@ -22,6 +22,31 @@ REPORT_MD = "report.md"
 REPORT_JSON = "report.json"
 
 
+def evaluation_boundary(config: ScenarioConfig) -> int | None:
+    """The period where the first fold starts being evaluated.
+
+    What a chart should mark, so a reader sees which part of the series a
+    model is scored on. Only a time split has such a period at all: holding a
+    location out divides the data sideways, with every period on both sides.
+
+    Args:
+        config: The validated scenario configuration.
+
+    Returns:
+        The first test period of fold 0, or None when the scenario has no
+        split or splits by location. Note this is NOT the size of fold 0's
+        training set — those coincide only for an expanding split, since a
+        blocked fold trains on the periods AFTER its test block.
+
+    Errors Caught (raised to caller):
+        ValueError: If the split is invalid (already rejected at parse time).
+    """
+    if config.split is None or config.split.kind != "time":
+        return None
+    folds = config.folds()
+    return folds[0].test_periods[0] if folds else None
+
+
 def build_report(config: ScenarioConfig, df: pd.DataFrame) -> dict | None:
     """Summarise every fold: size, coverage, missing values, planted features.
 
