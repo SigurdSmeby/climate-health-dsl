@@ -7,74 +7,86 @@ writing the commented starter scenario `dsl new` produces.
 import sys
 from pathlib import Path
 
-# A minimal, valid starter scenario `dsl new` writes for the user to edit.
-# Kept simpler than examples/basic_scenario.yaml (monthly, one driver) and
-# commented so the file itself teaches; it must parse and run with no warnings.
+# The starter scenario `dsl new` writes for the user to edit. Two climate
+# drivers, a counted disease and a split, so a first run produces everything
+# the tool makes — commented so the file itself teaches, with pointers to the
+# docs rather than an exhaustive menu. It must parse and run with no warnings,
+# and every commented-out block must be valid once uncommented (there is a
+# test for both).
 STARTER_TEMPLATE = """\
-# A starter scenario. Run it, open the plot, then change a value and re-run:
-#   dsl run scenario.yaml --plot --watch   (re-runs every time you save)
-# Lines starting with '#' are comments. Uncomment the blocks below to try more.
+# A starter scenario: two climate series driving a disease, split into folds
+# for evaluation. Everything here is live — run it, read the plot, then change
+# one value and run again.
+#
+#   dsl run scenario.yaml --plot --watch     (re-runs on every save)
+#
+# The comments explain each field as you read. For the full list of fields,
+# generators and transforms see docs/REFERENCE.md; for WHY the disease signal
+# is built the way it is, docs/CONCEPTS.md.
 
 period: monthly       # daily | weekly | monthly | yearly
-n_total: 36           # how many periods to generate (here: 3 years)
-seed: 42              # same seed -> identical data every run
+n_total: 60           # how many periods to generate (here: 5 years)
+seed: 42              # same scenario + same seed -> identical data, every time
 
-locations:            # a count series draws against where it happens, so
-  loc:                #   population belongs to the place, not the disease
+# A disease is counted against the people who live somewhere, so population
+# belongs to the location rather than to the disease. Add more locations to
+# stack several places in one dataset; each draws its own climate.
+locations:
+  loc:
     population: 100000
-  # north:            # add locations to stack several series in one dataset
-  #   population: 300000
+  # north: { population: 300000 }
 
+# Divide the data for evaluation. `expanding` trains each fold only on the
+# periods BEFORE its test block, which is what judging a forecaster requires.
+# Writes folds/fold_N/{train,test}.csv plus a report of what each fold holds.
+# (`kind: location` holds whole places out instead — see REFERENCE.)
+split:
+  kind: time
+  k: 5
+
+# Everything the scenario builds lives in this one list — climate and disease
+# alike. A series becomes a disease signal by carrying a `counts:` block.
 series:
   - name: rainfall            # becomes a column in the output CSV
-    generate: seasonal_spike  # a yearly rainy-season bump
-    params:                   # every generator takes `params:` -- tune its shape
-      spike_center: 7         # peak month of the rainy season (1-12)
-      spike_height: 25        # how tall the wet-season peak is above baseline
+    generate: seasonal_spike  # a sharp yearly rainy season
+    params:                   # every generator takes `params:`
+      spike_center: 7         # peak month of the wet season (1-12)
+      spike_height: 25        # how far the peak rises above baseline
       clamp_min: 0            # rainfall can't go negative
     # missing_rate: 0.02      # blank ~2% of periods, as a broken gauge would
 
-  # A second climate series -- uncomment to add it (no code needed, just YAML).
-  # 'seasonal_smooth' is a yearly sine wave, good for temperature.
-  # - name: mean_temperature      # the conventional name (not "temperature")
-  #   generate: seasonal_smooth
-  #   params:
-  #     mean: 25                  # average temperature
-  #     amplitude: 6              # how far it swings above/below across the year
+  - name: mean_temperature    # the conventional name (not "temperature")
+    generate: seasonal_smooth # a yearly sine wave, good for temperature
+    params:
+      mean: 25                # average temperature
+      amplitude: 6            # how far it swings across the year
 
-  # A series built from another series: rain fills it, and it drains slowly.
-  # With no `generate:` its base is flat, so its parents give it all its shape.
-  # - name: soil_moisture
-  #   autoregressive: { phi: 0.85 }   # 85% carries over to the next period
-  #   depends_on:
-  #     - { series: rainfall, lag: 1, weight: 1.0 }
-
-  # A non-seasonal "decoy" the disease does NOT depend on -- a control to check
-  # a model doesn't latch onto an irrelevant series. 'flat' is constant+noise.
-  # - name: humidity
-  #   generate: flat
-  #   params:
-  #     level: 80
-  #     noise: 5
-
-  # A `counts:` block turns a series into a disease signal: its float values
-  # become whole case counts, drawn against the population.
+  # `counts:` turns this series' values into whole case counts, drawn against
+  # the location's population. Empty uses the defaults (REFERENCE lists them).
   - name: disease_cases
-    counts: {}        # empty is fine: the defaults suit most scenarios
-      # max_rate: 0.3                     # ceiling, as a fraction of population
-      # median_rate: 0.1                  # where a typical period sits
-      # distribution: negative_binomial   # spikier than the default poisson
+    counts:
+      # Empty would work too — these are the defaults, shown so you can tune
+      # them. REFERENCE lists the rest.
+      median_rate: 0.1                  # where a typical period sits
+      max_rate: 0.3                     # ceiling, as a fraction of population
+      # distribution: negative_binomial # spikier than the default poisson
     depends_on:
+      # One entry per driver. The lag is the ground truth you are planting:
+      # change it, re-run, and see the disease peak move.
       - series: rainfall
-        lag: 2          # disease reacts 2 months after rainfall -- change and re-run
-        weight: 1.0     # strength of this driver relative to the others
-        # transforms:   # reshape this driver (nonlinear / distributed-lag effects):
-        #   - { name: threshold, params: { mode: hinge, threshold: 5 } }
-        #   - { name: distributed_lag, params: { weights: [0.5, 0.3, 0.2] } }
-      # Add a driver for each extra series you enable above:
-      # - series: mean_temperature
-      #   lag: 1
-      #   weight: 0.5
+        lag: 2                # disease reacts 2 months after the rain
+        weight: 1.5           # strength relative to the other drivers
+        # Reshape a driver before it is weighted in — a threshold makes the
+        # effect kick in only above 5 mm. REFERENCE lists every transform.
+        # transforms: [{ name: threshold, params: { mode: hinge, threshold: 5 } }]
+      - series: mean_temperature
+        lag: 1
+        weight: 1.0
+
+  # Series can also drive each other. Drop the `#` to add a moisture store that
+  # rain fills and heat drains, then point disease_cases at it instead — the
+  # chain rain -> soil_moisture -> disease becomes its own column.
+  # - { name: soil_moisture, autoregressive: { phi: 0.85 }, depends_on: [{ series: rainfall, lag: 1, weight: 1.0 }, { series: mean_temperature, lag: 1, weight: -0.4 }] }
 """
 
 
