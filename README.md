@@ -8,8 +8,7 @@ exactly that. So when a forecasting model claims to have found a two-month
 rainfall lag, you can check it against the lag you planted, rather than against
 an unknown real-world one.
 
-Output is plain CSV in long format, so anything that reads a CSV can use it
-(including [CHAP](https://chap.dhis2.org/)).
+Output is plain CSV in long format, so anything that reads a CSV can use it.
 
 ## Install
 
