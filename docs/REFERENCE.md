@@ -135,7 +135,9 @@ carries a `counts:` block.
 | `transforms` | `[]` | [Transforms](#transforms) applied after the lag, before standardizing. |
 
 **A parent may appear more than once**, at different lags — one entry per lag,
-each with its own weight. The warm-up takes the longest of them.
+each with its own weight. The warm-up runs as far as the longest lag that
+carries a non-zero weight; a `weight: 0` entry is skipped entirely, so it
+neither contributes nor blanks rows.
 
 ```yaml
 depends_on:

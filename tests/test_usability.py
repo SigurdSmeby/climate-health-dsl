@@ -122,29 +122,50 @@ def test_cross_field_errors_drop_pydantic_boilerplate(tmp_path, capsys):
     assert "need a population" in err
 
 
-def _uncomment_starter() -> str:
-    """Enable every commented option in the starter, as a reader would.
+def _option_lines() -> list[int]:
+    """Indices of the starter's switchable option lines.
 
-    Deletes the single "#" and nothing else — exactly what the tutorial
-    tells the reader to do.
+    An option is a comment line that is valid YAML once the "#" is gone:
+    a key or a list item, at the indent its parent expects. Prose comments
+    are sentences and fail that test, so the two are told apart by what
+    the line would become rather than by guessing at its text.
 
     Returns:
-        The starter text with its option lines enabled.
+        Line indices into STARTER_TEMPLATE.splitlines(), in file order.
     """
     import re
 
     from dsl._output import STARTER_TEMPLATE
 
-    # An option line is a comment whose body opens a YAML key or list item.
-    # The "#" sits immediately before the body's own indent, so deleting it
-    # leaves the line correctly placed; the prose comments around them have
-    # a space after the "#" and start with a capital. Top-level options
-    # count: uncommenting a series' `events:` without the `events:` block it
-    # refers to is exactly the kind of trap this catches.
-    option = re.compile(r"^#( *)([a-z_]+:|[-{])")
+    # A YAML key or list item, lowercase — prose starts with a capital and
+    # reads as a sentence. A bare "#" is a paragraph break, not a switch.
+    body = re.compile(r"^# *(?:[a-z_][\w.]*:|- |\{)")
+    return [
+        i
+        for i, line in enumerate(STARTER_TEMPLATE.splitlines())
+        if body.match(line)
+    ]
+
+
+def _uncomment_starter(only: "list[int] | None" = None) -> str:
+    """Enable the starter's options, as a reader would.
+
+    Deletes the single "#" and nothing else — exactly what the tutorial
+    tells the reader to do.
+
+    Args:
+        only: Enable just these line indices, leaving the rest commented.
+            None (the default) enables all of them.
+
+    Returns:
+        The starter text with its option lines enabled.
+    """
+    from dsl._output import STARTER_TEMPLATE
+
+    wanted = _option_lines() if only is None else list(only)
     lines = [
-        line[1:] if option.match(line) else line
-        for line in STARTER_TEMPLATE.splitlines()
+        line[1:] if i in wanted else line
+        for i, line in enumerate(STARTER_TEMPLATE.splitlines())
     ]
     return "\n".join(lines)
 
@@ -165,35 +186,88 @@ def test_every_commented_option_in_the_starter_works_uncommented():
     assert "soil_moisture" in df.columns
 
 
-def test_deleting_the_hash_is_the_whole_procedure():
-    """One character is all the tutorial asks for, and all that is needed.
+def test_the_starter_marks_its_options_unambiguously():
+    """Every option is a "#" against the body; every "# " line is prose.
 
-    Each option is checked on its own: enabling it must leave its body at
-    the indent its parent expects. A marker written "# key:" would put the
-    body one column too far right, which under an indented parent is a YAML
-    error the reader has to diagnose themselves.
+    The convention is what lets a reader delete one character anywhere in
+    the file, so a line that breaks it would make the rule a half-truth.
     """
     import re
 
+    from dsl._output import STARTER_TEMPLATE
+
+    # Prose wraps to several lines and reads as a sentence; an option is a
+    # YAML key or list item. A prose line that happens to start with a
+    # lowercase key would be enabled by the rule and break the file.
+    prose_as_option = [
+        line
+        for i, line in enumerate(STARTER_TEMPLATE.splitlines())
+        if i in _option_lines() and not re.match(r"^# *([a-z_]+:|- |\{)", line)
+    ]
+    assert not prose_as_option, (
+        "these are marked as options but are not YAML:\n"
+        + "\n".join(prose_as_option)
+    )
+    assert _option_lines(), "the starter offers no options at all"
+
+
+# Options that only make sense together: a series can react to `storm`
+# only once `storm` itself is declared, so the starter's own comment tells
+# the reader to enable all three. Each other option stands alone.
+_GROUPED = ("events:",)
+
+
+def test_each_standalone_option_works_by_itself():
+    """Enabling one option must leave a scenario that actually runs.
+
+    The check goes through the schema, not just the YAML parser: an option
+    that parses but fails validation would hand the reader an error the
+    tutorial never warned them about. Options the starter groups are
+    enabled together, as its comment instructs.
+    """
+    import yaml
+    from pydantic import ValidationError
+
+    from dsl._output import STARTER_TEMPLATE
+    from dsl.core.config.schema import parse_config
+
+    lines = STARTER_TEMPLATE.splitlines()
+    grouped = [i for i in _option_lines() if any(g in lines[i] for g in _GROUPED)]
+    broken = []
+    for i in _option_lines():
+        # A grouped option brings its whole group; a standalone one is alone.
+        enable = grouped if i in grouped else [i]
+        try:
+            parse_config(yaml.safe_load(_uncomment_starter(only=enable)))
+        except (ValidationError, ValueError, yaml.YAMLError) as exc:
+            broken.append(f"{lines[i]}\n    -> {type(exc).__name__}: {exc}")
+    assert not broken, (
+        "deleting the '#' left these options unusable:\n" + "\n".join(broken)
+    )
+
+
+def test_grouped_options_are_the_ones_the_starter_says_to_group():
+    """The file must warn about every option that cannot stand alone.
+
+    Otherwise "delete the #" is a half-truth exactly where a reader would
+    be caught by it.
+    """
     import yaml
 
     from dsl._output import STARTER_TEMPLATE
+    from dsl.core.config.schema import parse_config
 
-    option = re.compile(r"^#( *)([a-z_]+:|[-{])")
     lines = STARTER_TEMPLATE.splitlines()
-    broken = []
-    for i, line in enumerate(lines):
-        if not option.match(line):
+    for i in _option_lines():
+        if any(g in lines[i] for g in _GROUPED):
             continue
-        attempt = lines.copy()
-        attempt[i] = line[1:]  # delete exactly the "#"
-        try:
-            yaml.safe_load("\n".join(attempt))
-        except yaml.YAMLError as exc:
-            broken.append(f"{line}\n    -> {type(exc).__name__}")
-    assert not broken, (
-        "deleting the '#' alone left these options misplaced:\n"
-        + "\n".join(broken)
+        # Every ungrouped option must genuinely work on its own.
+        parse_config(yaml.safe_load(_uncomment_starter(only=[i])))
+
+    # And the grouped ones must be announced in the prose above them.
+    prose = "\n".join(lines)
+    assert "Uncomment this AND" in prose, (
+        "an option needs its group, but the starter does not say so"
     )
 
 
@@ -207,22 +281,50 @@ def test_the_starter_threshold_actually_bites():
     import numpy as np
     import yaml
 
+    from dsl._output import STARTER_TEMPLATE
     from dsl.core.config.schema import parse_config
     from dsl.core.pipeline.engine import run
 
+    # Compare the two configs the reader actually has: every option on,
+    # versus every option on except the transforms line. Identifying that
+    # line by index rather than by its text keeps the comparison honest if
+    # the line is reflowed or the word appears in a comment.
+    lines = STARTER_TEMPLATE.splitlines()
+    transform_line = [
+        i for i in _option_lines() if lines[i].lstrip("# ").startswith("transforms:")
+    ]
+    assert len(transform_line) == 1, "expected exactly one transforms option"
+    others = [i for i in _option_lines() if i not in transform_line]
+
     enabled = parse_config(yaml.safe_load(_uncomment_starter()))
-    without = parse_config(
-        yaml.safe_load(
-            "\n".join(
-                line
-                for line in _uncomment_starter().splitlines()
-                if "transforms:" not in line
-            )
-        )
-    )
+    without = parse_config(yaml.safe_load(_uncomment_starter(only=others)))
+    assert without.series != enabled.series, "the two configs are the same"
+
     a = run(without)["disease_cases"].to_numpy()
     b = run(enabled)["disease_cases"].to_numpy()
     assert not np.allclose(a, b, equal_nan=True), (
         "the starter's threshold sits outside the rainfall range, so "
         "enabling it changes nothing"
+    )
+
+
+def test_the_tutorial_shows_the_starter_s_own_transforms_line():
+    """A reader compares the two side by side, so they must match.
+
+    Showing a block-style list against the starter's flow-style line
+    invites retyping it at the wrong indent.
+    """
+    import pathlib
+
+    from dsl._output import STARTER_TEMPLATE
+
+    lines = STARTER_TEMPLATE.splitlines()
+    starter = next(
+        lines[i].lstrip("# ")
+        for i in _option_lines()
+        if lines[i].lstrip("# ").startswith("transforms:")
+    )
+    tutorial = pathlib.Path("docs/TUTORIAL.md").read_text()
+    assert starter in tutorial, (
+        f"the tutorial does not show the starter's line:\n  {starter}"
     )

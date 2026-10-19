@@ -55,7 +55,8 @@ both with a `location` column.
 
 Every commented option in the file works this way: **delete the `#` and
 nothing else.** The indentation after it is already the indentation the line
-needs.
+needs. Two options say in the file that they come as a set — an event and the
+series that react to it — and the comment above them tells you which.
 
 ## 5. The series list
 
@@ -166,8 +167,7 @@ the `#` from the `transforms:` line under `depends_on`:
       - series: rainfall
         lag: 2
         weight: 1.5
-        transforms:
-          - { name: threshold, params: { mode: hinge, threshold: 20 } }
+        transforms: [{ name: threshold, params: { mode: hinge, threshold: 20 } }]
 ```
 
 `hinge` passes only what exceeds 20 mm, so the disease reacts to heavy rain

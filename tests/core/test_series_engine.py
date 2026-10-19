@@ -403,3 +403,41 @@ def test_unknown_generator_names_the_series():
     data = make_config_dict(series=[series_dict("rain", generate="nope")])
     with pytest.raises(KeyError, match="nope"):
         run(parse_config(data))
+
+
+def test_repeated_parent_at_several_lags_warms_up_for_the_longest():
+    """A parent may appear once per lag; the documented warm-up is the max."""
+    data = make_config_dict(
+        series=[
+            series_dict("rain", generate="seasonal_spike"),
+            series_dict(
+                "dam",
+                depends_on=[
+                    {"series": "rain", "lag": 1, "weight": 0.6},
+                    {"series": "rain", "lag": 3, "weight": 0.4},
+                ],
+            ),
+        ]
+    )
+    dam = run(parse_config(data))["dam"].to_numpy()
+    assert np.isnan(dam[:3]).all()
+    assert not np.isnan(dam[3:]).any()
+
+
+def test_a_zero_weight_entry_does_not_extend_the_warm_up():
+    """A skipped parent blanks nothing: it has no influence to delay."""
+    data = make_config_dict(
+        series=[
+            series_dict("rain", generate="seasonal_spike"),
+            series_dict(
+                "dam",
+                depends_on=[
+                    {"series": "rain", "lag": 1, "weight": 1.0},
+                    {"series": "rain", "lag": 3, "weight": 0.0},
+                ],
+            ),
+        ]
+    )
+    dam = run(parse_config(data))["dam"].to_numpy()
+    assert np.isnan(dam[:1]).all()
+    assert not np.isnan(dam[1:]).any()
