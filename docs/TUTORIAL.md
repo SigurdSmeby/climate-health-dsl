@@ -69,6 +69,8 @@ Everything the scenario builds lives in this one list — climate and disease
 alike. Each entry names a column in the output. `generate:` picks a shape from
 the [generators](REFERENCE.md#generators), and `params:` tunes it.
 
+`spike_center: 7` is July — month numbers, counting from 1.
+
 **Try it:** change `spike_center` to `1` and save. The wet season moves to
 January, and the disease peak follows it.
 

@@ -298,24 +298,24 @@ def _series_generator(config: ScenarioConfig, spec: SeriesSpec, location: str):
             can't be matched to this output location.
     """
     params = dict(spec.params)
-    if spec.generate == "from_csv":
+    if spec.generate in _CALENDAR_AWARE:
         _inject_start_period(params, config.start_period)
-        # With no source_location and a multi-location CSV, give THIS output
-        # location its own matching rows.
-        if "source_location" not in params:
-            csv_locations = get_generator("from_csv").locations_in(
-                params.get("file", "")
-            )
-            if len(csv_locations) > 1:
-                if location not in csv_locations:
-                    raise ValueError(
-                        f"from_csv: series '{spec.name}' has no "
-                        f"source_location and output location '{location}' "
-                        f"is not in {params.get('file')} (available: "
-                        f"{csv_locations}); set source_location or rename "
-                        f"the location to match."
-                    )
-                params["source_location"] = location
+    # With no source_location and a multi-location CSV, give THIS output
+    # location its own matching rows.
+    if spec.generate == "from_csv" and "source_location" not in params:
+        csv_locations = get_generator("from_csv").locations_in(
+            params.get("file", "")
+        )
+        if len(csv_locations) > 1:
+            if location not in csv_locations:
+                raise ValueError(
+                    f"from_csv: series '{spec.name}' has no "
+                    f"source_location and output location '{location}' "
+                    f"is not in {params.get('file')} (available: "
+                    f"{csv_locations}); set source_location or rename "
+                    f"the location to match."
+                )
+            params["source_location"] = location
     return _build_generator(spec.generate, params, spec.name)
 
 
@@ -354,7 +354,7 @@ def _resolve_population(
         return np.full(n_periods, source, dtype=int)
 
     params = dict(source.params)
-    if source.generate == "from_csv":
+    if source.generate in _CALENDAR_AWARE:
         _inject_start_period(params, start_period)
     headcount = _build_generator(source.generate, params).generate(
         n_periods, period, rng
@@ -418,11 +418,17 @@ def _build_generator(name: str, params: dict, series: str | None = None):
         ) from exc
 
 
+# Generators whose output depends on where the scenario starts in the year:
+# a CSV source has to be read from the right row, and a seasonal shape has to
+# be positioned against the calendar rather than against row 0.
+_CALENDAR_AWARE = ("from_csv", "seasonal_spike")
+
+
 def _inject_start_period(params: dict, start_period: "str | None") -> None:
-    """Align a from_csv source to the scenario calendar, unless it set its own.
+    """Align a generator to the scenario calendar, unless it set its own.
 
     Args:
-        params: The from_csv generator's params dict (mutated in place).
+        params: The generator's params dict (mutated in place).
         start_period: The scenario's start_period, or None.
     """
     if start_period is not None and "start_period" not in params:

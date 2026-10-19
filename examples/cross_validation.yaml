@@ -46,7 +46,7 @@ events:
 series:
   - name: rainfall
     generate: seasonal_spike
-    params: { spike_center: 6, spike_height: 30, clamp_min: 0 }
+    params: { spike_center: 7, spike_height: 30, clamp_min: 0 }
     events:
       # A range, drawn per storm, so they are not all equally hard — a fixed
       # 2.5 would let a model match the data by memorising the constant.

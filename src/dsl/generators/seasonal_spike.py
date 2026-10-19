@@ -7,7 +7,7 @@ and repeats every year. Used for variables like rainfall.
 import numpy as np
 
 from dsl.core.extension.generator_base import VariableGenerator, register_generator
-from dsl.core.pipeline.periods import periods_per_year
+from dsl.core.pipeline.periods import parse_period, periods_per_year
 
 
 @register_generator("seasonal_spike")  # this string is what you write in YAML
@@ -29,40 +29,54 @@ class SeasonalSpikeGenerator(VariableGenerator):
         spike_width: float = 4.0,
         noise: float = 0.5,
         clamp_min: float | None = None,
+        start_period: str | None = None,
     ):
         """Store the YAML params: for this variable.
 
         Args:
             baseline: The value far from the spike (the dry-season level).
             spike_height: How far above baseline the peak rises.
-            spike_center: The period offset of the peak within the yearly
-                cycle (e.g. 26 for mid-year in weekly data, 6 for July in
-                monthly data). Values beyond one cycle wrap (24 on monthly
-                data == month 0). The default (None) is mid-year at any
-                resolution — 26 for weekly, 6 for monthly — so a monthly
-                series peaks correctly without tuning.
+            spike_center: Which period of the year the peak sits in,
+                counting from 1 — so 7 is July on monthly data and week 26
+                is mid-year on weekly data. Values past the end of the cycle
+                wrap (25 on monthly data is month 1). The default (None) is
+                mid-year at any resolution, so a series peaks sensibly
+                without tuning.
             spike_width: The standard deviation of the Gaussian bump, in
                 periods. Bigger means a broader rainy season.
             noise: Standard deviation of additive Gaussian noise.
             clamp_min: If set, floors the result at this minimum — e.g. 0
                 for rainfall, which can't be negative.
+            start_period: The scenario's first period label. The cycle is
+                counted from the calendar year, so a July peak stays in July
+                however far into a year the series starts.
 
         Errors Caught (raised to caller):
-            ValueError: If spike_width <= 0 or noise < 0.
+            ValueError: If spike_width <= 0, noise < 0, or spike_center < 1.
         """
         if spike_width <= 0:
             raise ValueError(f"spike_width must be > 0, got {spike_width}")
         if noise < 0:
             raise ValueError(f"noise must be >= 0, got {noise}")
+        if spike_center is not None and spike_center < 1:
+            # Counting from 1 means there is no period 0; a 0 here is a typo,
+            # and silently reading it as the last period of the year would
+            # put the season half a year from where it was asked for.
+            raise ValueError(
+                f"spike_center counts from 1 (1 is the year's first period, "
+                f"so 7 is July on monthly data), got {spike_center}"
+            )
         self.baseline = baseline
         self.spike_height = spike_height
         self.spike_center = spike_center
         self.spike_width = spike_width
         self.noise = noise
         self.clamp_min = clamp_min
+        self.start_period = start_period
         # Set by generate(); events() needs the span it was asked for.
         self._n_periods: int | None = None
         self._ppy: int | None = None
+        self._period: str | None = None
 
     def generate(
         self, n_periods: int, period: str, rng: np.random.Generator
@@ -87,11 +101,13 @@ class SeasonalSpikeGenerator(VariableGenerator):
         # Remembered so events() can report where the peaks landed.
         self._n_periods = n_periods
         self._ppy = ppy
+        self._period = period
+        # Where in the year the series starts, so position is counted from
+        # the calendar rather than from row 0.
+        offset = self._start_offset(period, ppy)
         # Position within the current year, so the spike repeats annually.
-        pos = t % ppy
-        # The peak's position within the year. None → mid-year (works at any
-        # resolution); an explicit value beyond one cycle wraps via % ppy.
-        center = (ppy // 2 if self.spike_center is None else self.spike_center) % ppy
+        pos = (t + offset) % ppy
+        center = self._center(ppy)
         # Circular distance to the spike center: week 51 is only 2 weeks
         # away from a week-1 peak, not 50, because the seasons wrap around.
         raw = np.abs(pos - center)
@@ -121,14 +137,50 @@ class SeasonalSpikeGenerator(VariableGenerator):
         """
         if self._n_periods is None:
             return []
-        center = (
-            self._ppy // 2 if self.spike_center is None else self.spike_center
-        ) % self._ppy
+        # The first peak is however far the centre is ahead of the opening
+        # row, then one per year. Sharing _center with generate() is what
+        # keeps the reported periods and the data's peaks the same.
+        first = (self._center(self._ppy) - self._start_offset(
+            self._period, self._ppy
+        )) % self._ppy
         return [
             {
                 "kind": "seasonal_spike",
                 "index": int(index),
                 "magnitude": float(self.spike_height),
             }
-            for index in range(center, self._n_periods, self._ppy)
+            for index in range(first, self._n_periods, self._ppy)
         ]
+
+    def _center(self, ppy: int) -> int:
+        """The peak's 0-based position in the yearly cycle.
+
+        Args:
+            ppy: Periods in one year at this resolution.
+
+        Returns:
+            An index in [0, ppy). spike_center counts from 1, so it is
+            shifted down by one; None means mid-year.
+            Example: 6 for spike_center=7 on monthly data (July).
+        """
+        if self.spike_center is None:
+            return ppy // 2
+        return (self.spike_center - 1) % ppy
+
+    def _start_offset(self, period: str, ppy: int) -> int:
+        """How far into the year the first row sits.
+
+        Without it the cycle would be counted from row 0, so a series
+        starting in July would put its "July" peak in February.
+
+        Args:
+            period: The resolution, for reading the label.
+            ppy: Periods in one year at this resolution.
+
+        Returns:
+            The opening row's 0-based position within its year, or 0 when no
+            start_period is set. Example: 6 for "2000-07" on monthly data.
+        """
+        if self.start_period is None:
+            return 0
+        return parse_period(self.start_period, period)[1] % ppy
