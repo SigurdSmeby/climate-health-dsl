@@ -6,6 +6,8 @@ gaps — so a plain climate column and a disease signal are built the same way.
 What happens *after* is what differs: a plain series is written as-is, a count
 series goes on through the incidence model in ``disease.py``.
 """
+import inspect
+
 import numpy as np
 
 from dsl.core.extension.transform_base import get_transform
@@ -46,7 +48,9 @@ def build_signal(
             continue
         values = LagTransform(n=dep.lag).apply(parents[dep.series], rng)
         for tf in dep.transforms:
-            values = get_transform(tf.name)(**tf.params).apply(values, rng)
+            values = _build_transform(tf.name, tf.params, spec.name).apply(
+                values, rng
+            )
         signal = signal + dep.weight * _standardize(values)
 
     if spec.autoregressive is not None:
@@ -55,6 +59,49 @@ def build_signal(
         )
 
     return signal
+
+
+def _build_transform(name: str, params: dict, series: str):
+    """Instantiate a transform, naming the series when its params are wrong.
+
+    Mirrors ``engine._build_generator``: an unusable param otherwise escapes
+    as a bare TypeError or ValueError from the constructor, which no caller
+    catches — so it ends a ``--watch`` session with a traceback, and even
+    when caught it names neither the series nor the transform.
+
+    Only a signature mismatch is reported as an unexpected param. A
+    TypeError raised from inside the constructor body is a different fault,
+    and calling it a bad param would send the reader looking in the wrong
+    place, so it keeps its own wording.
+
+    Args:
+        name: The transform's registered name (e.g. "threshold").
+        params: Keyword params for its constructor.
+        series: The series whose dependency carries this transform.
+
+    Returns:
+        The instantiated transform, ready for .apply(...).
+
+    Errors Caught (raised to caller):
+        ValueError: If the params do not fit the transform, or the transform
+            itself rejects them.
+    """
+    transform = get_transform(name)
+    try:
+        signature = inspect.signature(transform)
+        signature.bind(**params)
+    except TypeError as exc:
+        raise ValueError(
+            f"series '{series}': transform '{name}' got an invalid param "
+            f"({exc})."
+        ) from exc
+    try:
+        return transform(**params)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"series '{series}': transform '{name}' rejected its params "
+            f"({exc})."
+        ) from exc
 
 
 def apply_missing(

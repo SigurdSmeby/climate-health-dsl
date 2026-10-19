@@ -386,6 +386,50 @@ class TransformSpec(BaseModel):
     name: str = Field(min_length=1)
     params: dict = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def _check_period_counts(self) -> "TransformSpec":
+        """Check the lag transforms' period counts are usable.
+
+        Scoped to the transforms whose params this module already reads by
+        name in ``_transform_lag``; `n` and `weights` mean something
+        specific there, and nothing is assumed about what they mean to a
+        transform registered elsewhere.
+
+        A float `n` otherwise reaches numpy as a slice index and fails with
+        "slice indices must be integers" — true, but naming neither the
+        transform nor the scenario. Booleans are ints in Python, so
+        `n: true` would silently mean 1, and a non-sized `weights` raises
+        TypeError from inside this validator, which pydantic does not turn
+        into a ValidationError.
+
+        Returns:
+            self, unchanged, if the params are usable.
+
+        Errors Caught (raised to caller):
+            ValueError: If a period count is not a non-negative whole
+                number, or `weights` is not a list.
+        """
+        if self.name == "lag" and "n" in self.params:
+            n = self.params["n"]
+            if isinstance(n, bool) or not isinstance(n, int):
+                raise ValueError(
+                    f"transform '{self.name}' needs 'n' to be a whole number "
+                    f"of periods, got {n!r}."
+                )
+            if n < 0:
+                raise ValueError(
+                    f"transform '{self.name}' needs 'n' to be 0 or more, "
+                    f"got {n}."
+                )
+        if self.name == "distributed_lag" and self.params.get("weights") is not None:
+            weights = self.params["weights"]
+            if not isinstance(weights, (list, tuple)):
+                raise ValueError(
+                    f"transform '{self.name}' needs 'weights' to be a list "
+                    f"of numbers, got {weights!r}."
+                )
+        return self
+
 
 class DependencySpec(BaseModel):
     """One entry under ``depends_on:`` — a parent of this series.
@@ -1097,7 +1141,16 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
 
     # If the largest lag covers the whole training split, every training
     # target is warm-up NaN — nothing to learn from.
-    deps = [dep for spec in config.series for dep in spec.depends_on]
+    # Weight 0 is skipped outright when the signal is built, so such a
+    # parent blanks nothing and must not count towards the warm-up —
+    # otherwise a decoy with a long lag warns about folds it cannot
+    # affect.
+    deps = [
+        dep
+        for spec in config.series
+        for dep in spec.depends_on
+        if dep.weight != 0
+    ]
     max_lag = max(
         (d.lag + _transform_lag(d.transforms) for d in deps), default=0
     )

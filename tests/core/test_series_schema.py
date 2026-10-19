@@ -560,3 +560,211 @@ def test_no_phase_warning_when_the_year_starts_at_the_cycle_start():
     assert not any(
         "phase" in w for w in _warnings_for("seasonal_smooth", start="2000-01")
     )
+
+
+# ------------------------------------------------- rough edges on bad input
+
+def test_a_transform_param_typo_names_the_series_and_transform():
+    """A typo otherwise escapes as a raw TypeError from the constructor,
+    which no caller catches — so it ends a --watch session with a traceback
+    instead of a message. The generator path already translated it."""
+    from dsl.core.pipeline.engine import run
+
+    config = parse_config(
+        make_config_dict(
+            series=[
+                series_dict("rain", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "cases",
+                    counts={},
+                    depends_on=[
+                        {
+                            "series": "rain",
+                            "lag": 1,
+                            "transforms": [
+                                {
+                                    "name": "threshold",
+                                    "params": {"mode": "hinge", "bogus": 5},
+                                }
+                            ],
+                        }
+                    ],
+                ),
+            ]
+        )
+    )
+    with pytest.raises(ValueError, match="transform 'threshold' got an invalid param"):
+        run(config)
+
+
+@pytest.mark.parametrize("bad", [2.7, True, -5])
+def test_a_period_count_must_be_a_whole_number_of_periods(bad):
+    """`n: 2.7` reached numpy as a slice index and failed there with
+    "slice indices must be integers" — true, but naming neither the
+    transform nor the scenario. `True` is an int in Python, so it would
+    silently have meant 1."""
+    with pytest.raises(ValidationError, match="'n'"):
+        parse_config(
+            make_config_dict(
+                series=[
+                    series_dict("rain", generate="flat", params={"level": 5.0}),
+                    series_dict(
+                        "cases",
+                        counts={},
+                        depends_on=[
+                            {
+                                "series": "rain",
+                                "lag": 1,
+                                "transforms": [{"name": "lag", "params": {"n": bad}}],
+                            }
+                        ],
+                    ),
+                ]
+            )
+        )
+
+
+def test_a_whole_number_period_count_is_still_accepted():
+    """The guard must not reject the ordinary case."""
+    parse_config(
+        make_config_dict(
+            series=[
+                series_dict("rain", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "cases",
+                    counts={},
+                    depends_on=[
+                        {
+                            "series": "rain",
+                            "lag": 1,
+                            "transforms": [{"name": "lag", "params": {"n": 2}}],
+                        }
+                    ],
+                ),
+            ]
+        )
+    )
+
+
+def test_a_weight_zero_parent_does_not_count_towards_the_warm_up():
+    """build_signal skips a weight-0 parent outright, so it blanks nothing.
+    Counting its lag made a decoy warn about folds it cannot affect."""
+    import numpy as np
+
+    from dsl.core.config.schema import validate_scenario
+    from dsl.core.pipeline.engine import run
+
+    def built(weight):
+        return make_config_dict(
+            n_total=40,
+            period="monthly",
+            split={"kind": "time", "k": 4},
+            series=[
+                series_dict("rain", generate="flat", params={"level": 5.0}),
+                series_dict("decoy", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "cases",
+                    counts={},
+                    depends_on=[
+                        {"series": "rain", "lag": 1, "weight": 1.0},
+                        {"series": "decoy", "lag": 30, "weight": weight},
+                    ],
+                ),
+            ],
+        )
+
+    config = parse_config(built(0))
+    assert not [w for w in validate_scenario(config) if "max dependency lag" in w]
+    # And the warning was wrong on the facts, not merely noisy.
+    cases = run(config)["cases"].to_numpy()
+    assert int(np.isnan(cases).argmin()) == 1, "only the weight-1 lag blanks rows"
+
+    # A real weight must still warn.
+    assert [
+        w
+        for w in validate_scenario(parse_config(built(0.5)))
+        if "max dependency lag" in w
+    ]
+
+
+def test_a_transform_that_rejects_its_params_still_names_the_series():
+    """A ValueError from the constructor body escaped unnamed, which is the
+    failure the wrapper exists to prevent — the message said what was wrong
+    but not where."""
+    from dsl.core.pipeline.engine import run
+
+    config = parse_config(
+        make_config_dict(
+            series=[
+                series_dict("rain", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "cases",
+                    counts={},
+                    depends_on=[
+                        {
+                            "series": "rain",
+                            "lag": 1,
+                            "transforms": [
+                                {
+                                    "name": "threshold",
+                                    "params": {"mode": "nonsense", "threshold": 1},
+                                }
+                            ],
+                        }
+                    ],
+                ),
+            ]
+        )
+    )
+    with pytest.raises(ValueError, match="series 'cases': transform 'threshold'"):
+        run(config)
+
+
+def test_a_period_count_check_applies_only_to_the_lag_transforms():
+    """`n` means periods to `lag`, and nothing in particular to a transform
+    registered elsewhere. Claiming its whole namespace would reject a
+    third-party transform using `n` as a scale or a sample count."""
+    parse_config(
+        make_config_dict(
+            series=[
+                series_dict("rain", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "cases",
+                    counts={},
+                    depends_on=[
+                        {
+                            "series": "rain",
+                            "lag": 1,
+                            "transforms": [{"name": "my_scale", "params": {"n": 0.75}}],
+                        }
+                    ],
+                ),
+            ]
+        )
+    )
+
+
+def test_distributed_lag_weights_must_be_a_list():
+    """`weights: 5` raised TypeError from inside _transform_lag, which runs
+    in a validator — so pydantic never turned it into a ValidationError."""
+    with pytest.raises(ValidationError, match="'weights'"):
+        parse_config(
+            make_config_dict(
+                series=[
+                    series_dict("rain", generate="flat", params={"level": 5.0}),
+                    series_dict(
+                        "cases",
+                        counts={},
+                        depends_on=[
+                            {
+                                "series": "rain",
+                                "lag": 1,
+                                "transforms": [
+                                    {"name": "distributed_lag", "params": {"weights": 5}}
+                                ],
+                            }
+                        ],
+                    ),
+                ]
+            )
+        )
