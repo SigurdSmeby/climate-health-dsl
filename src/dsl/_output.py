@@ -54,6 +54,8 @@ split:
 # alike. A series becomes a disease signal by carrying a `counts:` block.
 series:
   - name: rainfall            # becomes a column in the output CSV
+    unit: mm                  # shown on the plot's y-axis; optional, and
+                              # only for a series that measures something
     generate: seasonal_spike  # a sharp yearly rainy season
     params:                   # every generator takes `params:`
       spike_center: 7         # peak month of the wet season (1-12)
@@ -64,6 +66,7 @@ series:
 #    missing_rate: 0.02      # blank ~2% of periods, as a broken gauge would
 
   - name: mean_temperature    # the conventional name (not "temperature")
+    unit: "°C"
     generate: seasonal_smooth # a yearly sine wave, good for temperature
     params:
       mean: 25                # average temperature
@@ -96,7 +99,9 @@ series:
 
   # Series can also drive each other. Drop the `#` to add a moisture store that
   # rain fills and heat drains, then point disease_cases at it instead — the
-  # chain rain -> soil_moisture -> disease becomes its own column.
+  # chain rain -> soil_moisture -> disease becomes its own column. It carries
+  # no `unit:`: its parents are standardized before they are weighted in, so
+  # it is an index with no physical scale — unlike rainfall, which is mm.
 #  - { name: soil_moisture, autoregressive: { phi: 0.85 }, depends_on: [{ series: rainfall, lag: 1, weight: 1.0 }, { series: mean_temperature, lag: 1, weight: -0.4 }] }
 """
 

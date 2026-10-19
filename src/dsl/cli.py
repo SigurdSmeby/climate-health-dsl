@@ -22,6 +22,10 @@ from pathlib import Path
 from dsl._output import _resolve_out_dir, _write_starter
 from dsl._run import _prompt_continue, _run_once, _run_replicates, _watch_loop
 
+# Mirrors plot.py's accepted extensions, without the dot: argparse takes the
+# format as a bare word.
+_PLOT_FORMATS = ("html", "png", "svg", "pdf", "jpg", "jpeg")
+
 
 def _positive_int(text: str) -> int:
     """An argparse type for a count that must be at least 1.
@@ -131,6 +135,11 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--plot-format",
         default="html",
+        # Checked here rather than at write time: a typo is an argument
+        # error, so it should cost nothing, and it must stay distinct from
+        # a plot that could not be written because the machine lacks a
+        # browser — which is a warning, not a failed run.
+        choices=_PLOT_FORMATS,
         help="plot file format: html (interactive) or png/svg/pdf (default: html)",
     )
     run_parser.add_argument(

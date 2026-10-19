@@ -212,3 +212,27 @@ def test_explicit_spacing_works_without_a_period():
 def test_tick_spacing_of_one_marks_every_period():
     fig = _build_figure(sample_frame(), period="monthly", tick_every=1)
     assert fig.layout.xaxis.dtick == 1
+
+
+def _titles(fig):
+    """The panel headings, in order."""
+    return [a.text for a in fig.layout.annotations]
+
+
+def test_a_declared_unit_goes_on_the_panel():
+    """The reader could not tell whether rainfall was mm or m — which is
+    the question that started this, and the plot is where it is asked."""
+    fig = _build_figure(sample_frame(), units={"rainfall": "mm"})
+    assert "rainfall (mm)" in _titles(fig)
+
+
+def test_a_series_without_a_unit_keeps_its_bare_name():
+    """An unlabelled panel is not an unfinished one: a series built from
+    standardized parents has no physical scale to name."""
+    fig = _build_figure(sample_frame(), units={"rainfall": "mm"})
+    assert "disease_cases" in _titles(fig)
+
+
+def test_no_units_at_all_is_the_old_plot():
+    """Every caller that does not pass units must get what it got before."""
+    assert _titles(_build_figure(sample_frame())) == _series_columns(sample_frame())
