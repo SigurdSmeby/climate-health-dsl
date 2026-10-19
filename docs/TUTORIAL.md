@@ -67,13 +67,16 @@ series:
     params:
       spike_center: 7
       spike_height: 25
+      spike_width: 2
 ```
 
 Everything the scenario builds lives in this one list — climate and disease
 alike. Each entry names a column in the output. `generate:` picks a shape from
 the [generators](REFERENCE.md#generators), and `params:` tunes it.
 
-`spike_center: 7` is July — month numbers, counting from 1.
+`spike_center: 7` is July — month numbers, counting from 1. `spike_width: 2`
+is how many months the season spreads over: raise it and the wet season
+swells until it never really ends, so the yearly rhythm stops being visible.
 
 **Try it:** change `spike_center` to `1` and save. The wet season moves to
 January, and the disease peak follows it.

@@ -58,8 +58,9 @@ series:
     params:                   # every generator takes `params:`
       spike_center: 7         # peak month of the wet season (1-12)
       spike_height: 25        # how far the peak rises above baseline
+      spike_width: 2          # a sharp season; the default 4 smears it flat
       clamp_min: 0            # rainfall can't go negative
-#    events: { storm: { multiplier: 2.5 } }   # or { min: 2, max: 4 } to vary
+#    events: { storm: { add: 12 } }           # or { min: 8, max: 16 } to vary
 #    missing_rate: 0.02      # blank ~2% of periods, as a broken gauge would
 
   - name: mean_temperature    # the conventional name (not "temperature")
