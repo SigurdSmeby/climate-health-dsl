@@ -855,12 +855,35 @@ class ScenarioConfig(BaseModel):
                     f"{len(self.locations)}."
                 )
             side = "train on" if not fold.train_periods else "test on"
+            # Three different causes, and naming the wrong one sends the
+            # reader to the wrong knob. Which one it is follows from WHICH
+            # side came up empty, not from the scheme alone.
+            if not fold.test_periods:
+                # Too many folds to divide the periods between.
+                why = (
+                    f"There are more folds than periods to split: {k} "
+                    f"folds over {self.n_total} periods leaves some with "
+                    f"nothing to test. Use a smaller k, or a longer "
+                    f"n_total."
+                )
+            elif self.split.scheme == "blocked":
+                # Training is everything outside the block, so only a
+                # single block covering the whole series empties it.
+                why = (
+                    "A blocked split trains on whatever lies OUTSIDE the "
+                    "test block, so a single block covers the whole series "
+                    "and leaves nothing; use k of 2 or more, or "
+                    "scheme: expanding."
+                )
+            else:
+                why = (
+                    "An expanding split keeps its first n_total // (k + 1) "
+                    "periods for training only, which is 0 here; use a "
+                    "smaller k or a longer n_total."
+                )
             raise ValueError(
                 f"split k is {k} with n_total {self.n_total}, which leaves "
-                f"fold {fold.index} with no periods to {side}. An expanding "
-                f"split keeps its first n_total // (k + 1) periods for "
-                f"training only, which is 0 here; use a smaller k or a "
-                f"longer n_total."
+                f"fold {fold.index} with no periods to {side}. {why}"
             )
 
     def folds(self) -> list[Fold]:

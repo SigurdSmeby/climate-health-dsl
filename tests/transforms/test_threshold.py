@@ -122,3 +122,29 @@ def test_planted_threshold_is_recoverable():
     above = np.nanmean(counts[n // 2 :])
     # Above-threshold mean must be clearly higher — the planted nonlinearity.
     assert above > below * 1.5
+
+
+def test_a_non_numeric_threshold_is_rejected():
+    """A string reached numpy as a raw UFuncTypeError, naming neither the
+    transform nor the scenario."""
+    with pytest.raises(ValueError, match="threshold must be a number"):
+        ThresholdTransform(mode="hinge", threshold="abc")
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_a_non_finite_threshold_is_rejected(bad):
+    """NaN compares false against every value, so `hinge` returned an
+    all-NaN series — silently, looking like a driver that stopped
+    mattering rather than a typo."""
+    with pytest.raises(ValueError, match="finite"):
+        ThresholdTransform(mode="hinge", threshold=bad)
+
+
+def test_an_ordinary_threshold_still_works():
+    """The guard must not reject the normal case, including an int."""
+    import numpy as np
+
+    out = ThresholdTransform(mode="hinge", threshold=2).apply(
+        np.arange(5.0), np.random.default_rng(1)
+    )
+    assert list(out) == [0.0, 0.0, 0.0, 1.0, 2.0]

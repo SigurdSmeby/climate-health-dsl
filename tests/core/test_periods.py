@@ -107,3 +107,37 @@ def test_parse_period_wrong_format_raises():
         parse_period("2010-07", "weekly")  # monthly label, weekly resolution
     with pytest.raises(ValueError, match="garbage"):
         parse_period("garbage", "monthly")
+
+
+def test_a_fifty_third_week_is_rejected_rather_than_folded():
+    """2015 and 2020 really do have 53 ISO weeks, but this module maps a
+    label to a position in a FLAT 52-week year, where there is no slot for
+    a 53rd. Accepting it put 2015-W53 and 2016-W01 on the same absolute
+    index and formatted both back as "2016-W01" — moving data by a week
+    instead of refusing it. Loud rejection is the honest answer until
+    weekly time is made calendar-aware.
+    """
+    with pytest.raises(ValueError):
+        parse_period("2015-W53", "weekly")
+
+
+def test_the_week_index_has_no_collisions_at_a_year_boundary():
+    """The property the rejection protects: consecutive labels must land on
+    consecutive indices, or a split would put two different weeks in one
+    period."""
+    ppy = periods_per_year("weekly")
+    indices = [
+        year * ppy + offset
+        for year, offset in (
+            parse_period(label, "weekly")
+            for label in ("2015-W51", "2015-W52", "2016-W01", "2016-W02")
+        )
+    ]
+    assert indices == list(range(indices[0], indices[0] + 4))
+
+
+def test_a_fifty_fourth_week_is_still_rejected():
+    """A week that cannot exist in any year."""
+    for label in ("2020-W54", "2020-W00"):
+        with pytest.raises(ValueError):
+            parse_period(label, "weekly")

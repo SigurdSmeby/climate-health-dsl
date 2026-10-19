@@ -552,3 +552,80 @@ def test_reproducing_from_metadata_finds_the_run_it_came_from(tmp_path):
         assert [p.name for p in _scenario_runs(md)] == ["myrun"]
     finally:
         os.chdir(cwd)
+
+
+@pytest.mark.parametrize(
+    "body, missing",
+    [
+        ("series:\n", "series"),
+        ("locations:\nseries:\n  - { name: r, generate: flat }\n", "locations"),
+    ],
+)
+def test_an_empty_yaml_block_is_a_message_not_a_traceback(
+    tmp_path, capsys, body, missing
+):
+    """An empty `series:` loads as None, not as a missing key, so a default
+    on .get() never fires and None reached the path resolver — a traceback
+    before pydantic could say what was wrong with the file."""
+    path = tmp_path / "s.yaml"
+    path.write_text(
+        "period: monthly\nn_total: 24\nseed: 1\n"
+        + ("locations: { loc: { population: 100000 } }\n" if missing != "locations" else "")
+        + body
+    )
+    code = main(["run", str(path), "-o", str(tmp_path / "out")])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert missing in err
+
+
+@pytest.mark.parametrize("params", ["", " nope", " [1, 2]"])
+def test_a_malformed_params_block_on_from_csv_is_a_message(
+    tmp_path, capsys, params
+):
+    """Only the from_csv path hit this: every other generator reached
+    pydantic, which is why it looked like a non-issue at first.
+
+    The resolver runs BEFORE validation, on whatever the YAML happened to
+    contain, so it checks the shape instead of assuming it — an empty
+    block is None rather than a missing key, and a malformed one can be
+    any type at all.
+    """
+    path = tmp_path / "s.yaml"
+    path.write_text(
+        "period: monthly\nn_total: 24\nseed: 1\n"
+        "locations: { loc: { population: 100000 } }\n"
+        f"series:\n  - name: r\n    generate: from_csv\n    params:{params}\n"
+    )
+    code = main(["run", str(path), "-o", str(tmp_path / "out")])
+    assert code == 1
+    assert "Traceback" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", ["", " hello", " { a: 1 }"])
+def test_a_malformed_series_block_is_a_message(tmp_path, capsys, value):
+    """Anything that is not a list of entries belongs to pydantic, which
+    names the field — the resolver must not trip over it first."""
+    path = tmp_path / "s.yaml"
+    path.write_text(
+        "period: monthly\nn_total: 24\nseed: 1\n"
+        "locations: { loc: { population: 100000 } }\n"
+        f"series:{value}\n"
+    )
+    code = main(["run", str(path), "-o", str(tmp_path / "out")])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert "series" in err
+
+
+def test_the_bare_list_form_of_locations_still_works(tmp_path):
+    """`locations: [a, b]` is documented shorthand for a scenario with no
+    count series, so shape-checking must not reject it."""
+    path = tmp_path / "s.yaml"
+    path.write_text(
+        "period: monthly\nn_total: 12\nseed: 1\nlocations: [a, b]\n"
+        "series:\n  - { name: r, generate: flat, params: { level: 5.0 } }\n"
+    )
+    assert main(["run", str(path), "-o", str(tmp_path / "out")]) == 0

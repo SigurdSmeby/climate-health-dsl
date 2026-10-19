@@ -335,3 +335,42 @@ def test_blocked_folds_are_not_quadratic():
     start = time.perf_counter()
     config.folds()
     assert time.perf_counter() - start < 0.05
+
+
+def test_an_impossible_blocked_split_explains_the_blocked_rule():
+    """The message hardcoded the expanding rule — "keeps its first
+    n_total // (k + 1) periods" — even for scheme: blocked, which reserves
+    nothing and fails for a different reason. Naming the wrong rule sends
+    the reader to the wrong knob."""
+    with pytest.raises(ValidationError, match="OUTSIDE the test block"):
+        parse_config(
+            make_config_dict(
+                n_total=4,
+                period="monthly",
+                split={"kind": "time", "k": 1, "scheme": "blocked"},
+                series=[
+                    series_dict("r", generate="flat", params={"level": 5.0}),
+                    series_dict(
+                        "disease_cases", counts={}, depends_on=[{"series": "r"}]
+                    ),
+                ],
+            )
+        )
+
+
+def test_an_impossible_expanding_split_still_explains_the_expanding_rule():
+    """The other branch must keep its own explanation."""
+    with pytest.raises(ValidationError, match=r"n_total // \(k \+ 1\)"):
+        parse_config(
+            make_config_dict(
+                n_total=3,
+                period="monthly",
+                split={"kind": "time", "k": 5},
+                series=[
+                    series_dict("r", generate="flat", params={"level": 5.0}),
+                    series_dict(
+                        "disease_cases", counts={}, depends_on=[{"series": "r"}]
+                    ),
+                ],
+            )
+        )

@@ -233,10 +233,9 @@ def _build_series(
         # be scaled against the same headcount the CSV goes on to record.
         population = _resolve_population(
             config.population_for(location),
-            config.n_total,
-            config.period,
+            config,
+            location,
             _child_rng(config.seed, location, "population"),
-            config.start_period,
         )
         # The block name selects the emitter; its params come from the block.
         emitter = get_emitter("counts")(
@@ -300,34 +299,65 @@ def _series_generator(config: ScenarioConfig, spec: SeriesSpec, location: str):
         ValueError: If the generator rejects a param, or a from_csv series
             can't be matched to this output location.
     """
-    params = dict(spec.params)
-    if spec.generate in _CALENDAR_AWARE:
+    params = _resolved_params(
+        spec.generate, spec.params, config, location, f"series '{spec.name}'"
+    )
+    return _build_generator(spec.generate, params, spec.name)
+
+
+def _resolved_params(
+    generate: str,
+    raw: dict,
+    config: ScenarioConfig,
+    location: str,
+    where: str,
+) -> dict:
+    """Params for one generator, resolved for one output location.
+
+    Shared by a series and by a location's population: both may be backed
+    by the same multi-location CSV, and a population that skipped this
+    failed with "set source_location" on a scenario whose series worked.
+
+    Args:
+        generate: The generator's registered name.
+        raw: The declared params.
+        config: The validated scenario configuration.
+        location: The output location being built.
+        where: How to name the caller in an error (e.g. "series 'rain'").
+
+    Returns:
+        A copy of raw with the calendar start and, for a multi-location
+        CSV, this location's source rows filled in.
+
+    Errors Caught (raised to caller):
+        ValueError: If a multi-location CSV has no rows for this location.
+    """
+    params = dict(raw)
+    if generate in _CALENDAR_AWARE:
         _inject_start_period(params, config.start_period)
     # With no source_location and a multi-location CSV, give THIS output
     # location its own matching rows.
-    if spec.generate == "from_csv" and "source_location" not in params:
+    if generate == "from_csv" and "source_location" not in params:
         csv_locations = get_generator("from_csv").locations_in(
             params.get("file", "")
         )
         if len(csv_locations) > 1:
             if location not in csv_locations:
                 raise ValueError(
-                    f"from_csv: series '{spec.name}' has no "
-                    f"source_location and output location '{location}' "
-                    f"is not in {params.get('file')} (available: "
-                    f"{csv_locations}); set source_location or rename "
-                    f"the location to match."
+                    f"from_csv: {where} has no source_location and output "
+                    f"location '{location}' is not in "
+                    f"{params.get('file')} (available: {csv_locations}); "
+                    f"set source_location or rename the location to match."
                 )
             params["source_location"] = location
-    return _build_generator(spec.generate, params, spec.name)
+    return params
 
 
 def _resolve_population(
     source: "int | PopulationSpec",
-    n_periods: int,
-    period: str,
+    config: ScenarioConfig,
+    location: str,
     rng: np.random.Generator,
-    start_period: "str | None" = None,
 ) -> np.ndarray:
     """Turn a population source into a length-n_periods integer array.
 
@@ -337,11 +367,12 @@ def _resolve_population(
 
     Args:
         source: Either a fixed population (int) or a PopulationSpec.
-        n_periods: Number of time periods.
-        period: Period type (e.g., "monthly", "daily").
+        config: The validated scenario configuration.
+        location: The output location this population is for, so a
+            CSV-backed source picks the same rows a CSV-backed series
+            would.
         rng: Seeded random generator for reproducibility (unused for a
             fixed int).
-        start_period: Scenario start period, to align a from_csv source.
 
     Returns:
         An integer array of length n_periods, one population value per
@@ -354,13 +385,17 @@ def _resolve_population(
     """
     # Early return if source is a fixed population (not a generator spec).
     if isinstance(source, int):
-        return np.full(n_periods, source, dtype=int)
+        return np.full(config.n_total, source, dtype=int)
 
-    params = dict(source.params)
-    if source.generate in _CALENDAR_AWARE:
-        _inject_start_period(params, start_period)
+    params = _resolved_params(
+        source.generate,
+        source.params,
+        config,
+        location,
+        f"the population of '{location}'",
+    )
     headcount = _build_generator(source.generate, params).generate(
-        n_periods, period, rng
+        config.n_total, config.period, rng
     )
     if not np.all(np.isfinite(headcount)):
         raise ValueError(

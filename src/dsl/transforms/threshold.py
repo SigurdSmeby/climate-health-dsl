@@ -30,10 +30,31 @@ class ThresholdTransform(Transform):
         """Store the YAML params: for this transform.
 
         Errors Caught (raised to caller):
-            ValueError: If mode is not one of "hinge", "step", "quadratic".
+            ValueError: If mode is not one of "hinge", "step", "quadratic",
+                or threshold is not a finite number.
         """
         if mode not in _MODES:
             raise ValueError(f"mode must be one of {_MODES}, got {mode!r}")
+        # A string reached numpy as a raw UFuncTypeError, and NaN compared
+        # false against everything — blanking the whole series silently,
+        # which looks like a driver that simply stopped mattering.
+        # isinstance rather than float(): float("5") would quietly accept a
+        # quoted number, and bool is an int in Python, so `threshold: true`
+        # would mean 1 without saying so.
+        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
+            # ValueError, not TypeError: _build_transform converts a
+            # transform's ValueError into a message naming the series, and
+            # a TypeError there means "wrong signature" instead.
+            raise ValueError(  # noqa: TRY004
+                f"threshold must be a number, got {threshold!r}"
+            )
+        threshold = float(threshold)
+        if not np.isfinite(threshold):
+            raise ValueError(
+                f"threshold must be a finite number, got {threshold!r}; "
+                f"NaN compares false against every value and infinity sits "
+                f"past all of them, so either would flatten the series."
+            )
         self.mode = mode
         self.threshold = threshold
 
