@@ -362,3 +362,45 @@ def test_the_file_dsl_new_writes_follows_the_same_rule(tmp_path):
     df = run(parse_config(yaml.safe_load("\n".join(enabled))))
     assert df["location"].nunique() == 2
     assert "soil_moisture" in df.columns
+
+
+def test_the_starter_season_survives_its_own_storms():
+    """A storm should disturb the season, not replace it.
+
+    The starter is read as a picture before it is read as YAML, so the
+    yearly rhythm has to stay the dominant feature of the rainfall panel
+    with every option switched on. A `multiplier` storm scaled the whole
+    value, landing well above a seasonal peak the default `spike_width`
+    had already flattened — so the plot showed spikes and no season.
+    """
+    import numpy as np
+    import yaml
+
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+    from dsl.generators.seasonal_spike import SeasonalSpikeGenerator
+
+    config = parse_config(yaml.safe_load(_uncomment_starter()))
+    frame = run(config)
+    rainfall = frame[frame["location"] == "loc"]["rainfall"].to_numpy()
+
+    # The season has to come back down to the baseline the generator
+    # documents. A wide spike never decays inside the year, so the trough
+    # stays partway up the peak and the series reads as a raised floor
+    # with a bump rather than as a season.
+    trough, peak = np.nanmin(rainfall), np.nanmax(rainfall)
+    centre = config.series[0].params["spike_center"]
+    seasonal = np.nanmean(rainfall[centre - 1 :: 12])
+    baseline = SeasonalSpikeGenerator().baseline
+    assert trough < baseline + 0.2 * (seasonal - baseline), (
+        f"the dry season bottoms out at {trough:.1f}, far above the "
+        f"{baseline} baseline, against a {seasonal:.1f} peak — the spike is "
+        f"too wide to decay within the year"
+    )
+
+    # And the largest storm must stay inside the same visual range as the
+    # season rather than rescaling the axis around itself.
+    assert (peak - trough) < 2 * (seasonal - trough), (
+        f"the biggest storm reaches {peak:.1f}, more than twice the "
+        f"seasonal amplitude ({seasonal - trough:.1f}) — it drowns the season"
+    )
