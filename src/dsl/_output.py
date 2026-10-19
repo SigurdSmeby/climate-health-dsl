@@ -34,7 +34,7 @@ seed: 42              # same scenario + same seed -> identical data, every time
 locations:
   loc:
     population: 100000
-  # north: { population: 300000 }
+#  north: { population: 300000 }
 
 # Divide the data for evaluation. `expanding` trains each fold only on the
 # periods BEFORE its test block, which is what judging a forecaster requires.
@@ -49,7 +49,7 @@ split:
 # list like [1, 1, 2, 1, 1] gives fold 2 two (one value per fold, k=5 here).
 # Uncomment this AND the two `events:` lines below. See REFERENCE for `at:`,
 # `rate:` and varying the strength.
-# events: { storm: { per_fold: 1 } }
+#events: { storm: { per_fold: 1 } }
 
 # Everything the scenario builds lives in this one list — climate and disease
 # alike. A series becomes a disease signal by carrying a `counts:` block.
@@ -60,15 +60,15 @@ series:
       spike_center: 7         # peak month of the wet season (1-12)
       spike_height: 25        # how far the peak rises above baseline
       clamp_min: 0            # rainfall can't go negative
-    # events: { storm: { multiplier: 2.5 } }   # or { min: 2, max: 4 } to vary
-    # missing_rate: 0.02      # blank ~2% of periods, as a broken gauge would
+#    events: { storm: { multiplier: 2.5 } }   # or { min: 2, max: 4 } to vary
+#    missing_rate: 0.02      # blank ~2% of periods, as a broken gauge would
 
   - name: mean_temperature    # the conventional name (not "temperature")
     generate: seasonal_smooth # a yearly sine wave, good for temperature
     params:
       mean: 25                # average temperature
       amplitude: 6            # how far it swings across the year
-    # events: { storm: { add: -6.0 } }         # six degrees cooler, same storm
+#    events: { storm: { add: -6.0 } }         # six degrees cooler, same storm
 
   # `counts:` turns this series' values into whole case counts, drawn against
   # the location's population. Empty uses the defaults (REFERENCE lists them).
@@ -78,16 +78,18 @@ series:
       # them. REFERENCE lists the rest.
       median_rate: 0.1                  # where a typical period sits
       max_rate: 0.3                     # ceiling, as a fraction of population
-      # distribution: negative_binomial # spikier than the default poisson
+#      distribution: negative_binomial # spikier than the default poisson
     depends_on:
       # One entry per driver. The lag is the ground truth you are planting:
       # change it, re-run, and see the disease peak move.
       - series: rainfall
         lag: 2                # disease reacts 2 months after the rain
         weight: 1.5           # strength relative to the other drivers
-        # Reshape a driver before it is weighted in — a threshold makes the
-        # effect kick in only above 5 mm. REFERENCE lists every transform.
-        # transforms: [{ name: threshold, params: { mode: hinge, threshold: 5 } }]
+        # Reshape a driver before it is weighted in — this one passes only
+        # the rain above 20 mm, so light months stop contributing at all.
+        # The threshold has to sit inside the driver's own range to bite.
+        # REFERENCE lists every transform.
+#        transforms: [{ name: threshold, params: { mode: hinge, threshold: 20 } }]
       - series: mean_temperature
         lag: 1
         weight: 1.0
@@ -95,7 +97,7 @@ series:
   # Series can also drive each other. Drop the `#` to add a moisture store that
   # rain fills and heat drains, then point disease_cases at it instead — the
   # chain rain -> soil_moisture -> disease becomes its own column.
-  # - { name: soil_moisture, autoregressive: { phi: 0.85 }, depends_on: [{ series: rainfall, lag: 1, weight: 1.0 }, { series: mean_temperature, lag: 1, weight: -0.4 }] }
+#  - { name: soil_moisture, autoregressive: { phi: 0.85 }, depends_on: [{ series: rainfall, lag: 1, weight: 1.0 }, { series: mean_temperature, lag: 1, weight: -0.4 }] }
 """
 
 

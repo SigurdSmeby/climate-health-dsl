@@ -50,9 +50,13 @@ locations:
 ```
 
 A disease is counted against the people who live somewhere, so population
-belongs to the location, not to the disease. Drop the `#` on the `north:` line
-to add a second place — it draws its own climate, and the output stacks both
-with a `location` column.
+belongs to the location, not to the disease. Delete the `#` on the `north:`
+line to add a second place — it draws its own climate, and the output stacks
+both with a `location` column.
+
+Every commented option in the file works this way: **delete the `#` and
+nothing else.** The indentation after it is already the indentation the line
+needs.
 
 ## 5. The series list
 
@@ -92,8 +96,10 @@ whole case counts drawn against the location's population, rather than a plain
 number. [Concepts](CONCEPTS.md) explains that model.
 
 `lag: 2` is **the ground truth you are planting** — the disease reacts two
-months after the rain. That is the whole point of the tool: a forecasting model
-claiming to have found a two-month lag can be checked against the two you wrote.
+months after the rain, so a July rainfall peak shows up as a September peak in
+`disease_cases`. That offset is the whole point of the tool: a forecasting
+model claiming to have found a two-month lag can be checked against the two you
+wrote.
 
 **Try it:** change `lag` to `6` and save. The disease peak slides six months
 after the rainfall peak. The first six `disease_cases` go blank, because there
@@ -145,7 +151,41 @@ month, and the disease responds to the *store*. The chain
 rain → soil_moisture → disease is a real column in the output, not a hidden
 weight — so you can see the intermediate step you planted.
 
-## 10. Go further
+## 10. Shape the response, beyond a straight line
+
+`weight` scales a driver, so on its own it can only say "more rain, more
+disease, in proportion". Real climate-health links rarely work that way: an
+effect may appear only past a threshold, or peak at an optimum and fall away
+either side.
+
+A `transforms:` list on a dependency reshapes that driver before it is
+weighted, so the relationship becomes a function of the driver's value. Delete
+the `#` from the `transforms:` line under `depends_on`:
+
+```yaml
+    depends_on:
+      - series: rainfall
+        lag: 2
+        weight: 1.5
+        transforms:
+          - { name: threshold, params: { mode: hinge, threshold: 20 } }
+```
+
+`hinge` passes only what exceeds 20 mm, so the disease reacts to heavy rain
+alone and light months contribute nothing. `quadratic` instead rises either
+side of a value — a temperature optimum. The
+[reference](REFERENCE.md#transforms) lists every transform.
+
+**The threshold has to sit inside the driver's own range.** Set it below the
+series minimum and `hinge` becomes a constant subtraction, which standardizing
+then removes — the option looks enabled and changes nothing. Check the
+rainfall column before picking a number.
+
+**Try it:** run with and without that line and compare the wet-season peaks.
+The planted relationship is still exact ground truth; it is simply no longer a
+straight line.
+
+## 11. Go further
 
 ```bash
 uv run dsl run my_scenario.yaml -o out/study --replicates 20

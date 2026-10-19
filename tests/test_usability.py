@@ -122,30 +122,107 @@ def test_cross_field_errors_drop_pydantic_boilerplate(tmp_path, capsys):
     assert "need a population" in err
 
 
+def _uncomment_starter() -> str:
+    """Enable every commented option in the starter, as a reader would.
+
+    Deletes the single "#" and nothing else — exactly what the tutorial
+    tells the reader to do.
+
+    Returns:
+        The starter text with its option lines enabled.
+    """
+    import re
+
+    from dsl._output import STARTER_TEMPLATE
+
+    # An option line is a comment whose body opens a YAML key or list item.
+    # The "#" sits immediately before the body's own indent, so deleting it
+    # leaves the line correctly placed; the prose comments around them have
+    # a space after the "#" and start with a capital. Top-level options
+    # count: uncommenting a series' `events:` without the `events:` block it
+    # refers to is exactly the kind of trap this catches.
+    option = re.compile(r"^#( *)([a-z_]+:|[-{])")
+    lines = [
+        line[1:] if option.match(line) else line
+        for line in STARTER_TEMPLATE.splitlines()
+    ]
+    return "\n".join(lines)
+
+
 def test_every_commented_option_in_the_starter_works_uncommented():
     """The starter invites the reader to drop a `#`. Every option it offers
     must then still parse and run — a comment that breaks when enabled is
     worse than no comment."""
+    import yaml
+
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+
+    config = parse_config(yaml.safe_load(_uncomment_starter()))
+    df = run(config)
+    # The options add a second location and a dependent series.
+    assert df["location"].nunique() == 2
+    assert "soil_moisture" in df.columns
+
+
+def test_deleting_the_hash_is_the_whole_procedure():
+    """One character is all the tutorial asks for, and all that is needed.
+
+    Each option is checked on its own: enabling it must leave its body at
+    the indent its parent expects. A marker written "# key:" would put the
+    body one column too far right, which under an indented parent is a YAML
+    error the reader has to diagnose themselves.
+    """
     import re
 
     import yaml
 
     from dsl._output import STARTER_TEMPLATE
+
+    option = re.compile(r"^#( *)([a-z_]+:|[-{])")
+    lines = STARTER_TEMPLATE.splitlines()
+    broken = []
+    for i, line in enumerate(lines):
+        if not option.match(line):
+            continue
+        attempt = lines.copy()
+        attempt[i] = line[1:]  # delete exactly the "#"
+        try:
+            yaml.safe_load("\n".join(attempt))
+        except yaml.YAMLError as exc:
+            broken.append(f"{line}\n    -> {type(exc).__name__}")
+    assert not broken, (
+        "deleting the '#' alone left these options misplaced:\n"
+        + "\n".join(broken)
+    )
+
+
+def test_the_starter_threshold_actually_bites():
+    """An option that changes nothing teaches the reader the wrong lesson.
+
+    `hinge` below the driver's minimum is a constant subtraction, and
+    standardizing removes a constant exactly — so the transform would run,
+    look enabled, and leave the output untouched.
+    """
+    import numpy as np
+    import yaml
+
     from dsl.core.config.schema import parse_config
     from dsl.core.pipeline.engine import run
 
-    # An option line is a comment whose body opens a YAML key or list item,
-    # at any indent — the prose comments around them start with a capital.
-    # Top-level options count: uncommenting a series' `events:` without the
-    # `events:` block it refers to is exactly the kind of trap this catches.
-    option = re.compile(r"^(\s*)# ([a-z_]+:|[-{])")
-    lines = []
-    for line in STARTER_TEMPLATE.splitlines():
-        match = option.match(line)
-        lines.append(match.group(1) + line.lstrip()[2:] if match else line)
-
-    config = parse_config(yaml.safe_load("\n".join(lines)))
-    df = run(config)
-    # The options add a second location and a dependent series.
-    assert df["location"].nunique() == 2
-    assert "soil_moisture" in df.columns
+    enabled = parse_config(yaml.safe_load(_uncomment_starter()))
+    without = parse_config(
+        yaml.safe_load(
+            "\n".join(
+                line
+                for line in _uncomment_starter().splitlines()
+                if "transforms:" not in line
+            )
+        )
+    )
+    a = run(without)["disease_cases"].to_numpy()
+    b = run(enabled)["disease_cases"].to_numpy()
+    assert not np.allclose(a, b, equal_nan=True), (
+        "the starter's threshold sits outside the rainfall range, so "
+        "enabling it changes nothing"
+    )
