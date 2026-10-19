@@ -45,8 +45,7 @@ different sample of the *same* relationship.
 
 ```yaml
 locations:
-  loc:
-    population: 100000
+  loc:   { population: 100000 }
 ```
 
 A disease is counted against the people who live somewhere, so population

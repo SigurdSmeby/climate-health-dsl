@@ -32,8 +32,7 @@ seed: 42              # same scenario + same seed -> identical data, every time
 # belongs to the location rather than to the disease. Add more locations to
 # stack several places in one dataset; each draws its own climate.
 locations:
-  loc:
-    population: 100000
+  loc:   { population: 100000 }
 #  north: { population: 300000 }
 
 # Divide the data for evaluation. `expanding` trains each fold only on the
