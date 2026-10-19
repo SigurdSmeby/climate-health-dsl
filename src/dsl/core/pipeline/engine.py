@@ -351,14 +351,19 @@ def _resolved_params(
             params.get("file", "")
         )
         if len(csv_locations) > 1:
-            if location not in csv_locations:
+            # Matched as text: pandas reads a column of 1, 2 as ints, so a
+            # numeric location id failed with "'1' is not in (available:
+            # [1, 2])" — which it plainly is. The CSV's own value is what
+            # goes into source_location, since that is what it filters on.
+            by_text = {str(name): name for name in csv_locations}
+            if location not in by_text:
                 raise ValueError(
                     f"from_csv: {where} has no source_location and output "
                     f"location '{location}' is not in "
                     f"{params.get('file')} (available: {csv_locations}); "
                     f"set source_location or rename the location to match."
                 )
-            params["source_location"] = location
+            params["source_location"] = by_text[location]
     return params
 
 

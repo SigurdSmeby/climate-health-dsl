@@ -633,3 +633,51 @@ def test_a_seed_is_still_reproducible():
         _child_rng(7, "loc", "series").random(8),
         _child_rng(7, "loc", "series").random(8),
     )
+
+
+def test_a_numeric_location_id_matches_its_csv_rows(tmp_path):
+    """pandas reads a location column of 1, 2 as ints, so a scenario whose
+    locations are "1" and "2" failed with "'1' is not in (available:
+    [1, 2])" — which it plainly is."""
+    import pandas as pd
+
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+
+    csv = tmp_path / "d.csv"
+    pd.DataFrame(
+        [
+            {"time_period": f"2000-{m:02d}", "location": place, "rain": 5.0}
+            for m in range(1, 13)
+            for place in (1, 2)
+        ]
+    ).to_csv(csv, index=False)
+
+    frame = run(
+        parse_config(
+            {
+                "period": "monthly",
+                "n_total": 12,
+                "seed": 1,
+                "start_period": "2000-01",
+                "locations": {
+                    "1": {"population": 100_000},
+                    "2": {"population": 200_000},
+                },
+                "series": [
+                    {
+                        "name": "rain",
+                        "generate": "from_csv",
+                        "params": {"file": str(csv), "column": "rain"},
+                    },
+                    {
+                        "name": "disease_cases",
+                        "counts": {},
+                        "depends_on": [{"series": "rain", "lag": 1}],
+                    },
+                ],
+            }
+        )
+    )
+    assert sorted(frame["location"].unique().astype(str)) == ["1", "2"]
+    assert len(frame) == 24

@@ -93,6 +93,13 @@ def _run_once(
         ):
             print(f"warning: {finding}", file=sys.stderr)
 
+        # Every plot.*, and before the data lands: a run that switches
+        # --plot-format or drops --plot would otherwise leave the previous
+        # picture beside data it no longer describes — and a step after
+        # this one can still fail, so clearing later is not enough.
+        for stale in out_dir.glob("plot.*"):
+            stale.unlink()
+
         write_output(df, config, out_dir)
         # The ground-truth sidecar goes down with the data, before the
         # report: the report re-runs the generators and so can fail on its
@@ -106,12 +113,6 @@ def _run_once(
         # escaping exception would kill the watch loop.
         write_report(config, df, out_dir)
         print(f"Wrote {len(df)} rows to {out_dir}/")
-
-        # Every plot.*, not just this run's format: a run that switches
-        # --plot-format, or drops --plot entirely, would otherwise leave the
-        # previous picture beside data it no longer describes.
-        for stale in out_dir.glob("plot.*"):
-            stale.unlink()
 
         if plot:
             # Mark where evaluation begins, so the part a model is scored on
@@ -401,7 +402,10 @@ def _watch_loop(
     Returns:
         Exit code: 0 (Ctrl-C is the normal way to stop watching).
     """
-    last_mtime = Path(scenario).stat().st_mtime
+    # st_mtime_ns, matching what _changed returns and compares — seeding
+    # this with float seconds made the two never equal, so the loop
+    # re-ran once at startup without anyone saving anything.
+    last_mtime = Path(scenario).stat().st_mtime_ns
     serve = plot and plot_format == "html"
     server = None
     version = [0]

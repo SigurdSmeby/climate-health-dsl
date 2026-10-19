@@ -706,6 +706,13 @@ class ScenarioConfig(BaseModel):
                         f"which is not a defined series. Defined series: "
                         f"{defined}."
                     )
+                # A weight-0 parent is skipped outright when the signal is
+                # built, so it blanks nothing and its lag cannot be too
+                # long. Rejecting it made a decoy fail to PARSE, while the
+                # soft warning beside it already knew to ignore one. The
+                # name check above still applies: a typo is a typo.
+                if dep.weight == 0:
+                    continue
                 if dep.lag >= self.n_total:
                     raise ValueError(
                         f"series '{spec.name}' depends on '{dep.series}' "
@@ -1227,6 +1234,40 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
                     f"the event would fire and leave no trace in the data. "
                     f"Use 'add' to shift it by a fixed amount."
                 )
+
+    # A count series' signal is on the logit scale, centred near zero by
+    # the standardizing its parents go through. Multiplying there scales
+    # distance from the centre rather than the case count: a storm with
+    # multiplier 3 HALVED the cases in a period whose signal was negative.
+    for var in config.series:
+        if var.counts is None:
+            continue
+        for event_name, effect in (var.events or {}).items():
+            if effect.multiplier is not None:
+                warnings.append(
+                    f"series '{var.name}' reacts to event '{event_name}' "
+                    f"with 'multiplier', but a counted series' signal sits "
+                    f"on the logit scale around zero, so scaling it moves "
+                    f"cases DOWN wherever the signal is negative. Use 'add' "
+                    f"to shift the rate in one direction, or put the event "
+                    f"on a driver instead."
+                )
+
+    # A count series' own base is added UNSTANDARDIZED to its parents'
+    # standardized contributions, so a large constant base dominates the
+    # signal and pins the rate at its ceiling — the drivers then barely
+    # move the counts, which is the opposite of what the scenario says.
+    for var in config.series:
+        if var.counts is None or var.generate is None or not var.depends_on:
+            continue
+        warnings.append(
+            f"series '{var.name}' has both 'generate: {var.generate}' and "
+            f"'counts:', so its own base is added to its drivers' "
+            f"contributions without being standardized; a base much larger "
+            f"than 1 will pin the rate near its ceiling and swamp the "
+            f"drivers. Drop 'generate:' to let the drivers shape it, or "
+            f"keep the base small."
+        )
 
     # A fixed source_location feeds ONE real series to every output location
     # — a likely surprise with several locations.

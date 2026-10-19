@@ -776,3 +776,39 @@ def test_a_bare_metadata_path_names_the_run_it_came_from(tmp_path, monkeypatch):
     (run_dir / "metadata.json").write_text("{}")
     monkeypatch.chdir(run_dir)
     assert _resolve_out_dir("metadata.json", None).name == "myrun"
+
+
+def test_the_watch_loop_does_not_re_run_without_a_save(tmp_path):
+    """The loop seeded last_mtime with float st_mtime while _changed
+    compares nanoseconds, so the two never matched and --watch re-ran once
+    at startup with nothing changed."""
+    from dsl._run import _changed
+
+    path = write_scenario(tmp_path, base_scenario())
+    # Seeded exactly as _watch_loop seeds it.
+    seeded = Path(path).stat().st_mtime_ns
+    assert _changed(str(path), seeded)[0] is False
+
+
+def test_a_failed_step_does_not_leave_the_old_plot(tmp_path):
+    """Clearing plot.* after the data and report steps was not enough: a
+    report that fails still leaves the previous picture beside new data."""
+    import dsl._run as run_module
+
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out), "--plot",
+                 "--plot-format", "png"]) == 0
+    assert (out / "plot.png").is_file()
+
+    original = run_module.write_report
+    run_module.write_report = lambda *a, **k: (_ for _ in ()).throw(
+        ValueError("report blew up")
+    )
+    try:
+        assert main(["run", str(path), "-o", str(out), "--plot",
+                     "--plot-format", "png"]) == 1
+    finally:
+        run_module.write_report = original
+
+    assert not (out / "plot.png").exists()
