@@ -38,12 +38,17 @@ class ThresholdTransform(Transform):
         # A string reached numpy as a raw UFuncTypeError, and NaN compared
         # false against everything — blanking the whole series silently,
         # which looks like a driver that simply stopped mattering.
-        try:
-            threshold = float(threshold)
-        except (TypeError, ValueError):
-            raise ValueError(
+        # isinstance rather than float(): float("5") would quietly accept a
+        # quoted number, and bool is an int in Python, so `threshold: true`
+        # would mean 1 without saying so.
+        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
+            # ValueError, not TypeError: _build_transform converts a
+            # transform's ValueError into a message naming the series, and
+            # a TypeError there means "wrong signature" instead.
+            raise ValueError(  # noqa: TRY004
                 f"threshold must be a number, got {threshold!r}"
-            ) from None
+            )
+        threshold = float(threshold)
         if not np.isfinite(threshold):
             raise ValueError(
                 f"threshold must be a finite number, got {threshold!r}; "

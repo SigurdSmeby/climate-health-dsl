@@ -231,21 +231,11 @@ def _build_series(
         # Keyed by location alone, never by series: the people living
         # somewhere are one population, so every disease counted there must
         # be scaled against the same headcount the CSV goes on to record.
-        source = config.population_for(location)
         population = _resolve_population(
-            source,
-            config.n_total,
-            config.period,
+            config.population_for(location),
+            config,
+            location,
             _child_rng(config.seed, location, "population"),
-            {}
-            if isinstance(source, int)
-            else _resolved_params(
-                source.generate,
-                source.params,
-                config,
-                location,
-                f"the population of '{location}'",
-            ),
         )
         # The block name selects the emitter; its params come from the block.
         emitter = get_emitter("counts")(
@@ -365,10 +355,9 @@ def _resolved_params(
 
 def _resolve_population(
     source: "int | PopulationSpec",
-    n_periods: int,
-    period: str,
+    config: ScenarioConfig,
+    location: str,
     rng: np.random.Generator,
-    params: dict,
 ) -> np.ndarray:
     """Turn a population source into a length-n_periods integer array.
 
@@ -378,13 +367,12 @@ def _resolve_population(
 
     Args:
         source: Either a fixed population (int) or a PopulationSpec.
-        n_periods: Number of time periods.
-        period: Period type (e.g., "monthly", "daily").
+        config: The validated scenario configuration.
+        location: The output location this population is for, so a
+            CSV-backed source picks the same rows a CSV-backed series
+            would.
         rng: Seeded random generator for reproducibility (unused for a
             fixed int).
-        params: The generator's params, already resolved for this location
-            by ``_resolved_params`` — so a CSV-backed population picks the
-            same rows a CSV-backed series would.
 
     Returns:
         An integer array of length n_periods, one population value per
@@ -397,10 +385,17 @@ def _resolve_population(
     """
     # Early return if source is a fixed population (not a generator spec).
     if isinstance(source, int):
-        return np.full(n_periods, source, dtype=int)
+        return np.full(config.n_total, source, dtype=int)
 
+    params = _resolved_params(
+        source.generate,
+        source.params,
+        config,
+        location,
+        f"the population of '{location}'",
+    )
     headcount = _build_generator(source.generate, params).generate(
-        n_periods, period, rng
+        config.n_total, config.period, rng
     )
     if not np.all(np.isfinite(headcount)):
         raise ValueError(

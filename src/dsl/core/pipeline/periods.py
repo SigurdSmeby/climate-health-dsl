@@ -16,11 +16,13 @@ _PERIODS_PER_YEAR: dict[str, int] = {
 # What a valid label looks like for each resolution.
 _LABEL_PATTERNS = {
     "daily": re.compile(r"^\d{4}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$"),
-    # W53 is real: an ISO year that starts on a Thursday (or a leap year
-    # starting Wednesday) has 53 weeks — 2015 and 2020 among them.
-    # dataset_rules already accepted it, so rejecting it here made the
-    # two halves of the tool disagree about the same label.
-    "weekly": re.compile(r"^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$"),
+    # W01-W52 only, and deliberately: this module models a year as a FLAT
+    # 52 weeks, so there is no index for a 53rd. Accepting the label would
+    # fold 2015-W53 onto 2016-W01 — the same absolute index, the same
+    # formatted label back — which silently moves data by a week instead
+    # of refusing it. Real 53-week years (2015, 2020) therefore need the
+    # calendar question settled first, not a wider regex.
+    "weekly": re.compile(r"^\d{4}-W(0[1-9]|[1-4]\d|5[0-2])$"),
     "monthly": re.compile(r"^\d{4}-(0[1-9]|1[0-2])$"),
     "yearly": re.compile(r"^\d{4}$"),
 }

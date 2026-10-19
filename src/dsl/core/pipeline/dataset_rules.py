@@ -29,6 +29,11 @@ REQUIRED_COLUMNS = ("time_period", "location", "disease_cases")
 # Sunday-start (-S), and the start/end date-range form.
 _PERIOD_FORMATS = {
     "monthly": re.compile(r"^\d{4}-(0[1-9]|1[0-2])$"),
+    # W53 is accepted HERE but not in periods.py, and the two are doing
+    # different jobs: this checks whether a finished frame's labels are
+    # well formed, and real data from a 53-week year (2015, 2020) is well
+    # formed. periods.py has to map a label to a position in a flat
+    # 52-week year, which has no slot for a 53rd.
     "weekly": re.compile(r"^\d{4}-[WS](0[1-9]|[1-4]\d|5[0-3])$"),
     "weekly_range": re.compile(r"^\d{4}-\d{2}-\d{2}/\d{4}-\d{2}-\d{2}$"),
     "daily": re.compile(r"^\d{8}$"),

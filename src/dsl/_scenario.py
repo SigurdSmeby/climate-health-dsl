@@ -63,19 +63,26 @@ def _resolve_from_csv_paths(scenario: dict, base_dir: Path) -> None:
         if candidate.exists():
             params["file"] = str(candidate)
 
-    # `or` rather than a default: an empty `series:` or `params:` in YAML
-    # loads as None, not as a missing key, so the default never fires and
-    # None reaches .get() — a traceback before pydantic can say what is
-    # wrong with the file.
-    for spec in scenario.get("series") or []:
+    # This runs BEFORE pydantic, on whatever YAML happened to contain, so
+    # it checks shapes rather than assuming them: an empty `series:` or
+    # `params:` loads as None (not as a missing key, so a .get() default
+    # never fires), and a malformed one can be any type at all. Anything
+    # unexpected is left untouched for pydantic to reject with a message
+    # that names the field.
+    series = scenario.get("series")
+    for spec in series if isinstance(series, list) else []:
         if isinstance(spec, dict) and spec.get("generate") == "from_csv":
-            fix(spec.get("params") or {})
+            params = spec.get("params")
+            if isinstance(params, dict):
+                fix(params)
     locations = scenario.get("locations")
     if isinstance(locations, dict):
         for loc in locations.values():
             lpop = loc.get("population") if isinstance(loc, dict) else None
             if isinstance(lpop, dict) and lpop.get("generate") == "from_csv":
-                fix(lpop.get("params") or {})
+                lparams = lpop.get("params")
+                if isinstance(lparams, dict):
+                    fix(lparams)
 
 
 def _load_and_parse(scenario: str, seed_override: int | None = None) -> ScenarioConfig:
