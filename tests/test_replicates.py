@@ -8,6 +8,7 @@ import argparse
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from dsl.cli import main
 
@@ -71,12 +72,18 @@ def test_replicate_is_reproducible_from_its_metadata(tmp_path):
     assert orig.equals(again)
 
 
-def test_replicates_zero_is_rejected(tmp_path, capsys):
+@pytest.mark.parametrize("bad", ["0", "-1", "two"])
+def test_a_bad_replicate_count_is_rejected_before_anything_runs(
+    tmp_path, capsys, bad
+):
+    """An argument error, so argparse rejects it (exit 2) before the
+    dataset is generated — rather than paying for the parse first."""
     out = tmp_path / "out"
-    code = main(["run", EXAMPLE, "-o", str(out), "--replicates", "0"])
-    assert code == 1
-    assert "must be >= 1" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as excinfo:
+        main(["run", EXAMPLE, "-o", str(out), "--replicates", bad])
+    assert excinfo.value.code == 2
     assert not out.exists()
+    assert "Traceback" not in capsys.readouterr().err
 
 
 def test_stale_replicate_folders_are_cleared(tmp_path):
@@ -186,3 +193,16 @@ def test_a_successful_run_still_clears_stale_replicates(tmp_path):
     main(["run", EXAMPLE, "-o", str(out), "--replicates", "3"])
     main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"])
     assert sorted(p.name for p in out.iterdir()) == ["rep_00", "rep_01"]
+
+
+def test_a_reused_replicate_folder_does_not_keep_its_old_plot(tmp_path):
+    """write_output rewrites the data and clears folds/, but a plot left
+    from a run made with different --plot flags would ship beside data it
+    does not describe."""
+    out = tmp_path / "out"
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2", "--plot"]) == 0
+    assert (out / "rep_00" / "plot.html").is_file()
+
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 0
+    assert not (out / "rep_00" / "plot.html").exists()
+    assert (out / "rep_00" / "simulated_data.csv").is_file()

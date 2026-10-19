@@ -94,15 +94,17 @@ def _run_once(
             print(f"warning: {finding}", file=sys.stderr)
 
         write_output(df, config, out_dir)
+        # The ground-truth sidecar goes down with the data, before the
+        # report: the report re-runs the generators and so can fail on its
+        # own, and a folder holding a CSV with no metadata.json is a
+        # dataset that cannot say what made it or reproduce itself.
+        write_metadata(config, out_dir)
         # What each fold actually contains, so a fold that cannot measure
         # what the scenario planted is visible rather than silently scored
         # well. This re-runs the generators to read what they planted, so it
         # can hit the same input errors generation can — and under --watch an
         # escaping exception would kill the watch loop.
         write_report(config, df, out_dir)
-        # The ground-truth sidecar: records the resolved scenario so the
-        # dataset is self-describing and reproducible.
-        write_metadata(config, out_dir)
         print(f"Wrote {len(df)} rows to {out_dir}/")
 
         if plot:
@@ -131,9 +133,17 @@ def _run_once(
                 # would throw away a good run, and end a --watch session
                 # with a traceback on a machine that simply has no chrome.
                 print(f"warning: could not write the plot ({exc})", file=sys.stderr)
+                # A plot left from an earlier run would otherwise sit beside
+                # data it does not describe — and under --watch the browser
+                # would reload it as if it were fresh.
+                plot_path.unlink(missing_ok=True)
             else:
                 print(f"Wrote plot to {plot_path}")
-    except (ValueError, FileNotFoundError, KeyError) as exc:
+    except (ValueError, FileNotFoundError, KeyError, OSError) as exc:
+        # OSError too: a full disk or an unwritable output folder is an
+        # ordinary thing to hit, and under --watch a traceback ends the
+        # session instead of letting the author free some space and save
+        # again. (FileNotFoundError is an OSError, kept for clarity.)
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
@@ -222,8 +232,16 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
     # replicates plus a failing run asking for one left rep_00 half
     # written and rep_01, rep_02 gone, with nothing to show for it.
     for i in range(args.replicates):
+        rep_dir = out_dir / f"rep_{i:02d}"
+        # A reused rep_NN may hold an earlier run's plot. write_output
+        # rewrites the data and clears folds/, but a plot.* left from a
+        # run made with different --plot flags or a different seed would
+        # otherwise ship beside data it does not describe.
+        if rep_dir.is_dir():
+            for stale in rep_dir.glob("plot.*"):
+                stale.unlink()
         code = _run_once(
-            args.scenario, out_dir / f"rep_{i:02d}", args.plot, args.plot_format,
+            args.scenario, rep_dir, args.plot, args.plot_format,
             config=base_config.model_copy(update={"seed": base_seed + i}),
             tick_every=getattr(args, "plot_ticks", None),
         )
@@ -246,7 +264,7 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
 
 
 def _changed(path: str, last_mtime: float) -> tuple[bool, float]:
-    """Has ``path``'s mtime advanced past ``last_mtime``?
+    """Has ``path``'s mtime moved since ``last_mtime``?
 
     A missing file (mid-save by some editors) counts as unchanged.
 
@@ -259,10 +277,14 @@ def _changed(path: str, last_mtime: float) -> tuple[bool, float]:
         remember for the next check (unchanged from last_mtime if missing).
     """
     try:
-        mtime = Path(path).stat().st_mtime
+        # Nanoseconds, and != rather than >: an editor that writes twice
+        # within one clock tick, or restores an older copy, still counts as
+        # a change — and a save the watcher misses is a save the author
+        # waits for forever.
+        mtime = Path(path).stat().st_mtime_ns
     except FileNotFoundError:
         return False, last_mtime
-    return mtime > last_mtime, mtime
+    return mtime != last_mtime, mtime
 
 
 # Injected into plot.html under --watch: poll a version the server bumps on each
@@ -296,13 +318,21 @@ def _inject_reload(html_path: Path) -> None:
     """
     if not html_path.is_file():
         return
-    html = html_path.read_text()
+    html = html_path.read_text(encoding="utf-8")
     if "__plot_version__" not in html:
-        html = html.replace("</body>", _RELOAD_SCRIPT + "</body>", 1)
-        html_path.write_text(html)
+        # The LAST </body>: plotly's own output can embed one earlier, and
+        # a script injected before the real end of the document may not
+        # run. rfind returns -1 when there is none, which would splice the
+        # script in before the final character, so append instead.
+        cut = html.rfind("</body>")
+        if cut == -1:
+            html += _RELOAD_SCRIPT
+        else:
+            html = html[:cut] + _RELOAD_SCRIPT + html[cut:]
+        html_path.write_text(html, encoding="utf-8")
 
 
-def _serve(out_dir: Path, version: list[int]) -> "http.server.HTTPServer":
+def _serve(out_dir: Path, version: list[int]) -> "http.server.ThreadingHTTPServer":
     """Serve ``out_dir`` on a free localhost port; expose the reload version.
 
     ``version`` is a one-element list shared with the watch loop — the handler
@@ -314,7 +344,7 @@ def _serve(out_dir: Path, version: list[int]) -> "http.server.HTTPServer":
             reload script and bumped by the watch loop after each re-run.
 
     Returns:
-        The running HTTPServer (already serving in a daemon thread).
+        The running server (already serving in a daemon thread).
     """
     class Handler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
@@ -332,7 +362,10 @@ def _serve(out_dir: Path, version: list[int]) -> "http.server.HTTPServer":
             pass
 
     handler = functools.partial(Handler, directory=str(out_dir))
-    server = http.server.HTTPServer(("127.0.0.1", 0), handler)
+    # Threading: a single-threaded server blocks on one slow request,
+    # and the page polls for a version bump while also fetching the
+    # plot — so one stalled fetch could freeze the reload.
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 
@@ -390,6 +423,9 @@ def _watch_loop(
     finally:
         if server is not None:
             server.shutdown()
+            # Releases the listening socket; without it the port stays
+            # bound for the rest of the process.
+            server.server_close()
 
 
 def _prompt_continue(scenario: str) -> Path | None:
@@ -417,7 +453,7 @@ def _prompt_continue(scenario: str) -> Path | None:
         choice = input("> ").strip().lower()
     except EOFError:
         return None
-    if choice.isdigit() and 1 <= int(choice) <= len(runs):
+    if choice.isdecimal() and 1 <= int(choice) <= len(runs):
         chosen = runs[int(choice) - 1]
         print(f"continuing in {chosen}/ (overwriting it).")
         return chosen
@@ -437,7 +473,14 @@ def _scenario_runs(scenario: str) -> list[Path]:
     # Must match _resolve_out_dir: a metadata.json names its parent folder,
     # not the file, or the prompt searches for out/metadata and finds nothing.
     path = Path(scenario)
-    name = path.parent.name if path.name == "metadata.json" else path.stem
+    # resolve() first: `dsl run metadata.json` from inside the folder
+    # gives a bare filename, whose .parent.name is "" — which would
+    # name the output directory out/ rather than out/<run>.
+    name = (
+        path.resolve().parent.name
+        if path.name == "metadata.json"
+        else path.stem
+    )
     out = Path("out")
     if not out.is_dir():
         return []

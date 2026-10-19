@@ -324,15 +324,32 @@ def test_new_refuses_overwrite_without_force(tmp_path, capsys):
     assert "period: monthly\n" not in scenario.read_text()
 
 
-def test_changed_detects_mtime_advance(tmp_path):
-    # The watch loop's change check: a newer mtime is a change, a missing
-    # file is treated as unchanged (some editors unlink mid-save).
+def test_changed_detects_any_mtime_move(tmp_path):
+    """The watch loop's change check. It compares nanoseconds with != , not
+    seconds with >: an editor that writes twice inside one clock tick, or
+    restores an older copy, is still a change — and a save the watcher
+    misses is a save the author waits for forever."""
     f = tmp_path / "s.yaml"
     f.write_text("a")
-    mtime = f.stat().st_mtime
+    mtime = f.stat().st_mtime_ns
+
     assert _changed(str(f), mtime) == (False, mtime)
     assert _changed(str(f), mtime - 1)[0] is True
+    # An OLDER file than last seen — a restored backup — also counts.
+    assert _changed(str(f), mtime + 1)[0] is True
+    # A missing file is unchanged: some editors unlink mid-save.
     assert _changed(str(tmp_path / "gone.yaml"), mtime) == (False, mtime)
+
+
+def test_changed_sees_a_save_within_the_same_second(tmp_path):
+    """Second resolution could miss a quick second save entirely."""
+    f = tmp_path / "s.yaml"
+    f.write_text("a")
+    _, first = _changed(str(f), 0)
+    f.write_text("b")
+    changed, second = _changed(str(f), first)
+    assert changed, "a rewrite in the same second went unnoticed"
+    assert second != first
 
 
 def test_run_once_writes_files(tmp_path):
@@ -663,3 +680,84 @@ def test_a_scenario_reads_its_own_data_whatever_the_cwd(tmp_path, monkeypatch):
     assert main(["run", str(project / "s.yaml"), "-o", str(out)]) == 0
     rain = pd.read_csv(out / "simulated_data.csv")["rain"]
     assert rain.iloc[0] == 1.0, "read the cwd's data.csv instead of its own"
+
+
+def test_a_failed_step_still_leaves_a_self_describing_folder(tmp_path):
+    """metadata.json is written with the data, not after the fold report.
+    The report re-runs the generators and can fail on its own, and a CSV
+    with no sidecar is a dataset that cannot say what made it."""
+    import dsl._run as run_module
+
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+
+    original = run_module.write_report
+
+    def boom(*args, **kwargs):
+        raise ValueError("report blew up")
+
+    run_module.write_report = boom
+    try:
+        assert main(["run", str(path), "-o", str(out)]) == 1
+    finally:
+        run_module.write_report = original
+
+    assert (out / "simulated_data.csv").is_file()
+    assert (out / "metadata.json").is_file(), "data without its own sidecar"
+
+
+def test_a_failed_plot_removes_the_previous_one(tmp_path, capsys):
+    """Under --watch the browser reloads plot.html after every run, so a
+    plot left from an earlier save would be served as if it described the
+    data just written."""
+    import dsl._run as run_module
+
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out), "--plot"]) == 0
+    assert (out / "plot.html").is_file()
+
+    original = run_module.plot_dataset
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("kaleido: no chrome")
+
+    run_module.plot_dataset = boom
+    try:
+        assert main(["run", str(path), "-o", str(out), "--plot"]) == 0
+    finally:
+        run_module.plot_dataset = original
+
+    assert not (out / "plot.html").exists(), "stale plot left beside new data"
+    assert "could not write the plot" in capsys.readouterr().err
+
+
+def test_the_reload_script_goes_after_the_last_body(tmp_path):
+    """plotly's own output can embed a </body> earlier in the document, and
+    a script spliced in before the real end may not run. rfind returns -1
+    when there is none, which would splice it before the final character."""
+    from dsl._run import _inject_reload
+
+    page = tmp_path / "plot.html"
+    page.write_text("<html><body>a</body><div>x</div><body>b</body></html>")
+    _inject_reload(page)
+    html = page.read_text()
+    assert html.index("__plot_version__") > html.rindex("<body>")
+
+    bare = tmp_path / "bare.html"
+    bare.write_text("<html>no body here</html>")
+    _inject_reload(bare)
+    assert bare.read_text().startswith("<html>no body here</html>")
+
+
+def test_a_bare_metadata_path_names_the_run_it_came_from(tmp_path, monkeypatch):
+    """`dsl run metadata.json` from inside the run folder gives a bare
+    filename, whose .parent.name is "" — which named the output out/
+    rather than out/<run>."""
+    from dsl._output import _resolve_out_dir
+
+    run_dir = tmp_path / "myrun"
+    run_dir.mkdir()
+    (run_dir / "metadata.json").write_text("{}")
+    monkeypatch.chdir(run_dir)
+    assert _resolve_out_dir("metadata.json", None).name == "myrun"

@@ -128,7 +128,14 @@ def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
         return Path(out_arg)
 
     path = Path(input_path)
-    name = path.parent.name if path.name == "metadata.json" else path.stem
+    # resolve() first: `dsl run metadata.json` from inside the folder
+    # gives a bare filename, whose .parent.name is "" — which would
+    # name the output directory out/ rather than out/<run>.
+    name = (
+        path.resolve().parent.name
+        if path.name == "metadata.json"
+        else path.stem
+    )
 
     base = Path("out") / name
     if not base.exists():
@@ -156,7 +163,9 @@ def _numbered_dir_suffix(entry: Path, prefix: str) -> int | None:
     if not entry.is_dir() or not entry.name.startswith(prefix):
         return None
     suffix = entry.name[len(prefix) :]
-    return int(suffix) if suffix.isdigit() else None
+    # isdecimal, not isdigit: isdigit accepts "²" and other Unicode
+    # digit forms that int() then rejects with a ValueError.
+    return int(suffix) if suffix.isdecimal() else None
 
 
 def _write_starter(path: Path, force: bool) -> int:
