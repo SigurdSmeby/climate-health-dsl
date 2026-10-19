@@ -4,6 +4,8 @@ Each replicate i uses seed = base_seed + i and writes its own subfolder with a
 full dataset + metadata (independently reproducible). N=1 is the single-run
 default. TDD: written before the CLI flag exists.
 """
+from pathlib import Path
+
 import pandas as pd
 
 from dsl.cli import main
@@ -99,3 +101,58 @@ def test_reusing_a_folder_clears_a_previous_single_run(tmp_path):
     assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 0
     assert not (out / "simulated_data.csv").exists()
     assert sorted(p.name for p in out.iterdir()) == ["rep_00", "rep_01"]
+
+
+def test_a_folder_holding_other_files_is_refused_not_cleaned(tmp_path, capsys):
+    """The cleanup deletes what it will not overwrite, so it must not run
+    in a folder it does not own. `-o .` in a working directory is the case
+    that bites: it took the scenario file, and everything beside it, with
+    no warning and no prompt.
+    """
+    out = tmp_path / "work"
+    (out / "src").mkdir(parents=True)
+    (out / "src" / "main.py").write_text("code")
+    scenario = out / "scenario.yaml"
+    scenario.write_text(Path(EXAMPLE).read_text())
+    thesis = out / "thesis.tex"
+    thesis.write_text("my thesis")
+
+    code = main(["run", str(scenario), "-o", str(out), "--replicates", "2"])
+
+    assert code == 1
+    assert scenario.is_file(), "deleted the scenario it was running"
+    assert thesis.read_text() == "my thesis"
+    assert (out / "src" / "main.py").read_text() == "code"
+
+    err = capsys.readouterr().err
+    # The message has to name what stopped it, or the user cannot act on it.
+    assert "thesis.tex" in err and "src" in err
+
+
+def test_the_refusal_lists_at_most_a_handful_of_names(tmp_path, capsys):
+    """A home directory would otherwise print hundreds of names."""
+    out = tmp_path / "many"
+    out.mkdir()
+    for i in range(12):
+        (out / f"file_{i}.txt").write_text("x")
+
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 1
+    err = capsys.readouterr().err
+    assert err.count("file_") == 5
+    assert "…" in err
+
+
+def test_output_of_a_previous_run_is_not_foreign(tmp_path):
+    """Every name the tool itself writes must still be cleanable, or
+    re-running into a used folder would refuse instead of refreshing.
+    """
+    from dsl._run import _foreign_entries
+
+    out = tmp_path / "out"
+    out.mkdir()
+    for name in ("simulated_data.csv", "metadata.json", "plot.html", "plot.png"):
+        (out / name).write_text("x")
+    (out / "folds").mkdir()
+    (out / "rep_07").mkdir()
+
+    assert _foreign_entries(out, keep={"rep_00"}) == []

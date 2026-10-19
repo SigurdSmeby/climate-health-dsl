@@ -160,7 +160,8 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "generate N replicates with seeds base, base+1, … into rep_00/, "
             "rep_01/, … (each independently reproducible). Default 1 = a single "
-            "run written directly to the output folder."
+            "run written directly to the output folder. Clears stale results "
+            "from the folder first, so it needs one holding only its own output."
         ),
     )
     args = parser.parse_args(argv)
