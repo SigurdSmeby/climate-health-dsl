@@ -10,6 +10,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from dsl.core.pipeline.periods import periods_per_year
+
 # Identifier columns that are never their own panel. population is special:
 # it gets a panel only when it varies over time (growth), not when constant.
 _NON_SERIES = ("time_period", "location", "population")
@@ -28,6 +30,8 @@ def plot_dataset(
     df: pd.DataFrame,
     out_path: str | Path,
     train_split: int | None = None,
+    period: str | None = None,
+    tick_every: int | None = None,
 ) -> None:
     """Write a faceted time-series plot to disk.
 
@@ -40,6 +44,10 @@ def plot_dataset(
         out_path: Path to write (e.g., "out/demo/plot.html").
         train_split: If given, the train/test boundary as a period index —
             drawn as a dashed vertical line on every panel.
+        period: Time resolution ("monthly", ...). Puts a tick on every year
+            boundary, so a recurring annual shape lines up by eye.
+        tick_every: Gridline spacing in periods, overriding the one-year
+            default — 6 on monthly data to read a half-year cycle.
 
     Errors Caught (raised to caller):
         ValueError: If the file extension is not .html or a supported image
@@ -55,7 +63,7 @@ def plot_dataset(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Build the figure.
-    fig = _build_figure(df, train_split)
+    fig = _build_figure(df, train_split, period, tick_every)
 
     # Step 2: Write to disk in the requested format.
     if suffix == ".html":
@@ -64,7 +72,12 @@ def plot_dataset(
         fig.write_image(out_path)
 
 
-def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure:
+def _build_figure(
+    df: pd.DataFrame,
+    train_split: int | None = None,
+    period: str | None = None,
+    tick_every: int | None = None,
+) -> go.Figure:
     """Build the faceted figure: one panel per series, one line per location.
 
     Colours are pinned per location so a location keeps the same colour in
@@ -73,6 +86,8 @@ def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure
     Args:
         df: The output DataFrame.
         train_split: If given, the train/test boundary as a period index.
+        period: Time resolution, for the year gridlines.
+        tick_every: Gridline spacing in periods, overriding the year default.
 
     Returns:
         A plotly Figure with len(_series_columns(df)) stacked subplots.
@@ -127,6 +142,17 @@ def _build_figure(df: pd.DataFrame, train_split: int | None = None) -> go.Figure
                 row=row,
                 col=1,
             )
+
+    # Step 4: Put a tick on every year boundary, or every tick_every
+    # periods when asked. x is a period index, so plotly would otherwise pick
+    # a round number of periods (10 on monthly data) — the same month then
+    # drifts off the gridline each year, and a yearly cycle cannot be read
+    # off the chart.
+    spacing = tick_every if tick_every is not None else (
+        periods_per_year(period) if period is not None else None
+    )
+    if spacing is not None:
+        fig.update_xaxes(dtick=spacing, tick0=0)
 
     fig.update_layout(
         height=220 * len(series_columns),

@@ -289,6 +289,7 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 | `-o`, `--out-dir DIR` | auto-named | Where to write. Omitted, an auto-named folder under `out/` keeps earlier runs intact. |
 | `--plot` | off | Also write a plot. |
 | `--plot-format FMT` | `html` | `html` (interactive), `png`, `svg`, `pdf`. |
+| `--plot-ticks N` | one year | Gridline every N periods. The default follows `period`, so 12 on monthly data and every tick is the same month. Use `6` for a half-year grid. |
 | `--watch` | off | Re-run on every save; live-reloading plot with `--plot`. |
 | `--new` | off | Skip the continue-or-new prompt. |
 | `--replicates`, `-n N` | `1` | N seeded replicates (`base, base+1, …`) into `rep_00/`, `rep_01/`, …, each reproducible. Not with `--watch`. |
@@ -301,7 +302,7 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 | `folds/fold_N/{train,test}.csv` | with `split:` | One folder per fold, ready to use unsliced. |
 | `folds/report.{md,json}` | with `split:` | Per-fold sizes, coverage, missing values, and every planted feature per side — the count, the exact periods it sits at, and which locations drew it. Plus a warning for any fold whose test half lacks a kind the scenario plants. |
 | `metadata.json` | always | The ground truth: seed, lags, weights, transforms, rates, generators, version, resolved scenario. Feed back to `dsl run` to reproduce byte-for-byte. |
-| `plot.{html,png,svg,pdf}` | with `--plot` | Faceted series over time, one line per location, the evaluation boundary marked. |
+| `plot.{html,png,svg,pdf}` | with `--plot` | Faceted series over time, one line per location, a gridline on every year, the evaluation boundary marked. |
 
 Same scenario + seed → identical files. Output is checked against the dataset
 rules a forecasting tool expects; findings print as `warning:` and the run

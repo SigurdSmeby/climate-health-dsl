@@ -207,6 +207,21 @@ def test_plot_flag_writes_plot(tmp_path):
     assert (out / "plot.html").is_file()
 
 
+def test_plot_ticks_flag_accepted(tmp_path):
+    out = tmp_path / "out"
+    code = main(["run", EXAMPLE, "-o", str(out), "--plot", "--plot-ticks", "6"])
+    assert code == 0
+    assert (out / "plot.html").is_file()
+
+
+def test_plot_ticks_rejects_zero(tmp_path, capsys):
+    """A spacing of 0 would ask plotly for infinitely many gridlines."""
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit):
+        main(["run", EXAMPLE, "-o", str(out), "--plot", "--plot-ticks", "0"])
+    assert "positive" in capsys.readouterr().err
+
+
 def test_plot_format_png(tmp_path):
     out = tmp_path / "out"
     code = main(["run", EXAMPLE, "-o", str(out), "--plot", "--plot-format", "png"])
