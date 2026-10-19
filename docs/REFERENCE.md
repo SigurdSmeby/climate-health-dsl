@@ -134,6 +134,21 @@ carries a `counts:` block.
 | `weight` | `1.0` | Strength relative to the other parents. Parents are standardized first, so weights compare across units. Negative is protective. |
 | `transforms` | `[]` | [Transforms](#transforms) applied after the lag, before standardizing. |
 
+**A parent may appear more than once**, at different lags — one entry per lag,
+each with its own weight. The warm-up runs as far as the longest lag that
+carries a non-zero weight; a `weight: 0` entry is skipped entirely, so it
+neither contributes nor blanks rows.
+
+```yaml
+depends_on:
+  - { series: rainfall, lag: 1, weight: 0.6 }
+  - { series: rainfall, lag: 3, weight: 0.4 }
+```
+
+That spreads the response over months 1 and 3 by hand.
+`distributed_lag` (see [transforms](#transforms)) does the same with a kernel
+when the shape matters more than the individual terms.
+
 ## `counts`
 
 The block's presence marks a disease signal; `counts: {}` uses the defaults.
