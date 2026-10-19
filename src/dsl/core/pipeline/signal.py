@@ -4,7 +4,7 @@ Every series is a float array before anything else happens to it. This module
 owns that shared path — base generator, weighted lagged parents, persistence,
 gaps — so a plain climate column and a disease signal are built the same way.
 What happens *after* is what differs: a plain series is written as-is, a count
-series goes on through the incidence model in ``disease.py``.
+series goes on through the incidence model in ``emitters/counts.py``.
 """
 import inspect
 

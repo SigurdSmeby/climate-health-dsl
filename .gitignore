@@ -22,6 +22,11 @@ coverage.xml
 out/
 graphify-out/
 
+# Scratch scenarios from `dsl new` at the repo root. The starter lives in
+# _output.py; a copy committed here only drifts from it.
+/scenario.yaml
+/my_scenario.yaml
+
 # Editor / OS junk
 *.swp
 *.swo

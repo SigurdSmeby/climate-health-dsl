@@ -552,3 +552,59 @@ def test_multi_location_is_reproducible():
     a = run(multi_location_config())
     b = run(multi_location_config())
     assert a.equals(b)
+
+
+def test_a_csv_backed_population_resolves_per_location(tmp_path):
+    """A series backed by a multi-location CSV picks its own location's
+    rows; a population backed by the SAME CSV did not, because it built
+    its generator directly instead of through the shared resolution — so
+    the scenario failed with "set source_location" on the population
+    while the series beside it worked."""
+    import pandas as pd
+
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+
+    csv = tmp_path / "data.csv"
+    rows = []
+    for year in (2000, 2001):
+        for month in range(1, 13):
+            for place, people in (("a", 100_000), ("b", 200_000)):
+                rows.append(
+                    {
+                        "time_period": f"{year}-{month:02d}",
+                        "location": place,
+                        "pop": people,
+                        "rain": 5.0,
+                    }
+                )
+    pd.DataFrame(rows).to_csv(csv, index=False)
+
+    source = {"generate": "from_csv", "params": {"file": str(csv), "column": "pop"}}
+    config = parse_config(
+        {
+            "period": "monthly",
+            "n_total": 24,
+            "seed": 1,
+            "start_period": "2000-01",
+            "locations": {"a": {"population": source}, "b": {"population": source}},
+            "series": [
+                {
+                    "name": "rain",
+                    "generate": "from_csv",
+                    "params": {"file": str(csv), "column": "rain"},
+                },
+                {
+                    "name": "disease_cases",
+                    "counts": {},
+                    "depends_on": [{"series": "rain", "lag": 1}],
+                },
+            ],
+        }
+    )
+
+    frame = run(config)
+    # Each place must get ITS OWN rows, not the first location's.
+    by_place = frame.groupby("location")["population"].unique()
+    assert list(by_place["a"]) == [100_000]
+    assert list(by_place["b"]) == [200_000]

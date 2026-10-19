@@ -63,15 +63,19 @@ def _resolve_from_csv_paths(scenario: dict, base_dir: Path) -> None:
         if candidate.exists():
             params["file"] = str(candidate)
 
-    for spec in scenario.get("series", []):
+    # `or` rather than a default: an empty `series:` or `params:` in YAML
+    # loads as None, not as a missing key, so the default never fires and
+    # None reaches .get() — a traceback before pydantic can say what is
+    # wrong with the file.
+    for spec in scenario.get("series") or []:
         if isinstance(spec, dict) and spec.get("generate") == "from_csv":
-            fix(spec.get("params", {}))
+            fix(spec.get("params") or {})
     locations = scenario.get("locations")
     if isinstance(locations, dict):
         for loc in locations.values():
             lpop = loc.get("population") if isinstance(loc, dict) else None
             if isinstance(lpop, dict) and lpop.get("generate") == "from_csv":
-                fix(lpop.get("params", {}))
+                fix(lpop.get("params") or {})
 
 
 def _load_and_parse(scenario: str, seed_override: int | None = None) -> ScenarioConfig:

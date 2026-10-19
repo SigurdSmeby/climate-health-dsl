@@ -855,12 +855,24 @@ class ScenarioConfig(BaseModel):
                     f"{len(self.locations)}."
                 )
             side = "train on" if not fold.train_periods else "test on"
+            # The two schemes run out of periods for different reasons, and
+            # naming the wrong one sends the reader to the wrong knob.
+            if self.split.scheme == "blocked":
+                why = (
+                    "A blocked split trains on whatever lies OUTSIDE the "
+                    "test block, so with k=1 the block is the whole series "
+                    "and nothing is left; use k of 2 or more, or "
+                    "scheme: expanding."
+                )
+            else:
+                why = (
+                    "An expanding split keeps its first n_total // (k + 1) "
+                    "periods for training only, which is 0 here; use a "
+                    "smaller k or a longer n_total."
+                )
             raise ValueError(
                 f"split k is {k} with n_total {self.n_total}, which leaves "
-                f"fold {fold.index} with no periods to {side}. An expanding "
-                f"split keeps its first n_total // (k + 1) periods for "
-                f"training only, which is 0 here; use a smaller k or a "
-                f"longer n_total."
+                f"fold {fold.index} with no periods to {side}. {why}"
             )
 
     def folds(self) -> list[Fold]:
