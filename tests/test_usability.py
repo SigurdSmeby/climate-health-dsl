@@ -122,6 +122,24 @@ def test_cross_field_errors_drop_pydantic_boilerplate(tmp_path, capsys):
     assert "need a population" in err
 
 
+def _is_option(line: str) -> bool:
+    """Is this line one of the starter's switchable options?
+
+    An option is a comment whose "#" sits against the body, so deleting
+    that one character leaves valid YAML at the right indent. Prose puts a
+    space after the "#" and reads as a sentence.
+
+    Args:
+        line: One line of the starter.
+
+    Returns:
+        True if deleting the leading "#" is meant to enable something.
+    """
+    import re
+
+    return bool(re.match(r"^# *(?:[a-z_][\w.]*:|- |\{)", line))
+
+
 def _option_lines() -> list[int]:
     """Indices of the starter's switchable option lines.
 
@@ -133,17 +151,12 @@ def _option_lines() -> list[int]:
     Returns:
         Line indices into STARTER_TEMPLATE.splitlines(), in file order.
     """
-    import re
-
     from dsl._output import STARTER_TEMPLATE
 
-    # A YAML key or list item, lowercase — prose starts with a capital and
-    # reads as a sentence. A bare "#" is a paragraph break, not a switch.
-    body = re.compile(r"^# *(?:[a-z_][\w.]*:|- |\{)")
     return [
         i
         for i, line in enumerate(STARTER_TEMPLATE.splitlines())
-        if body.match(line)
+        if _is_option(line)
     ]
 
 
@@ -184,31 +197,6 @@ def test_every_commented_option_in_the_starter_works_uncommented():
     # The options add a second location and a dependent series.
     assert df["location"].nunique() == 2
     assert "soil_moisture" in df.columns
-
-
-def test_the_starter_marks_its_options_unambiguously():
-    """Every option is a "#" against the body; every "# " line is prose.
-
-    The convention is what lets a reader delete one character anywhere in
-    the file, so a line that breaks it would make the rule a half-truth.
-    """
-    import re
-
-    from dsl._output import STARTER_TEMPLATE
-
-    # Prose wraps to several lines and reads as a sentence; an option is a
-    # YAML key or list item. A prose line that happens to start with a
-    # lowercase key would be enabled by the rule and break the file.
-    prose_as_option = [
-        line
-        for i, line in enumerate(STARTER_TEMPLATE.splitlines())
-        if i in _option_lines() and not re.match(r"^# *([a-z_]+:|- |\{)", line)
-    ]
-    assert not prose_as_option, (
-        "these are marked as options but are not YAML:\n"
-        + "\n".join(prose_as_option)
-    )
-    assert _option_lines(), "the starter offers no options at all"
 
 
 # Options that only make sense together: a series can react to `storm`
@@ -303,8 +291,25 @@ def test_the_starter_threshold_actually_bites():
     a = run(without)["disease_cases"].to_numpy()
     b = run(enabled)["disease_cases"].to_numpy()
     assert not np.allclose(a, b, equal_nan=True), (
-        "the starter's threshold sits outside the rainfall range, so "
-        "enabling it changes nothing"
+        "enabling the threshold changed nothing in the output"
+    )
+
+    # The reason it bites, stated as the docs state it: a threshold below
+    # the driver's minimum is a constant subtraction, which standardizing
+    # removes exactly. Asserting the output differs would not catch a
+    # threshold that drifted out of range if something else moved too.
+    rainfall = run(enabled)["rainfall"].to_numpy()
+    threshold = next(
+        t.params["threshold"]
+        for spec in enabled.series
+        for dep in spec.depends_on
+        for t in dep.transforms
+        if t.name == "threshold"
+    )
+    low, high = np.nanmin(rainfall), np.nanmax(rainfall)
+    assert low < threshold < high, (
+        f"threshold {threshold} is outside the rainfall range "
+        f"{low:.2f}..{high:.2f}, so hinge is a constant shift"
     )
 
 
@@ -324,7 +329,36 @@ def test_the_tutorial_shows_the_starter_s_own_transforms_line():
         for i in _option_lines()
         if lines[i].lstrip("# ").startswith("transforms:")
     )
-    tutorial = pathlib.Path("docs/TUTORIAL.md").read_text()
-    assert starter in tutorial, (
-        f"the tutorial does not show the starter's line:\n  {starter}"
+    repo = pathlib.Path(__file__).resolve().parent.parent
+    tutorial = (repo / "docs" / "TUTORIAL.md").read_text()
+    # Inside the step that tells the reader to enable it, not merely
+    # somewhere in the document.
+    step = tutorial.split("## 10.")[1].split("## 11.")[0]
+    assert starter in step, (
+        f"the transforms step does not show the starter's line:\n  {starter}"
     )
+
+
+def test_the_file_dsl_new_writes_follows_the_same_rule(tmp_path):
+    """The rule is about the file on disk, not the template string.
+
+    Every other test reads STARTER_TEMPLATE, so a change in how `dsl new`
+    writes it out would go unnoticed. This enables the options in the
+    written file and runs it, the way a reader does.
+    """
+    import yaml
+
+    from dsl._output import _write_starter
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+
+    scenario = tmp_path / "s.yaml"
+    _write_starter(scenario, force=False)
+    written = scenario.read_text().splitlines()
+
+    enabled = [
+        line[1:] if _is_option(line) else line for line in written
+    ]
+    df = run(parse_config(yaml.safe_load("\n".join(enabled))))
+    assert df["location"].nunique() == 2
+    assert "soil_moisture" in df.columns
