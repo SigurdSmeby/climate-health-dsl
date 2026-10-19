@@ -57,8 +57,13 @@ def _resolve_from_csv_paths(scenario: dict, base_dir: Path) -> None:
         if not isinstance(file, str):
             return
         p = Path(file)
-        if p.is_absolute() or p.exists():
+        if p.is_absolute():
             return
+        # The file beside the scenario wins over one in the current
+        # directory. The other order made the same scenario read different
+        # data depending on where it was run from — a file named data.csv
+        # in the shell's cwd silently replaced the one the scenario ships
+        # with, which is a reproducibility failure, not a convenience.
         candidate = base_dir / file
         if candidate.exists():
             params["file"] = str(candidate)

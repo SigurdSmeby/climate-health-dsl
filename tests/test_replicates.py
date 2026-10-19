@@ -4,6 +4,7 @@ Each replicate i uses seed = base_seed + i and writes its own subfolder with a
 full dataset + metadata (independently reproducible). N=1 is the single-run
 default. TDD: written before the CLI flag exists.
 """
+import argparse
 from pathlib import Path
 
 import pandas as pd
@@ -156,3 +157,32 @@ def test_output_of_a_previous_run_is_not_foreign(tmp_path):
     (out / "rep_07").mkdir()
 
     assert _foreign_entries(out, keep={"rep_00"}) == []
+
+
+def test_a_failed_run_keeps_the_previous_replicates(tmp_path, monkeypatch):
+    """The cleanup ran before the first replicate succeeded, so a run that
+    failed part-way had already deleted the results it was replacing —
+    three good replicates plus a failing run asking for one left rep_00
+    half written and the rest gone."""
+    import dsl._run as run_module
+
+    out = tmp_path / "out"
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "3"]) == 0
+    before = sorted(p.name for p in out.iterdir())
+    assert before == ["rep_00", "rep_01", "rep_02"]
+
+    monkeypatch.setattr(run_module, "_run_once", lambda *a, **k: 1)
+    args = argparse.Namespace(
+        scenario=EXAMPLE, replicates=1, plot=False, plot_format="html",
+        watch=False, plot_ticks=None,
+    )
+    assert run_module._run_replicates(args, out) == 1
+    assert sorted(p.name for p in out.iterdir()) == before
+
+
+def test_a_successful_run_still_clears_stale_replicates(tmp_path):
+    """Writing before cleaning must not mean never cleaning."""
+    out = tmp_path / "out"
+    main(["run", EXAMPLE, "-o", str(out), "--replicates", "3"])
+    main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"])
+    assert sorted(p.name for p in out.iterdir()) == ["rep_00", "rep_01"]

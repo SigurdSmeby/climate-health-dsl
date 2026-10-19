@@ -608,3 +608,28 @@ def test_a_csv_backed_population_resolves_per_location(tmp_path):
     by_place = frame.groupby("location")["population"].unique()
     assert list(by_place["a"]) == [100_000]
     assert list(by_place["b"]) == [200_000]
+
+
+def test_seeds_a_power_of_two_apart_are_different_scenarios():
+    """The seed was masked to 32 bits, so seed 5 and seed 4294967301 were
+    the same dataset — surprising, and it silently shrinks the seed space
+    a replicate sweep draws from."""
+    import numpy as np
+
+    from dsl.core.pipeline.engine import _child_rng
+
+    a = _child_rng(5, "loc", "series")
+    b = _child_rng(5 + 2**32, "loc", "series")
+    assert not np.array_equal(a.random(8), b.random(8))
+
+
+def test_a_seed_is_still_reproducible():
+    """Removing the mask must not cost the property the mask was beside."""
+    import numpy as np
+
+    from dsl.core.pipeline.engine import _child_rng
+
+    assert np.array_equal(
+        _child_rng(7, "loc", "series").random(8),
+        _child_rng(7, "loc", "series").random(8),
+    )

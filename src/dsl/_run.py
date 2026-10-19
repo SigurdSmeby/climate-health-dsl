@@ -201,12 +201,10 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
         print(f"error: {msg}", file=sys.stderr)
         return 1
     base_seed = base_config.seed
-    # A reused folder may hold a previous run's output — more rep_NN/ dirs
-    # than this run writes, or a single run's CSVs and folds/ from before
-    # --replicates was used. Either would be read as part of this run, so
-    # clear anything this run will not itself overwrite.
+    # Checked before anything is written: refusing a folder the tool does
+    # not own has to happen while it is still untouched.
+    keep = {f"rep_{i:02d}" for i in range(args.replicates)}
     if out_dir.is_dir():
-        keep = {f"rep_{i:02d}" for i in range(args.replicates)}
         foreign = _foreign_entries(out_dir, keep)
         if foreign:
             print(
@@ -219,13 +217,10 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
                 file=sys.stderr,
             )
             return 1
-        for stale in out_dir.iterdir():
-            if stale.name in keep:
-                continue
-            if stale.is_dir():
-                shutil.rmtree(stale)
-            else:
-                stale.unlink()
+    # Write FIRST, clean after. Clearing up front meant a run that failed
+    # part-way had already deleted the previous results — three good
+    # replicates plus a failing run asking for one left rep_00 half
+    # written and rep_01, rep_02 gone, with nothing to show for it.
     for i in range(args.replicates):
         code = _run_once(
             args.scenario, out_dir / f"rep_{i:02d}", args.plot, args.plot_format,
@@ -234,6 +229,19 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
         )
         if code != 0:
             return code
+
+    # Every replicate succeeded, so anything still here belongs to an
+    # earlier run — more rep_NN/ dirs than this one wrote, or a single
+    # run's CSVs and folds/ from before --replicates was used. Either
+    # would be read as part of this run.
+    if out_dir.is_dir():
+        for stale in out_dir.iterdir():
+            if stale.name in keep:
+                continue
+            if stale.is_dir():
+                shutil.rmtree(stale)
+            else:
+                stale.unlink()
     return 0
 
 

@@ -441,3 +441,91 @@ def test_a_zero_weight_entry_does_not_extend_the_warm_up():
     dam = run(parse_config(data))["dam"].to_numpy()
     assert np.isnan(dam[:1]).all()
     assert not np.isnan(dam[1:]).any()
+
+
+def test_a_stochastic_transform_does_not_move_the_ar1_noise():
+    """One rng was shared by every transform and then by _ar1, so a
+    stochastic transform consumed the shocks the AR(1) would have used:
+    adding one to a single dependency shifted the whole series' noise.
+    That contradicts the guarantee the per-component keying exists to
+    make."""
+    import numpy as np
+
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.signal import build_signal
+
+    config = parse_config(
+        make_config_dict(
+            n_total=20,
+            series=[
+                series_dict("p", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "s",
+                    autoregressive={"phi": 0.7, "noise": 1.0},
+                    depends_on=[{"series": "p", "lag": 0, "weight": 1.0}],
+                ),
+                series_dict(
+                    "disease_cases", counts={}, depends_on=[{"series": "s", "lag": 1}]
+                ),
+            ],
+        )
+    )
+    spec = next(s for s in config.series if s.name == "s")
+    parents = {"p": np.full(20, 5.0)}
+
+    def stream(*keys):
+        return np.random.default_rng(abs(hash(keys)) % 2**32)
+
+    # Draining the shared generator first must make no difference once each
+    # component draws from its own stream.
+    untouched = np.random.default_rng(99)
+    drained = np.random.default_rng(99)
+    drained.normal(0, 1, 500)
+
+    assert np.allclose(
+        build_signal(np.zeros(20), spec, parents, untouched, stream=stream),
+        build_signal(np.zeros(20), spec, parents, drained, stream=stream),
+    )
+
+
+def test_the_same_transform_twice_draws_different_numbers():
+    """Streams are keyed by position as well as name, or two identical
+    transforms on one parent would draw the same values and the second
+    would be a no-op in disguise."""
+    import numpy as np
+
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+
+    def built(count):
+        return run(
+            parse_config(
+                make_config_dict(
+                    n_total=36,
+                    series=[
+                        series_dict(
+                            "rain",
+                            generate="seasonal_spike",
+                            params={"spike_center": 7},
+                        ),
+                        series_dict(
+                            "cases",
+                            counts={},
+                            depends_on=[
+                                {
+                                    "series": "rain",
+                                    "lag": 1,
+                                    "weight": 1.0,
+                                    "transforms": [
+                                        {"name": "heavy_tail", "params": {"scale": 1.0}}
+                                    ]
+                                    * count,
+                                }
+                            ],
+                        ),
+                    ],
+                )
+            )
+        )["cases"].to_numpy()
+
+    assert not np.allclose(built(1), built(2), equal_nan=True)

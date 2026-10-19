@@ -629,3 +629,37 @@ def test_the_bare_list_form_of_locations_still_works(tmp_path):
         "series:\n  - { name: r, generate: flat, params: { level: 5.0 } }\n"
     )
     assert main(["run", str(path), "-o", str(tmp_path / "out")]) == 0
+
+
+def test_a_scenario_reads_its_own_data_whatever_the_cwd(tmp_path, monkeypatch):
+    """A relative from_csv path was resolved against the CURRENT directory
+    first, so a file of the same name in the shell's cwd silently replaced
+    the one the scenario ships with: the same scenario produced 999.0 run
+    from one folder and 1.0 from another."""
+    import pandas as pd
+
+    def csv_at(folder, value):
+        folder.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(
+            {
+                "time_period": [f"2000-{m:02d}" for m in range(1, 13)],
+                "rain": [value] * 12,
+            }
+        ).to_csv(folder / "data.csv", index=False)
+
+    project, elsewhere = tmp_path / "project", tmp_path / "elsewhere"
+    csv_at(project, 1.0)
+    csv_at(elsewhere, 999.0)
+    (project / "s.yaml").write_text(
+        "period: monthly\nn_total: 12\nseed: 1\nstart_period: 2000-01\n"
+        "locations: { loc: { population: 100000 } }\n"
+        "series:\n"
+        "  - { name: rain, generate: from_csv, params: { file: data.csv, column: rain } }\n"
+        "  - { name: disease_cases, counts: {}, depends_on: [{ series: rain, lag: 1 }] }\n"
+    )
+
+    monkeypatch.chdir(elsewhere)
+    out = tmp_path / "out"
+    assert main(["run", str(project / "s.yaml"), "-o", str(out)]) == 0
+    rain = pd.read_csv(out / "simulated_data.csv")["rain"]
+    assert rain.iloc[0] == 1.0, "read the cwd's data.csv instead of its own"
