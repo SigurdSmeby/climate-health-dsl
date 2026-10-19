@@ -143,3 +143,72 @@ def test_output_dir_created(tmp_path):
     out = tmp_path / "nested" / "dir" / "plot.html"
     plot_dataset(sample_frame(), out)
     assert out.is_file()
+
+
+# --------------------------------------------------------------- year gridlines
+
+
+def test_monthly_ticks_land_on_whole_years():
+    """A tick every 12 periods, so the same month sits under every tick.
+
+    plotly's own choice is a round number of periods (10 on monthly data),
+    which drifts two months per tick and makes a recurring annual shape
+    impossible to line up by eye.
+    """
+    fig = _build_figure(sample_frame(), period="monthly")
+    assert fig.layout.xaxis.dtick == 12
+
+
+def test_tick_spacing_follows_the_resolution():
+    for period, expected in (
+        ("daily", 365),
+        ("weekly", 52),
+        ("monthly", 12),
+        ("yearly", 1),
+    ):
+        fig = _build_figure(sample_frame(), period=period)
+        assert fig.layout.xaxis.dtick == expected, period
+
+
+def test_ticks_start_at_the_first_period():
+    """Without an anchor plotly may offset the grid, so year 1 drifts."""
+    fig = _build_figure(sample_frame(), period="monthly")
+    assert fig.layout.xaxis.tick0 == 0
+
+
+def test_every_panel_shares_the_year_grid():
+    """Panels are stacked and compared vertically, so one grid serves all."""
+    df = sample_frame()
+    fig = _build_figure(df, period="monthly")
+    panels = len(_series_columns(df))
+    for row in range(1, panels + 1):
+        axis = fig.layout[f"xaxis{row}" if row > 1 else "xaxis"]
+        assert axis.dtick == 12, f"panel {row} has dtick {axis.dtick}"
+
+
+def test_period_is_optional():
+    """An unknown resolution leaves plotly's default rather than erroring."""
+    fig = _build_figure(sample_frame())
+    assert fig.layout.xaxis.dtick is None
+
+
+def test_plot_dataset_passes_the_period_through(tmp_path):
+    out = tmp_path / "ticks.html"
+    plot_dataset(sample_frame(), out, period="monthly")
+    assert out.is_file()
+
+
+def test_explicit_tick_spacing_overrides_the_year_default():
+    """A half-year grid on monthly data, for reading a shorter cycle."""
+    fig = _build_figure(sample_frame(), period="monthly", tick_every=6)
+    assert fig.layout.xaxis.dtick == 6
+
+
+def test_explicit_spacing_works_without_a_period():
+    fig = _build_figure(sample_frame(), tick_every=3)
+    assert fig.layout.xaxis.dtick == 3
+
+
+def test_tick_spacing_of_one_marks_every_period():
+    fig = _build_figure(sample_frame(), period="monthly", tick_every=1)
+    assert fig.layout.xaxis.dtick == 1

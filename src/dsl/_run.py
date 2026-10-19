@@ -35,6 +35,7 @@ def _run_once(
     plot_format: str,
     seed_override: int | None = None,
     config: ScenarioConfig | None = None,
+    tick_every: int | None = None,
 ) -> int:
     """Parse → generate → write (and optionally plot) one scenario.
 
@@ -50,6 +51,7 @@ def _run_once(
         config: An already-parsed ScenarioConfig (e.g. from a replicate loop
             that parsed once and only varies the seed), to skip re-parsing
             ``scenario`` from disk.
+        tick_every: Plot gridline spacing in periods. Defaults to one year.
 
     Returns:
         Exit code: 0 on success, 1 if parsing/validation or generation fails.
@@ -104,7 +106,13 @@ def _run_once(
             # is visible in the chart. Inside the guard: an unsupported
             # --plot-format would otherwise traceback, and kill --watch.
             plot_path = out_dir / f"plot.{plot_format}"
-            plot_dataset(df, plot_path, train_split=evaluation_boundary(config))
+            plot_dataset(
+                df,
+                plot_path,
+                train_split=evaluation_boundary(config),
+                period=config.period,
+                tick_every=tick_every,
+            )
             print(f"Wrote plot to {plot_path}")
     except (ValueError, FileNotFoundError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -158,6 +166,7 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
         code = _run_once(
             args.scenario, out_dir / f"rep_{i:02d}", args.plot, args.plot_format,
             config=base_config.model_copy(update={"seed": base_seed + i}),
+            tick_every=getattr(args, "plot_ticks", None),
         )
         if code != 0:
             return code
@@ -257,7 +266,11 @@ def _serve(out_dir: Path, version: list[int]) -> "http.server.HTTPServer":
 
 
 def _watch_loop(
-    scenario: str, out_dir: Path, plot: bool, plot_format: str
+    scenario: str,
+    out_dir: Path,
+    plot: bool,
+    plot_format: str,
+    tick_every: int | None = None,
 ) -> int:
     """Re-run ``scenario`` whenever its file is saved, until interrupted.
 
@@ -269,6 +282,7 @@ def _watch_loop(
         out_dir: Directory each re-run writes into (overwritten in place).
         plot: Whether to also write (and, if html, serve) a plot.
         plot_format: Plot file format (e.g. "html", "png").
+        tick_every: Plot gridline spacing in periods. Defaults to one year.
 
     Returns:
         Exit code: 0 (Ctrl-C is the normal way to stop watching).
@@ -291,7 +305,9 @@ def _watch_loop(
             changed, last_mtime = _changed(scenario, last_mtime)
             if (
                 changed
-                and _run_once(scenario, out_dir, plot, plot_format) == 0
+                and _run_once(
+                    scenario, out_dir, plot, plot_format, tick_every=tick_every
+                ) == 0
                 and serve
             ):
                 _inject_reload(out_dir / "plot.html")

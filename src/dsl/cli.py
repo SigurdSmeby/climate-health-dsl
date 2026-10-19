@@ -23,6 +23,27 @@ from dsl._output import _resolve_out_dir, _write_starter
 from dsl._run import _prompt_continue, _run_once, _run_replicates, _watch_loop
 
 
+def _positive_int(text: str) -> int:
+    """An argparse type for a count that must be at least 1.
+
+    Args:
+        text: The raw command-line value.
+
+    Returns:
+        The parsed int.
+
+    Errors Caught (raised to argparse, which exits 2 with the message):
+        ArgumentTypeError: If text is not an integer, or is below 1.
+    """
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{text}' is not an integer.") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive number, got {value}.")
+    return value
+
+
 def _list_blocks() -> int:
     """Print the registered generators and transforms (names) for discovery.
 
@@ -113,6 +134,15 @@ def main(argv: list[str] | None = None) -> int:
         help="plot file format: html (interactive) or png/svg/pdf (default: html)",
     )
     run_parser.add_argument(
+        "--plot-ticks",
+        type=_positive_int,
+        metavar="N",
+        help=(
+            "gridline every N periods on the plot (default: one year, so 12 "
+            "on monthly data). Use 6 to read a half-year cycle."
+        ),
+    )
+    run_parser.add_argument(
         "--watch",
         action="store_true",
         help="re-run automatically whenever the scenario file is saved",
@@ -159,12 +189,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.replicates > 1:
         return _run_replicates(args, out_dir)
 
-    code = _run_once(args.scenario, out_dir, args.plot, args.plot_format)
+    code = _run_once(
+        args.scenario, out_dir, args.plot, args.plot_format,
+        tick_every=args.plot_ticks,
+    )
     if code != 0 or not args.watch:
         return code
     # --watch keeps the same out_dir so each save overwrites in place (the
     # browser re-reads plot.html). A first-run failure already returned above.
-    return _watch_loop(args.scenario, out_dir, args.plot, args.plot_format)
+    return _watch_loop(
+        args.scenario, out_dir, args.plot, args.plot_format,
+        tick_every=args.plot_ticks,
+    )
 
 
 # Allows `python -m dsl.cli` / `python src/dsl/cli.py` during development;
