@@ -120,6 +120,39 @@ def _run_once(
     return 0
 
 
+# Everything a run writes into its output directory. Anything else found
+# there belongs to the user, so the replicate cleanup must not touch it.
+_RUN_OUTPUT_NAMES = frozenset(
+    {"simulated_data.csv", "metadata.json", "folds"}
+) | frozenset(f"plot.{ext}" for ext in ("html", "png", "svg", "pdf", "json"))
+
+
+def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
+    """Names in ``out_dir`` that this tool never writes, sorted.
+
+    The replicate cleanup deletes whatever it will not overwrite, so it may
+    only run in a folder that holds output and nothing else. ``-o .`` on a
+    working directory is the case this guards: the scenario file itself, a
+    thesis, a src/ tree.
+
+    Args:
+        out_dir: The directory about to be cleaned.
+        keep: The ``rep_NN`` names this run will write.
+
+    Returns:
+        Up to five foreign names (with a trailing "…" entry if there are
+        more), or an empty list when the directory is safe to clean.
+    """
+    foreign = sorted(
+        entry.name
+        for entry in out_dir.iterdir()
+        if entry.name not in keep
+        and entry.name not in _RUN_OUTPUT_NAMES
+        and _numbered_dir_suffix(entry, "rep_") is None
+    )
+    return foreign[:5] + ["…"] if len(foreign) > 5 else foreign
+
+
 def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
     """Run the scenario N times with seeds base, base+1, … into rep_NN/ dirs.
 
@@ -155,6 +188,18 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
     # clear anything this run will not itself overwrite.
     if out_dir.is_dir():
         keep = {f"rep_{i:02d}" for i in range(args.replicates)}
+        foreign = _foreign_entries(out_dir, keep)
+        if foreign:
+            print(
+                f"error: {out_dir}/ holds files this tool did not write "
+                f"({', '.join(foreign)}), so it will not be cleaned.\n"
+                f"       --replicates clears the output folder of stale "
+                f"results before it writes.\n"
+                f"       Point -o at a new or empty folder, or remove those "
+                f"entries first.",
+                file=sys.stderr,
+            )
+            return 1
         for stale in out_dir.iterdir():
             if stale.name in keep:
                 continue

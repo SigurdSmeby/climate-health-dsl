@@ -307,7 +307,7 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 | `--plot-ticks N` | one year | Gridline every N periods. The default follows `period`, so 12 on monthly data and every tick is the same month. Use `6` for a half-year grid. |
 | `--watch` | off | Re-run on every save; live-reloading plot with `--plot`. |
 | `--new` | off | Skip the continue-or-new prompt. |
-| `--replicates`, `-n N` | `1` | N seeded replicates (`base, base+1, …`) into `rep_00/`, `rep_01/`, …, each reproducible. Not with `--watch`. |
+| `--replicates`, `-n N` | `1` | N seeded replicates (`base, base+1, …`) into `rep_00/`, `rep_01/`, …, each reproducible. Clears stale output from the folder first, so it refuses a folder holding anything the tool did not write. Not with `--watch`. |
 
 ## Output
 
