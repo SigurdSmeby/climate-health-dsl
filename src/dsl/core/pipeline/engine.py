@@ -153,8 +153,8 @@ def _run_one_location(
             config, spec, location, values, event_masks
         )
         values[name] = series
-        # The population column shows the first count series' headcount;
-        # with several diseases they share the location's population.
+        # Every count series resolves the same per-location population, so
+        # the column holds the headcount all of them were scaled against.
         if series_population is not None and population is None:
             population = series_population
 
@@ -228,11 +228,14 @@ def _build_series(
 
     population = None
     if spec.counts is not None:
+        # Keyed by location alone, never by series: the people living
+        # somewhere are one population, so every disease counted there must
+        # be scaled against the same headcount the CSV goes on to record.
         population = _resolve_population(
             config.population_for(location),
             config.n_total,
             config.period,
-            _child_rng(config.seed, location, "population", spec.name),
+            _child_rng(config.seed, location, "population"),
             config.start_period,
         )
         # The block name selects the emitter; its params come from the block.

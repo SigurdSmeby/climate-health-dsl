@@ -112,3 +112,76 @@ def test_seasonal_driver_recovers_lag_within_one_period():
     df = run(config)
     lag = recovered_lag(df["rainfall"].to_numpy(), df["disease_cases"].to_numpy())
     assert abs(lag - TRUE_LAG) <= 1
+
+
+def test_every_disease_is_counted_against_the_recorded_population():
+    """The `population` column must be the headcount every count series used.
+
+    Population was drawn with the series name in the RNG key, so each
+    disease got its own draw while only the first reached the column. With
+    a generated (non-constant) population, every count series after the
+    first was scaled against a headcount the output never records — the
+    dataset silently disagreeing with its own description.
+    """
+    from dsl.core.pipeline import engine
+
+    config = parse_config(
+        {
+            "period": "monthly",
+            "n_total": 24,
+            "seed": 7,
+            "locations": {
+                "loc": {
+                    "population": {
+                        "generate": "linear_trend",
+                        "params": {"start": 100_000, "slope": 90, "noise": 300},
+                    }
+                }
+            },
+            "series": [
+                {
+                    "name": "rainfall",
+                    "generate": "seasonal_spike",
+                    "params": {"spike_center": 7},
+                },
+                {
+                    "name": "dengue",
+                    "counts": {},
+                    "depends_on": [{"series": "rainfall", "lag": 1, "weight": 1.0}],
+                },
+                {
+                    "name": "disease_cases",
+                    "counts": {},
+                    "depends_on": [{"series": "rainfall", "lag": 2, "weight": 1.0}],
+                },
+            ],
+        }
+    )
+
+    # Capture what each count series actually scaled against, rather than
+    # inferring it from the counts — two draws can agree by luck on a
+    # constant population, which is the case that used to hide this.
+    used: list[np.ndarray] = []
+    original = engine._resolve_population
+
+    def spy(*args):
+        resolved = original(*args)
+        used.append(resolved)
+        return resolved
+
+    engine._resolve_population = spy
+    try:
+        frame = engine.run(config)
+    finally:
+        engine._resolve_population = original
+
+    assert len(used) == 2, "expected one population draw per count series"
+    recorded = frame["population"].to_numpy()
+    assert not np.all(recorded == recorded[0]), (
+        "a constant population hides the bug; this scenario must generate one"
+    )
+    for i, drawn in enumerate(used):
+        assert np.array_equal(drawn, recorded), (
+            f"count series {i} was scaled against a population the output "
+            f"does not record: used {drawn[:3]}, column holds {recorded[:3]}"
+        )
