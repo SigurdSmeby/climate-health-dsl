@@ -676,3 +676,26 @@ def test_a_series_that_can_move_is_not_warned_about():
             )
         )
         assert not any("leave no trace" in w for w in validate_scenario(config)), params
+
+
+def test_an_all_zero_per_fold_can_be_read_back():
+    """`per_fold: [0, 0, 0]` resolves to `at: []`, which metadata.json
+    records because the sidecar holds the RESOLVED scenario — and the schema
+    then rejected it, so the run could not reproduce itself from its own
+    output. Declaring an event that never fires is legitimate."""
+    config = parse_config(_split_scenario({"per_fold": [0, 0, 0, 0]}))
+    assert config.events["storm"].at == []
+
+    # The round trip is the actual claim: dump what the sidecar would hold,
+    # and read it back.
+    from dsl.core.pipeline.metadata import build_metadata
+
+    scenario = build_metadata(config)["scenario"]
+    assert scenario["events"]["storm"]["at"] == []
+    parse_config(scenario)
+
+
+def test_a_negative_period_in_at_is_still_rejected():
+    """Allowing an empty list must not allow a nonsensical one."""
+    with pytest.raises(ValidationError, match="'at' periods must be >= 0"):
+        parse_config(_split_scenario({"at": [5, -1]}))

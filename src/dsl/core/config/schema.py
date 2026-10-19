@@ -176,11 +176,13 @@ class EventSpec(BaseModel):
                     "leave a specific fold empty on purpose."
                 )
             return self
-        if self.at is not None:
-            if not self.at:
-                raise ValueError("'at' must list at least one period.")
-            if any(period < 0 for period in self.at):
-                raise ValueError(f"'at' periods must be >= 0, got {self.at}.")
+        # An empty `at` is allowed: `per_fold: [0, 0, 0]` resolves to exactly
+        # that, and metadata.json records the RESOLVED scenario, so rejecting
+        # it left a run unable to reproduce itself from its own sidecar. An
+        # event that never fires is a legitimate thing to declare, and the
+        # fold report already warns about folds that test nothing.
+        if self.at is not None and any(period < 0 for period in self.at):
+            raise ValueError(f"'at' periods must be >= 0, got {self.at}.")
         return self
 
     def periods(self, n_total: int, rng: np.random.Generator) -> np.ndarray:

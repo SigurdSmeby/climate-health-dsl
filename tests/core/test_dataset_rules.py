@@ -239,3 +239,57 @@ def test_a_gap_after_the_warmup_is_still_a_finding():
         "population": [1000] * 12,
     })
     assert any("rainfall" in f for f in check_dataset(df))
+
+
+def test_a_second_disease_is_not_checked_as_a_driver():
+    """Only the config knows which columns are counts. Inferring it from the
+    name held every disease but `disease_cases` to the driver rules, which
+    forbid the NaN a masked case count is allowed to have — so a correct
+    multi-disease scenario was told it was wrong, twice."""
+    import numpy as np
+
+    df = pd.DataFrame(
+        {
+            "time_period": ["2000-01", "2000-02", "2000-03"],
+            "location": ["a"] * 3,
+            "rain": [1.0, 2.0, 3.0],
+            "dengue": [5.0, np.nan, 7.0],
+            "malaria": [3.0, np.nan, 4.0],
+        }
+    )
+    assert check_dataset(df, ["dengue", "malaria"]) == []
+
+
+def test_naming_the_count_columns_still_catches_real_faults():
+    """The looser rule must not become no rule."""
+    import numpy as np
+
+    base = {
+        "time_period": ["2000-01", "2000-02", "2000-03"],
+        "location": ["a"] * 3,
+        "rain": [1.0, 2.0, 3.0],
+        "dengue": [5.0, np.nan, 7.0],
+    }
+    counts = ["dengue"]
+
+    negative = pd.DataFrame({**base, "dengue": [5.0, -1.0, 7.0]})
+    assert any("negative" in f for f in check_dataset(negative, counts))
+
+    gappy_driver = pd.DataFrame({**base, "rain": [1.0, np.nan, 3.0]})
+    assert any("covariate 'rain'" in f for f in check_dataset(gappy_driver, counts))
+
+    all_nan = pd.DataFrame({**base, "dengue": [np.nan] * 3})
+    assert any("no values at all" in f for f in check_dataset(all_nan, counts))
+
+
+def test_disease_cases_is_still_required_when_no_counts_are_named():
+    """A consumer expects the conventional column, so the bare call — the
+    one a downstream tool makes on a CSV alone — must keep saying so."""
+    df = pd.DataFrame(
+        {
+            "time_period": ["2000-01", "2000-02"],
+            "location": ["a", "a"],
+            "rain": [1.0, 2.0],
+        }
+    )
+    assert any("disease_cases" in f and "required" in f for f in check_dataset(df))

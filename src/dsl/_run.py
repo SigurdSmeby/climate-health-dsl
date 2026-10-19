@@ -86,7 +86,11 @@ def _run_once(
         df = run_engine(config)
 
         # Dataset-rule findings are advisory: print them and proceed.
-        for finding in check_dataset(df):
+        # The config knows which columns are counts; the frame alone
+        # cannot tell a second disease from a driver.
+        for finding in check_dataset(
+            df, [spec.name for spec in config.series if spec.counts]
+        ):
             print(f"warning: {finding}", file=sys.stderr)
 
         write_output(df, config, out_dir)
