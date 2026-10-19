@@ -773,3 +773,40 @@ def test_a_counted_series_with_its_own_base_is_warned_about():
     with_base = built(generate="flat", params={"level": 50.0})
     assert any("standardized" in w for w in validate_scenario(with_base))
     assert not any("standardized" in w for w in validate_scenario(built()))
+
+
+def test_a_harmless_count_base_is_not_warned_about():
+    """Standardized parents contribute about ±1 each, so a base of that
+    order rides along with them. Measured: a flat level of 5 collapses the
+    case range from 19,179 wide to 1,507, while a level of 0 changes
+    nothing — and a warning that fires on the harmless case teaches the
+    reader to ignore it."""
+    from dsl.core.config.schema import validate_scenario
+
+    def built(level):
+        return parse_config(
+            make_config_dict(
+                n_total=36,
+                series=[
+                    series_dict(
+                        "rain", generate="seasonal_spike", params={"spike_center": 7}
+                    ),
+                    series_dict(
+                        "disease_cases",
+                        generate="flat",
+                        params={"level": level},
+                        counts={},
+                        depends_on=[{"series": "rain", "lag": 1, "weight": 1.0}],
+                    ),
+                ],
+            )
+        )
+
+    for harmless in (0.0, 0.5, 1.0):
+        assert not [
+            w for w in validate_scenario(built(harmless)) if "dominate" in w
+        ], harmless
+    for swamping in (2.0, 50.0):
+        assert [
+            w for w in validate_scenario(built(swamping)) if "dominate" in w
+        ], swamping

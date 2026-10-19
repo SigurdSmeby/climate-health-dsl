@@ -1260,13 +1260,22 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
     for var in config.series:
         if var.counts is None or var.generate is None or not var.depends_on:
             continue
+        # Only when the base is big enough to matter. Standardized parents
+        # contribute roughly ±1, so a base of that order rides along with
+        # them; measured, a flat level of 5 already collapses the case
+        # range from 19,179 wide to 1,507, while a level of 0 changes
+        # nothing. A warning that fires on the harmless case teaches the
+        # reader to ignore it.
+        level = var.params.get("level")
+        if not isinstance(level, (int, float)) or abs(level) <= 1:
+            continue
         warnings.append(
-            f"series '{var.name}' has both 'generate: {var.generate}' and "
-            f"'counts:', so its own base is added to its drivers' "
-            f"contributions without being standardized; a base much larger "
-            f"than 1 will pin the rate near its ceiling and swamp the "
-            f"drivers. Drop 'generate:' to let the drivers shape it, or "
-            f"keep the base small."
+            f"series '{var.name}' has both 'generate: {var.generate}' "
+            f"(level {level}) and 'counts:', so its own base is added to "
+            f"its drivers' contributions without being standardized. The "
+            f"drivers contribute about ±1 each, so this base will dominate "
+            f"them and pin the rate near its ceiling. Drop 'generate:' to "
+            f"let the drivers shape it, or keep the base near zero."
         )
 
     # A fixed source_location feeds ONE real series to every output location

@@ -36,6 +36,7 @@ def _run_once(
     seed_override: int | None = None,
     config: ScenarioConfig | None = None,
     tick_every: int | None = None,
+    report_dir: Path | None = None,
 ) -> int:
     """Parse → generate → write (and optionally plot) one scenario.
 
@@ -93,6 +94,11 @@ def _run_once(
         ):
             print(f"warning: {finding}", file=sys.stderr)
 
+        # Where to SAY the files went: a replicate run writes into a
+        # staging folder and swaps it in, so naming the real path would
+        # point the reader at one that is gone by the time they read it.
+        shown = report_dir if report_dir is not None else out_dir
+
         # Every plot.*, and before the data lands: a run that switches
         # --plot-format or drops --plot would otherwise leave the previous
         # picture beside data it no longer describes — and a step after
@@ -112,7 +118,7 @@ def _run_once(
         # can hit the same input errors generation can — and under --watch an
         # escaping exception would kill the watch loop.
         write_report(config, df, out_dir)
-        print(f"Wrote {len(df)} rows to {out_dir}/")
+        print(f"Wrote {len(df)} rows to {shown}/")
 
         if plot:
             # Mark where evaluation begins, so the part a model is scored on
@@ -141,7 +147,7 @@ def _run_once(
                 # with a traceback on a machine that simply has no chrome.
                 print(f"warning: could not write the plot ({exc})", file=sys.stderr)
             else:
-                print(f"Wrote plot to {plot_path}")
+                print(f"Wrote plot to {shown / plot_path.name}")
     except (ValueError, FileNotFoundError, KeyError, OSError) as exc:
         # OSError too: a full disk or an unwritable output folder is an
         # ordinary thing to hit, and under --watch a traceback ends the
@@ -251,6 +257,7 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
                 args.plot_format,
                 config=base_config.model_copy(update={"seed": base_seed + i}),
                 tick_every=getattr(args, "plot_ticks", None),
+                report_dir=out_dir / f"rep_{i:02d}",
             )
             if code != 0:
                 return code
@@ -258,15 +265,27 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
         # A complete set exists, so the old one can go. Everything here is
         # output this tool wrote — the foreign check above already refused
         # the folder otherwise.
+        #
+        # Each new rep_NN is moved into place over the old one FIRST, so a
+        # kill partway leaves a mix of complete replicates rather than a
+        # gap. Only then is whatever the new set does not cover removed:
+        # extra rep_NN from a longer previous run, and a single run's CSVs
+        # from before --replicates was used. A true atomic swap would need
+        # to exchange two directories, which no portable call offers.
+        staged = sorted(staging.iterdir())
+        for new_rep in staged:
+            landing = out_dir / new_rep.name
+            if landing.is_dir():
+                shutil.rmtree(landing)
+            new_rep.rename(landing)
+        written = {rep.name for rep in staged}
         for stale in out_dir.iterdir():
-            if stale == staging:
+            if stale == staging or stale.name in written:
                 continue
             if stale.is_dir():
                 shutil.rmtree(stale)
             else:
                 stale.unlink()
-        for new_rep in sorted(staging.iterdir()):
-            new_rep.rename(out_dir / new_rep.name)
     finally:
         if staging.exists():
             shutil.rmtree(staging)

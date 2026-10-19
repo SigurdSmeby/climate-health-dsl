@@ -267,3 +267,32 @@ def test_a_leftover_staging_folder_does_not_block_the_next_run(tmp_path):
 
     assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 0
     assert sorted(p.name for p in out.iterdir()) == ["rep_00", "rep_01"]
+
+
+def test_the_messages_name_where_the_files_actually_are(tmp_path, capsys):
+    """Replicates are built in a staging folder and swapped in, so naming
+    the real write path pointed the reader at one deleted moments later."""
+    out = tmp_path / "out"
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2",
+                 "--plot"]) == 0
+    printed = capsys.readouterr().out
+
+    assert ".partial" not in printed
+    for line in printed.splitlines():
+        if line.startswith(("Wrote 1", "Wrote 2", "Wrote plot")):
+            named = Path(line.rsplit(" ", 1)[-1].rstrip("/"))
+            assert named.exists(), f"named a path that does not exist: {named}"
+
+
+def test_the_new_set_lands_before_the_old_one_is_removed(tmp_path):
+    """A true atomic swap would need to exchange two directories, which no
+    portable call offers. Moving each new rep_NN into place first means a
+    kill partway leaves complete replicates rather than a gap."""
+    out = tmp_path / "out"
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "4"]) == 0
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 0
+
+    assert sorted(p.name for p in out.iterdir()) == ["rep_00", "rep_01"]
+    for rep in out.iterdir():
+        assert (rep / "simulated_data.csv").is_file()
+        assert (rep / "metadata.json").is_file()

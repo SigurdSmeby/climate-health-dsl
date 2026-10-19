@@ -320,7 +320,17 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 | `metadata.json` | always | The ground truth: seed, lags, weights, transforms, rates, generators, version, resolved scenario. Feed back to `dsl run` to reproduce byte-for-byte. |
 | `plot.{html,png,svg,pdf}` | with `--plot` | Faceted series over time, one line per location, a gridline on every year, the evaluation boundary marked. |
 
-Same scenario + seed → identical files. Output is checked against the dataset
+Same scenario + seed → identical files, **on the same version**. Changing how
+the random streams are derived changes the numbers, so a `metadata.json` is
+guaranteed to reproduce its dataset only under the version that wrote it (the
+sidecar records that version). Two such changes have happened:
+
+| Change | What it moved |
+|---|---|
+| Per-component RNG streams | Any scenario using a stochastic transform (`heavy_tail`, `missing`, `block_missing`) or `autoregressive:`. Before it, adding a transform to one dependency shifted another's draws. |
+| Seed no longer masked to 32 bits | Seeds above 2³², which previously aliased onto `seed % 2³²`. |
+
+Output is checked against the dataset
 rules a forecasting tool expects; findings print as `warning:` and the run
 still completes. Synthetic output always satisfies them — findings arise from
 `from_csv` data with gaps or an odd shape:
