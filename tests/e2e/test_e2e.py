@@ -35,14 +35,20 @@ just means "must run and exit 0". ``columns`` is for deterministic (seeded)
 values; ``column_all`` is for a property that must hold on every row when
 exact values aren't practical (e.g. random counts).
 """
+import io
 import json
+import os
 import shutil
 import subprocess
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from typing import NamedTuple
 
 import pandas as pd
 import pytest
 import yaml
+
+from dsl.cli import main
 
 CASES_DIR = Path(__file__).parent / "cases"
 CASE_DIRS = sorted(p for p in CASES_DIR.iterdir() if (p / "scenario.yaml").is_file())
@@ -54,14 +60,44 @@ COLUMN_PROPERTIES = {
 }
 
 
+class Result(NamedTuple):
+    """What a run produced, shaped like subprocess.CompletedProcess."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
 def run_dsl(*args, cwd):
-    # Calls the installed `dsl` console-script entry point (not `python -m
-    # dsl.cli`), so these tests also catch a broken pyproject.toml
-    # [project.scripts] entry or packaging misconfiguration.
-    return subprocess.run(
-        ["dsl", *args],
-        cwd=cwd, capture_output=True, text=True, check=False,
-    )
+    """Run the CLI the way a user would, in this interpreter.
+
+    Spawning `dsl` per call costs ~2.8s of interpreter and pandas import
+    each time, which across these cases is minutes of startup for
+    milliseconds of work. Calling main() keeps the same entry point and
+    the same argv parsing, and only skips paying for a new process.
+
+    `test_the_console_script_entry_point_works` still spawns the real
+    binary once, so a broken [project.scripts] entry is still caught.
+
+    Args:
+        *args: argv for the CLI, without the program name.
+        cwd: Directory to run from — a scenario's relative from_csv paths
+            are resolved against it.
+
+    Returns:
+        A Result with the exit code and whatever was printed.
+    """
+    out, err = io.StringIO(), io.StringIO()
+    before = Path.cwd()
+    os.chdir(cwd)
+    try:
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main([*args])
+    except SystemExit as exc:  # argparse errors exit rather than return
+        code = exc.code if isinstance(exc.code, int) else 1
+    finally:
+        os.chdir(before)
+    return Result(code, out.getvalue(), err.getvalue())
 
 
 @pytest.mark.parametrize("case_dir", CASE_DIRS, ids=lambda p: p.name)
@@ -146,3 +182,23 @@ def test_e2e_case(case_dir, tmp_path):
         a = (out / "simulated_data.csv").read_text()
         b = (repro / "simulated_data.csv").read_text()
         assert a == b, "reproduction from metadata.json was not byte-identical"
+
+
+def test_the_console_script_entry_point_works(tmp_path):
+    """`dsl` must run as an installed command, not just as an import.
+
+    Every other case calls main() directly for speed, so this is the only
+    thing standing between a broken [project.scripts] entry and a release
+    nobody can run.
+    """
+    raw = yaml.safe_load((CASES_DIR / "basic_run" / "scenario.yaml").read_text())
+    raw.pop("_expect", None)
+    raw.pop("_run", None)
+    scenario = tmp_path / "s.yaml"
+    scenario.write_text(yaml.safe_dump(raw))
+    result = subprocess.run(
+        ["dsl", "run", str(scenario), "-o", str(tmp_path / "out")],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "out" / "simulated_data.csv").is_file()
