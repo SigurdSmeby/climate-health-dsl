@@ -36,16 +36,23 @@ _PERIOD_FORMATS = {
 }
 
 
-def check_dataset(df: pd.DataFrame) -> list[str]:
+def check_dataset(
+    df: pd.DataFrame, count_columns: "list[str] | None" = None
+) -> list[str]:
     """Check the DataFrame against the dataset rules.
 
     Validates: required columns present, time_period in a parseable format
     and consecutive/aligned across locations, driver columns numeric with no
-    NaN/Inf, disease_cases non-negative. Never raises — the CLI prints the
+    NaN/Inf, count columns non-negative. Never raises — the CLI prints the
     findings as warnings.
 
     Args:
         df: The output DataFrame.
+        count_columns: The scenario's count series. Only the frame is
+            available otherwise, and a count column is indistinguishable
+            from a driver by its name alone — so a second disease was
+            checked against the driver rules, which forbid the NaN a masked
+            case count is allowed to have. Defaults to ("disease_cases",).
 
     Returns:
         A list of findings (empty if all checks pass).
@@ -53,15 +60,22 @@ def check_dataset(df: pd.DataFrame) -> list[str]:
     """
     findings: list[str] = []
 
-    # Step 1: Check required columns.
-    for column in REQUIRED_COLUMNS:
+    counts = list(count_columns) if count_columns else ["disease_cases"]
+
+    # Step 1: Check required columns. A consumer expects disease_cases, so
+    # its absence is still reported — but only when the scenario did not
+    # name its own count series.
+    required = ("time_period", "location") + (
+        () if count_columns else ("disease_cases",)
+    )
+    for column in required:
         if column not in df.columns:
             findings.append(f"the '{column}' column is required and missing.")
 
     # Step 2: Check time_period format/consecutiveness and data values.
     if "time_period" in df.columns:
         findings.extend(_check_periods(df))
-    findings.extend(_check_values(df))
+    findings.extend(_check_values(df, counts))
     return findings
 
 
@@ -241,20 +255,25 @@ def _has_gap_after_warmup(df: pd.DataFrame, column: str) -> bool:
     return False
 
 
-def _check_values(df: pd.DataFrame) -> list[str]:
-    """Check NaN/type/value rules for the covariate and disease_cases columns.
+def _check_values(df: pd.DataFrame, counts: list[str]) -> list[str]:
+    """Check NaN/type/value rules for the covariate and count columns.
 
     Args:
         df: The output DataFrame.
+        counts: The count-series column names, which follow the count rules
+            rather than the driver rules.
 
     Returns:
         A list of human-readable findings (empty if the values are clean).
     """
     findings: list[str] = []
 
-    # Step 1: Covariates must be numeric, with no NaN or Inf.
+    # Step 1: Covariates must be numeric, with no NaN or Inf. Count columns
+    # are held to Step 2's rules instead, where a NaN is legal.
     covariates = [
-        c for c in df.columns if c not in ("time_period", "location", "disease_cases")
+        c
+        for c in df.columns
+        if c not in ("time_period", "location") and c not in counts
     ]
     for column in covariates:
         if not pd.api.types.is_numeric_dtype(df[column]):
@@ -270,15 +289,17 @@ def _check_values(df: pd.DataFrame) -> list[str]:
                 f"covariate '{column}' contains non-finite (infinite) values."
             )
 
-    # Step 2: disease_cases must be numeric and non-negative (NaN is fine —
+    # Step 2: a count column must be numeric and non-negative (NaN is fine —
     # a missing case count is ordinarily treated as masked).
-    if "disease_cases" in df.columns:
-        cases = df["disease_cases"]
+    for column in counts:
+        if column not in df.columns:
+            continue
+        cases = df[column]
         if not pd.api.types.is_numeric_dtype(cases):
-            findings.append("disease_cases is not numeric.")
+            findings.append(f"{column} is not numeric.")
         elif cases.isna().all():
-            findings.append("disease_cases contains no values at all (all NaN).")
+            findings.append(f"{column} contains no values at all (all NaN).")
         elif (cases.dropna() < 0).any():
-            findings.append("disease_cases contains negative values.")
+            findings.append(f"{column} contains negative values.")
 
     return findings
