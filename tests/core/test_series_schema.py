@@ -768,3 +768,78 @@ def test_distributed_lag_weights_must_be_a_list():
                 ]
             )
         )
+
+
+# --------------------------------------------------------------- unit: field
+
+def test_a_series_may_declare_a_unit():
+    """What the values MEAN is something the DSL cannot know: a generator
+    produces numbers, and only the author knows they stand for millimetres."""
+    config = parse_config(
+        make_config_dict(
+            series=[
+                series_dict("rain", generate="flat", params={"level": 5.0}, unit="mm"),
+                series_dict("cases", counts={}, depends_on=[{"series": "rain"}]),
+            ]
+        )
+    )
+    assert config.series[0].unit == "mm"
+
+
+def test_a_unit_is_optional():
+    """A measured series has a unit; an index built from standardized
+    parents does not. Requiring one would invent a unit that is not real."""
+    config = parse_config(
+        make_config_dict(
+            series=[
+                series_dict("rain", generate="flat", params={"level": 5.0}),
+                series_dict("cases", counts={}, depends_on=[{"series": "rain"}]),
+            ]
+        )
+    )
+    assert config.series[0].unit is None
+
+
+def test_a_blank_unit_is_rejected():
+    """`unit: ""` reads as a declared unit but says nothing, and would put
+    an empty bracket on the axis."""
+    with pytest.raises(ValidationError, match="unit"):
+        parse_config(
+            make_config_dict(
+                series=[
+                    series_dict(
+                        "rain", generate="flat", params={"level": 5.0}, unit="   "
+                    ),
+                    series_dict("cases", counts={}, depends_on=[{"series": "rain"}]),
+                ]
+            )
+        )
+
+
+def test_unit_does_not_change_the_generated_values():
+    """It is metadata. A dataset must not depend on how its axes are
+    labelled, or the label stops being free to change."""
+    import numpy as np
+
+    from dsl.core.pipeline.engine import run
+
+    def built(unit):
+        return run(
+            parse_config(
+                make_config_dict(
+                    series=[
+                        series_dict(
+                            "rain",
+                            generate="seasonal_spike",
+                            params={"spike_center": 7},
+                            **({"unit": unit} if unit else {}),
+                        ),
+                        series_dict(
+                            "cases", counts={}, depends_on=[{"series": "rain", "lag": 1}]
+                        ),
+                    ]
+                )
+            )
+        )["cases"].to_numpy()
+
+    assert np.allclose(built("mm"), built(None), equal_nan=True)

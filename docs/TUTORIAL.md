@@ -63,6 +63,7 @@ series that react to it — and the comment above them tells you which.
 ```yaml
 series:
   - name: rainfall
+    unit: mm
     generate: seasonal_spike
     params:
       spike_center: 7
@@ -73,6 +74,11 @@ series:
 Everything the scenario builds lives in this one list — climate and disease
 alike. Each entry names a column in the output. `generate:` picks a shape from
 the [generators](REFERENCE.md#generators), and `params:` tunes it.
+
+`unit: mm` is a label, not a conversion — the generator produces numbers and
+only you know they stand for millimetres. It goes on the plot's y-axis so the
+panel reads `rainfall (mm)`. Leave it out for a series that measures nothing
+physical, like a moisture index built from other series.
 
 `spike_center: 7` is July — month numbers, counting from 1. `spike_width: 2`
 is how many months the season spreads over: raise it and the wet season

@@ -404,3 +404,48 @@ def test_the_starter_season_survives_its_own_storms():
         f"the biggest storm reaches {peak:.1f}, more than twice the "
         f"seasonal amplitude ({seasonal - trough:.1f}) — it drowns the season"
     )
+
+
+def test_the_starter_labels_what_it_measures():
+    """The field existing solves nothing on its own — a reader who never
+    heard of it gets the same unlabelled plot. The starter has to use it,
+    so a first run answers the question instead of raising it.
+
+    Equally, the units must not spread to everything: a series built from
+    standardized parents has no physical scale, and inventing one for it
+    would teach the reader the opposite of what the field means.
+    """
+    import yaml
+
+    from dsl._output import STARTER_TEMPLATE
+    from dsl.core.config.schema import parse_config
+
+    config = parse_config(yaml.safe_load(_uncomment_starter()))
+    units = {spec.name: spec.unit for spec in config.series}
+
+    assert units["rainfall"] == "mm"
+    assert units["mean_temperature"] == "°C"
+    # Counts are self-evident, and soil_moisture is an index.
+    assert units["disease_cases"] is None
+    assert units.get("soil_moisture") is None
+
+    # The reason is stated in the file, not just here.
+    assert "no `unit:`" in STARTER_TEMPLATE
+
+
+def test_the_starter_s_units_reach_the_plot():
+    """The whole chain, not just the config: a declared unit has to survive
+    into the panel heading a reader actually looks at."""
+    import yaml
+
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+    from dsl.core.pipeline.plot import _build_figure
+
+    config = parse_config(yaml.safe_load(_uncomment_starter()))
+    units = {spec.name: spec.unit for spec in config.series if spec.unit}
+    fig = _build_figure(run(config), units=units)
+    titles = [a.text for a in fig.layout.annotations]
+
+    assert "rainfall (mm)" in titles
+    assert "mean_temperature (°C)" in titles

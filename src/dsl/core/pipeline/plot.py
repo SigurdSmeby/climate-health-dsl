@@ -32,6 +32,7 @@ def plot_dataset(
     train_split: int | None = None,
     period: str | None = None,
     tick_every: int | None = None,
+    units: "dict[str, str] | None" = None,
 ) -> None:
     """Write a faceted time-series plot to disk.
 
@@ -48,6 +49,9 @@ def plot_dataset(
             boundary, so a recurring annual shape lines up by eye.
         tick_every: Gridline spacing in periods, overriding the one-year
             default — 6 on monthly data to read a half-year cycle.
+        units: Series name -> unit, for the ones that declared it. A panel
+            whose series has none keeps its bare name: a measured series
+            has a unit, a latent index does not.
 
     Errors Caught (raised to caller):
         ValueError: If the file extension is not .html or a supported image
@@ -63,7 +67,7 @@ def plot_dataset(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Build the figure.
-    fig = _build_figure(df, train_split, period, tick_every)
+    fig = _build_figure(df, train_split, period, tick_every, units)
 
     # Step 2: Write to disk in the requested format.
     if suffix == ".html":
@@ -77,6 +81,7 @@ def _build_figure(
     train_split: int | None = None,
     period: str | None = None,
     tick_every: int | None = None,
+    units: "dict[str, str] | None" = None,
 ) -> go.Figure:
     """Build the faceted figure: one panel per series, one line per location.
 
@@ -88,6 +93,7 @@ def _build_figure(
         train_split: If given, the train/test boundary as a period index.
         period: Time resolution, for the year gridlines.
         tick_every: Gridline spacing in periods, overriding the year default.
+        units: Series name -> unit, for the panel headings.
 
     Returns:
         A plotly Figure with len(_series_columns(df)) stacked subplots.
@@ -105,7 +111,7 @@ def _build_figure(
         rows=len(series_columns),
         cols=1,
         shared_xaxes=True,
-        subplot_titles=series_columns,
+        subplot_titles=[_panel_title(c, units) for c in series_columns],
     )
 
     # Step 2: Add one line per (panel, location).
@@ -160,6 +166,20 @@ def _build_figure(
         showlegend=len(locations) > 1,
     )
     return fig
+
+
+def _panel_title(column: str, units: "dict[str, str] | None") -> str:
+    """The heading for one panel, with the unit when the series declared one.
+
+    Args:
+        column: The series name.
+        units: Series name -> unit, or None when nothing declared one.
+
+    Returns:
+        "rainfall (mm)" when a unit is known, otherwise "rainfall".
+    """
+    unit = (units or {}).get(column)
+    return f"{column} ({unit})" if unit else column
 
 
 def _series_columns(df: pd.DataFrame) -> list[str]:

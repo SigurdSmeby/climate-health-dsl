@@ -116,6 +116,11 @@ def _run_once(
                 train_split=evaluation_boundary(config),
                 period=config.period,
                 tick_every=tick_every,
+                units={
+                    spec.name: spec.unit
+                    for spec in config.series
+                    if spec.unit
+                },
             )
             print(f"Wrote plot to {plot_path}")
     except (ValueError, FileNotFoundError, KeyError) as exc:

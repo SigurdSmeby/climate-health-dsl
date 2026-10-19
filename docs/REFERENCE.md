@@ -117,6 +117,7 @@ carries a `counts:` block.
 | Field | Default | Meaning |
 |---|---|---|
 | `name` | required | The output column. Conventional names: `rainfall`, `mean_temperature`, `disease_cases`. |
+| `unit` | optional | What the values measure (`mm`, `°C`), shown on the plot's y-axis. Pure metadata — it never changes a number. Leave it out for a series that measures nothing physical: a driver's parents are standardized before they are weighted in, so a series built from them is an index with no scale to name. |
 | `generate` | optional | A [generator](#generators) for the base. May be omitted when `depends_on` is set — the base is then flat 0. A series with neither is an error. |
 | `params` | `{}` | Passed to that generator, which validates its own. |
 | `depends_on` | `[]` | Parent series — any number. See below. |

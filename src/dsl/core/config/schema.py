@@ -462,6 +462,11 @@ class SeriesSpec(BaseModel):
     model_config = _STRICT
 
     name: str = Field(min_length=1)
+    # Pure metadata: what the values MEAN, which the DSL cannot know. The
+    # plot puts it on the axis. Deliberately optional — a measured series
+    # has a unit (mm, °C), a latent index built from standardized parents
+    # does not, and forcing one would invent a unit that is not real.
+    unit: str | None = None
     # Optional: a series with parents defaults to a flat 0 base.
     generate: str | None = None
     params: dict = Field(default_factory=dict)
@@ -489,6 +494,11 @@ class SeriesSpec(BaseModel):
         """
         if not self.name.strip():
             raise ValueError("series name must not be blank.")
+        if self.unit is not None and not self.unit.strip():
+            raise ValueError(
+                f"series '{self.name}': 'unit' must name a unit (e.g. mm, "
+                f"°C) or be left out; an empty string says nothing."
+            )
         if self.generate is None and not self.depends_on:
             raise ValueError(
                 f"series '{self.name}' has neither 'generate' nor "
