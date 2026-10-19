@@ -685,3 +685,86 @@ def test_a_weight_zero_parent_does_not_count_towards_the_warm_up():
         for w in validate_scenario(parse_config(built(0.5)))
         if "max dependency lag" in w
     ]
+
+
+def test_a_transform_that_rejects_its_params_still_names_the_series():
+    """A ValueError from the constructor body escaped unnamed, which is the
+    failure the wrapper exists to prevent — the message said what was wrong
+    but not where."""
+    from dsl.core.pipeline.engine import run
+
+    config = parse_config(
+        make_config_dict(
+            series=[
+                series_dict("rain", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "cases",
+                    counts={},
+                    depends_on=[
+                        {
+                            "series": "rain",
+                            "lag": 1,
+                            "transforms": [
+                                {
+                                    "name": "threshold",
+                                    "params": {"mode": "nonsense", "threshold": 1},
+                                }
+                            ],
+                        }
+                    ],
+                ),
+            ]
+        )
+    )
+    with pytest.raises(ValueError, match="series 'cases': transform 'threshold'"):
+        run(config)
+
+
+def test_a_period_count_check_applies_only_to_the_lag_transforms():
+    """`n` means periods to `lag`, and nothing in particular to a transform
+    registered elsewhere. Claiming its whole namespace would reject a
+    third-party transform using `n` as a scale or a sample count."""
+    parse_config(
+        make_config_dict(
+            series=[
+                series_dict("rain", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "cases",
+                    counts={},
+                    depends_on=[
+                        {
+                            "series": "rain",
+                            "lag": 1,
+                            "transforms": [{"name": "my_scale", "params": {"n": 0.75}}],
+                        }
+                    ],
+                ),
+            ]
+        )
+    )
+
+
+def test_distributed_lag_weights_must_be_a_list():
+    """`weights: 5` raised TypeError from inside _transform_lag, which runs
+    in a validator — so pydantic never turned it into a ValidationError."""
+    with pytest.raises(ValidationError, match="'weights'"):
+        parse_config(
+            make_config_dict(
+                series=[
+                    series_dict("rain", generate="flat", params={"level": 5.0}),
+                    series_dict(
+                        "cases",
+                        counts={},
+                        depends_on=[
+                            {
+                                "series": "rain",
+                                "lag": 1,
+                                "transforms": [
+                                    {"name": "distributed_lag", "params": {"weights": 5}}
+                                ],
+                            }
+                        ],
+                    ),
+                ]
+            )
+        )

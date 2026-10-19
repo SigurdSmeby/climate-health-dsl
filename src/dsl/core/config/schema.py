@@ -388,20 +388,28 @@ class TransformSpec(BaseModel):
 
     @model_validator(mode="after")
     def _check_period_counts(self) -> "TransformSpec":
-        """Check a period count is a whole number of periods.
+        """Check the lag transforms' period counts are usable.
 
-        A float `n` otherwise reaches numpy as a slice index and fails
-        there with "slice indices must be integers" — true, but it names
-        neither the transform nor the scenario. Booleans are ints in
-        Python, so `n: true` would silently mean 1.
+        Scoped to the transforms whose params this module already reads by
+        name in ``_transform_lag``; `n` and `weights` mean something
+        specific there, and nothing is assumed about what they mean to a
+        transform registered elsewhere.
+
+        A float `n` otherwise reaches numpy as a slice index and fails with
+        "slice indices must be integers" — true, but naming neither the
+        transform nor the scenario. Booleans are ints in Python, so
+        `n: true` would silently mean 1, and a non-sized `weights` raises
+        TypeError from inside this validator, which pydantic does not turn
+        into a ValidationError.
 
         Returns:
             self, unchanged, if the params are usable.
 
         Errors Caught (raised to caller):
-            ValueError: If `n` is not a non-negative whole number.
+            ValueError: If a period count is not a non-negative whole
+                number, or `weights` is not a list.
         """
-        if "n" in self.params:
+        if self.name == "lag" and "n" in self.params:
             n = self.params["n"]
             if isinstance(n, bool) or not isinstance(n, int):
                 raise ValueError(
@@ -412,6 +420,13 @@ class TransformSpec(BaseModel):
                 raise ValueError(
                     f"transform '{self.name}' needs 'n' to be 0 or more, "
                     f"got {n}."
+                )
+        if self.name == "distributed_lag" and self.params.get("weights") is not None:
+            weights = self.params["weights"]
+            if not isinstance(weights, (list, tuple)):
+                raise ValueError(
+                    f"transform '{self.name}' needs 'weights' to be a list "
+                    f"of numbers, got {weights!r}."
                 )
         return self
 
