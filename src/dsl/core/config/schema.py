@@ -707,8 +707,20 @@ class ScenarioConfig(BaseModel):
                 counts = [event.per_fold] * len(folds)
 
             periods: list[int] = []
-            for fold, count in zip(folds, counts):
+            for index, (fold, count) in enumerate(zip(folds, counts)):
                 test = fold.test_periods
+                # One event per period at most: asking for more collapses on
+                # the dedupe below, quietly planting fewer events than the
+                # scenario declares — and `per_fold` exists precisely so the
+                # author does not do this arithmetic by hand.
+                if count > len(test):
+                    raise ValueError(
+                        f"event '{name}' asks for {count} firings in every "
+                        f"fold, but fold {index}'s test half is only "
+                        f"{len(test)} periods long, so at most {len(test)} "
+                        f"can be placed there; lower 'per_fold' to "
+                        f"{len(test)}, raise n_total, or use fewer folds."
+                    )
                 # Evenly inside the block, away from both edges: with n=1
                 # that is the middle, with n=2 the thirds, and so on.
                 for i in range(count):
@@ -1105,6 +1117,27 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
                     f"training split of the shortest fold ({shortest} "
                     f"periods); that fold has no observed values to learn "
                     f"from (all warm-up NaN)."
+                )
+
+    # `multiplier` scales what is already there, so on a series pinned at
+    # zero the event fires and changes nothing: the dataset holds no trace
+    # of something the scenario declares. `flat` with no spread is the case
+    # that is certain from the YAML alone — a zero-CENTRED series (one with
+    # no `generate:`, say) can also swallow it, but only at the periods it
+    # happens to cross zero, which is not knowable before generating.
+    for var in config.series:
+        if var.generate != "flat":
+            continue
+        if var.params.get("level", 0.0) != 0.0 or var.params.get("noise", 1.0) != 0.0:
+            continue
+        for event_name, effect in (var.events or {}).items():
+            if effect.multiplier is not None:
+                warnings.append(
+                    f"series '{var.name}' is flat at zero and reacts to "
+                    f"event '{event_name}' with 'multiplier', which scales "
+                    f"what is already there; zero times anything is zero, so "
+                    f"the event would fire and leave no trace in the data. "
+                    f"Use 'add' to shift it by a fixed amount."
                 )
 
     # A fixed source_location feeds ONE real series to every output location

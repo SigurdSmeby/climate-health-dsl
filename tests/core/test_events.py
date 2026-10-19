@@ -573,3 +573,106 @@ def test_a_per_fold_list_rejects_negative_counts():
 def test_a_plain_per_fold_number_still_works():
     config = parse_config(_split_scenario({"per_fold": 2}))
     assert len(config.events["storm"].at) == 8  # 2 per fold, 4 folds
+
+
+def test_per_fold_rejects_more_events_than_a_fold_can_hold():
+    """An event fires at most once per period, so asking for more than a
+    test half is long collapses on the dedupe and plants fewer than the
+    scenario declares. `per_fold` exists so the author does not have to do
+    this arithmetic by hand — which makes them the last person placed to
+    notice the shortfall."""
+    # k=4 over 120 periods gives 24-period test halves.
+    with pytest.raises(ValidationError, match="at most 24"):
+        parse_config(_split_scenario({"per_fold": 30}))
+
+
+def test_per_fold_still_accepts_exactly_a_full_test_half():
+    """The boundary itself is legal: one event in every period of the block."""
+    from dsl.core.pipeline.engine import run as run_engine
+    from dsl.core.pipeline.folds import build_report
+
+    config = parse_config(_split_scenario({"per_fold": 24}))
+    report = build_report(config, run_engine(config))
+    assert [f["summary"]["storm"]["test"] for f in report["folds"]] == [24] * 4
+
+
+def test_a_per_fold_list_is_checked_against_its_own_fold():
+    """A list gives each fold its own count, so the limit is per fold too."""
+    with pytest.raises(ValidationError, match="fold 2"):
+        parse_config(_split_scenario({"per_fold": [1, 1, 30, 1]}))
+
+
+def test_multiplier_on_a_zero_series_is_warned_about():
+    """Zero times anything is zero, so the event fires and leaves no trace —
+    the dataset then contains none of the shock the scenario declares."""
+    from dsl.core.config.schema import validate_scenario
+
+    config = parse_config(
+        make_config_dict(
+            events={"storm": {"at": [5]}},
+            series=[
+                series_dict(
+                    "rain",
+                    generate="flat",
+                    params={"level": 0.0, "noise": 0.0},
+                    events={"storm": {"multiplier": 5.0}},
+                ),
+                series_dict(
+                    "cases", counts={}, depends_on=[{"series": "rain", "lag": 1}]
+                ),
+            ],
+        )
+    )
+    assert any("leave no trace" in w for w in validate_scenario(config))
+
+    # And the event really is invisible: x5 and x1 give the same series.
+    import numpy as np
+
+    def built(strength):
+        return run(
+            parse_config(
+                make_config_dict(
+                    events={"storm": {"at": [5]}},
+                    series=[
+                        series_dict(
+                            "rain",
+                            generate="flat",
+                            params={"level": 0.0, "noise": 0.0},
+                            events={"storm": {"multiplier": strength}},
+                        ),
+                        series_dict(
+                            "cases",
+                            counts={},
+                            depends_on=[{"series": "rain", "lag": 1}],
+                        ),
+                    ],
+                )
+            )
+        )["rain"].to_numpy()
+
+    assert np.allclose(built(5.0), built(1.0), equal_nan=True)
+
+
+def test_a_series_that_can_move_is_not_warned_about():
+    """The warning has to stay quiet where the multiplier does work, or it
+    trains the reader to ignore it."""
+    from dsl.core.config.schema import validate_scenario
+
+    for params in ({"level": 10.0, "noise": 0.0}, {"level": 0.0, "noise": 1.0}):
+        config = parse_config(
+            make_config_dict(
+                events={"storm": {"at": [5]}},
+                series=[
+                    series_dict(
+                        "rain",
+                        generate="flat",
+                        params=params,
+                        events={"storm": {"multiplier": 5.0}},
+                    ),
+                    series_dict(
+                        "cases", counts={}, depends_on=[{"series": "rain", "lag": 1}]
+                    ),
+                ],
+            )
+        )
+        assert not any("leave no trace" in w for w in validate_scenario(config)), params

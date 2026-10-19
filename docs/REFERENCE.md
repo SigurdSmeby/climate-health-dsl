@@ -87,8 +87,8 @@ series:
 |---|---|
 | `rate` | Probability per period, seeded. Exactly one of `rate`/`at`/`per_fold`. |
 | `at` | Explicit period offsets, fully deterministic. |
-| `per_fold` | Place this many in **every fold's test half**, derived from the `split:` — so the periods follow k and `n_total` instead of being written down. A list gives a count per fold in order (`[1, 1, 2, 1, 1]` gives fold 2 two), and `0` leaves a fold empty on purpose. Time splits only. |
-| `multiplier` | On a reacting series: scales it. Cannot move a series sitting at zero. |
+| `per_fold` | Place this many in **every fold's test half**, derived from the `split:` — so the periods follow k and `n_total` instead of being written down. A list gives a count per fold in order (`[1, 1, 2, 1, 1]` gives fold 2 two), and `0` leaves a fold empty on purpose. At most one event per period, so a count above the shortest test half is rejected rather than quietly trimmed. Time splits only. |
+| `multiplier` | On a reacting series: scales it. Cannot move a series sitting at zero — a scenario that would leave no trace is warned about. Use `add` for a series centred near zero. |
 | `add` | On a reacting series: shifts by a fixed amount, any level. |
 
 Either effect takes a number, which is exact, or a `{min, max}` range drawn per
