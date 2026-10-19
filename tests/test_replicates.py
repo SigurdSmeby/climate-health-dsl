@@ -206,3 +206,64 @@ def test_a_reused_replicate_folder_does_not_keep_its_old_plot(tmp_path):
     assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 0
     assert not (out / "rep_00" / "plot.html").exists()
     assert (out / "rep_00" / "simulated_data.csv").is_file()
+
+
+def test_a_failed_run_never_mixes_two_runs_replicates(tmp_path):
+    """Writing in place meant a run that failed part-way left its new
+    rep_00 among an older run's rep_01..04 — a folder that still looks
+    like one valid five-replicate set, with two seeds in it. The set is
+    built aside and swapped in only once it is complete."""
+    import dsl._run as run_module
+
+    out = tmp_path / "out"
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "5"]) == 0
+    before = {
+        d.name: (d / "simulated_data.csv").read_bytes() for d in sorted(out.iterdir())
+    }
+    assert len(before) == 5
+
+    # A DIFFERENT seed, so a replicate this run writes is distinguishable
+    # from the one it would replace — otherwise rep_00 is byte-identical
+    # either way and the mixing is invisible.
+    calls = {"n": 0}
+    real = run_module._run_once
+
+    def fail_at_second(scenario, rep_dir, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            return 1
+        config = kwargs.pop("config")
+        return real(
+            scenario, rep_dir, *args,
+            config=config.model_copy(update={"seed": config.seed + 1000}),
+            **kwargs,
+        )
+
+    run_module._run_once = fail_at_second
+    try:
+        args = argparse.Namespace(
+            scenario=EXAMPLE, replicates=3, plot=False, plot_format="html",
+            watch=False, plot_ticks=None,
+        )
+        assert run_module._run_replicates(args, out) == 1
+    finally:
+        run_module._run_once = real
+
+    after = {
+        d.name: (d / "simulated_data.csv").read_bytes() for d in sorted(out.iterdir())
+    }
+    assert after == before, (
+        "a failed run left its own rep_00 among the previous run's "
+        "replicates — one folder, two seeds, looking like a valid set"
+    )
+
+
+def test_a_leftover_staging_folder_does_not_block_the_next_run(tmp_path):
+    """A run killed mid-write leaves .partial behind; the next one must
+    clear it rather than refuse the folder as foreign."""
+    out = tmp_path / "out"
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 0
+    (out / ".partial" / "rep_00").mkdir(parents=True)
+
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 0
+    assert sorted(p.name for p in out.iterdir()) == ["rep_00", "rep_01"]

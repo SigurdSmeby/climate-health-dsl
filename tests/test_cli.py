@@ -706,6 +706,21 @@ def test_a_failed_step_still_leaves_a_self_describing_folder(tmp_path):
     assert (out / "metadata.json").is_file(), "data without its own sidecar"
 
 
+@pytest.mark.parametrize("second", [["--plot", "--plot-format", "html"], []])
+def test_a_run_leaves_only_the_plot_it_made(tmp_path, second):
+    """Switching --plot-format, or dropping --plot, left the previous
+    picture beside data it no longer describes."""
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out), "--plot",
+                 "--plot-format", "png"]) == 0
+    assert (out / "plot.png").is_file()
+
+    assert main(["run", str(path), "-o", str(out), *second]) == 0
+    assert not (out / "plot.png").exists()
+    assert (out / "plot.html").is_file() is bool(second)
+
+
 def test_a_failed_plot_removes_the_previous_one(tmp_path, capsys):
     """Under --watch the browser reloads plot.html after every run, so a
     plot left from an earlier save would be served as if it described the

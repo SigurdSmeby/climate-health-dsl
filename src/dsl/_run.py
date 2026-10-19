@@ -17,7 +17,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from dsl._output import _numbered_dir_suffix
+from dsl._output import _numbered_dir_suffix, _run_name
 from dsl._scenario import _friendly_error, _load_and_parse
 from dsl.core.config.schema import ScenarioConfig, validate_scenario
 from dsl.core.pipeline.dataset_rules import check_dataset
@@ -107,6 +107,12 @@ def _run_once(
         write_report(config, df, out_dir)
         print(f"Wrote {len(df)} rows to {out_dir}/")
 
+        # Every plot.*, not just this run's format: a run that switches
+        # --plot-format, or drops --plot entirely, would otherwise leave the
+        # previous picture beside data it no longer describes.
+        for stale in out_dir.glob("plot.*"):
+            stale.unlink()
+
         if plot:
             # Mark where evaluation begins, so the part a model is scored on
             # is visible in the chart.
@@ -133,10 +139,6 @@ def _run_once(
                 # would throw away a good run, and end a --watch session
                 # with a traceback on a machine that simply has no chrome.
                 print(f"warning: could not write the plot ({exc})", file=sys.stderr)
-                # A plot left from an earlier run would otherwise sit beside
-                # data it does not describe — and under --watch the browser
-                # would reload it as if it were fresh.
-                plot_path.unlink(missing_ok=True)
             else:
                 print(f"Wrote plot to {plot_path}")
     except (ValueError, FileNotFoundError, KeyError, OSError) as exc:
@@ -151,6 +153,10 @@ def _run_once(
 
 # Everything a run writes into its output directory. Anything else found
 # there belongs to the user, so the replicate cleanup must not touch it.
+# Where a replicate run builds its set before swapping it in. Left behind
+# only by a run killed mid-write, and cleared by the next one.
+_STAGING_NAME = ".partial"
+
 _RUN_OUTPUT_NAMES = frozenset(
     {"simulated_data.csv", "metadata.json", "folds"}
 ) | frozenset(f"plot.{ext}" for ext in ("html", "png", "svg", "pdf", "json"))
@@ -177,6 +183,7 @@ def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
         for entry in out_dir.iterdir()
         if entry.name not in keep
         and entry.name not in _RUN_OUTPUT_NAMES
+        and entry.name != _STAGING_NAME
         and _numbered_dir_suffix(entry, "rep_") is None
     )
     return foreign[:5] + ["…"] if len(foreign) > 5 else foreign
@@ -227,39 +234,41 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
                 file=sys.stderr,
             )
             return 1
-    # Write FIRST, clean after. Clearing up front meant a run that failed
-    # part-way had already deleted the previous results — three good
-    # replicates plus a failing run asking for one left rep_00 half
-    # written and rep_01, rep_02 gone, with nothing to show for it.
-    for i in range(args.replicates):
-        rep_dir = out_dir / f"rep_{i:02d}"
-        # A reused rep_NN may hold an earlier run's plot. write_output
-        # rewrites the data and clears folds/, but a plot.* left from a
-        # run made with different --plot flags or a different seed would
-        # otherwise ship beside data it does not describe.
-        if rep_dir.is_dir():
-            for stale in rep_dir.glob("plot.*"):
-                stale.unlink()
-        code = _run_once(
-            args.scenario, rep_dir, args.plot, args.plot_format,
-            config=base_config.model_copy(update={"seed": base_seed + i}),
-            tick_every=getattr(args, "plot_ticks", None),
-        )
-        if code != 0:
-            return code
+    # Staged, then swapped. Clearing up front destroyed the previous
+    # results before anything replaced them; writing in place instead left
+    # a failed run's new rep_00 sitting among an older run's rep_01..04,
+    # which still looks like one valid set from the outside. Neither is a
+    # thing this tool should hand to someone.
+    staging = out_dir / _STAGING_NAME
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    try:
+        for i in range(args.replicates):
+            code = _run_once(
+                args.scenario, staging / f"rep_{i:02d}", args.plot,
+                args.plot_format,
+                config=base_config.model_copy(update={"seed": base_seed + i}),
+                tick_every=getattr(args, "plot_ticks", None),
+            )
+            if code != 0:
+                return code
 
-    # Every replicate succeeded, so anything still here belongs to an
-    # earlier run — more rep_NN/ dirs than this one wrote, or a single
-    # run's CSVs and folds/ from before --replicates was used. Either
-    # would be read as part of this run.
-    if out_dir.is_dir():
+        # A complete set exists, so the old one can go. Everything here is
+        # output this tool wrote — the foreign check above already refused
+        # the folder otherwise.
         for stale in out_dir.iterdir():
-            if stale.name in keep:
+            if stale == staging:
                 continue
             if stale.is_dir():
                 shutil.rmtree(stale)
             else:
                 stale.unlink()
+        for new_rep in sorted(staging.iterdir()):
+            new_rep.rename(out_dir / new_rep.name)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
     return 0
 
 
@@ -473,14 +482,7 @@ def _scenario_runs(scenario: str) -> list[Path]:
     # Must match _resolve_out_dir: a metadata.json names its parent folder,
     # not the file, or the prompt searches for out/metadata and finds nothing.
     path = Path(scenario)
-    # resolve() first: `dsl run metadata.json` from inside the folder
-    # gives a bare filename, whose .parent.name is "" — which would
-    # name the output directory out/ rather than out/<run>.
-    name = (
-        path.resolve().parent.name
-        if path.name == "metadata.json"
-        else path.stem
-    )
+    name = _run_name(path)
     out = Path("out")
     if not out.is_dir():
         return []

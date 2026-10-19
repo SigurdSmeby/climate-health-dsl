@@ -4,6 +4,7 @@ This module handles deciding where a run writes its files (with
 auto-numbering so a previous run is never silently overwritten) and
 writing the commented starter scenario `dsl new` produces.
 """
+import os
 import sys
 from pathlib import Path
 
@@ -106,6 +107,30 @@ series:
 """
 
 
+def _run_name(path: Path) -> str:
+    """The run name a scenario or metadata path stands for.
+
+    A ``metadata.json`` is named after the folder holding it, so
+    reproducing ``out/foo/metadata.json`` yields ``out/foo``-style names
+    rather than ``out/metadata``.
+
+    Args:
+        path: A scenario YAML or metadata.json path, absolute or relative.
+
+    Returns:
+        The folder name for a metadata sidecar, else the file's stem.
+        Example: "foo" for out/foo/metadata.json, "scenario" for
+        scenario.yaml.
+    """
+    if path.name != "metadata.json":
+        return path.stem
+    # abspath, not resolve(): a bare "metadata.json" has an empty
+    # .parent.name, which would name the output out/ instead of out/<run>
+    # — but resolve() also follows symlinks, naming the run after the
+    # link's TARGET rather than the folder the user actually pointed at.
+    return Path(os.path.abspath(path)).parent.name
+
+
 def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
     """Decide where to write, never overwriting a previous run by default.
 
@@ -128,14 +153,7 @@ def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
         return Path(out_arg)
 
     path = Path(input_path)
-    # resolve() first: `dsl run metadata.json` from inside the folder
-    # gives a bare filename, whose .parent.name is "" — which would
-    # name the output directory out/ rather than out/<run>.
-    name = (
-        path.resolve().parent.name
-        if path.name == "metadata.json"
-        else path.stem
-    )
+    name = _run_name(path)
 
     base = Path("out") / name
     if not base.exists():

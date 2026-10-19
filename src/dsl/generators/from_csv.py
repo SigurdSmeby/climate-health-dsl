@@ -9,6 +9,7 @@ Hard rule: the generator never invents data. If the CSV holds fewer
 periods than the scenario asks for, that is an error — real data is never
 wrapped, repeated, or extrapolated beyond its available dates.
 """
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -62,7 +63,7 @@ class FromCsvGenerator(VariableGenerator):
             order. Empty list if the file is missing, empty, or has no
             "location" column.
         """
-        path = Path(file)
+        path = Path(os.path.abspath(file))
         if not path.is_file():
             return []
         stat = path.stat()
@@ -384,7 +385,11 @@ def _read_csv_cached(path: "str | Path") -> pd.DataFrame:
     Errors Caught (raised to caller):
         pd.errors.EmptyDataError: If the file has no columns.
     """
-    path = Path(path)
+    # Absolute, so a relative path cannot name two different files after a
+    # cwd change; (mtime, size) so an edited file is re-read. An edit that
+    # preserves both is indistinguishable from no edit, which is the same
+    # bound every make-style tool works under.
+    path = Path(os.path.abspath(path))
     stat = path.stat()
     return _parse_csv(str(path), stat.st_mtime_ns, stat.st_size).copy()
 

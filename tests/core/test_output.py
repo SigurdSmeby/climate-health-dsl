@@ -48,3 +48,19 @@ def test_output_dir_is_created_if_missing(tmp_path):
     out = tmp_path / "does" / "not" / "exist"
     write_output(run(config), config, out)
     assert (out / "simulated_data.csv").is_file()
+
+def test_a_symlinked_metadata_names_the_folder_the_user_pointed_at(tmp_path):
+    """resolve() follows symlinks, so a linked metadata.json named the run
+    after the link's TARGET rather than the folder actually given."""
+    import os
+
+    from dsl._output import _run_name
+
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "metadata.json").write_text("{}")
+    link = tmp_path / "link"
+    link.mkdir()
+    os.symlink(real / "metadata.json", link / "metadata.json")
+
+    assert _run_name(link / "metadata.json") == "link"
