@@ -61,7 +61,8 @@ def test_seasonal_spike_reports_one_peak_per_year():
 def test_seasonal_spike_peaks_land_on_the_declared_centre():
     generator, _ = _build("seasonal_spike", spike_center=10)
     ppy = periods_per_year("weekly")
-    assert [e["index"] for e in generator.events()] == [10, 10 + ppy]
+    # spike_center counts from 1, so week 10 is index 9.
+    assert [e["index"] for e in generator.events()] == [9, 9 + ppy]
 
 
 def test_seasonal_spike_peaks_match_the_actual_maximum():

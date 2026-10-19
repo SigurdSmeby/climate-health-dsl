@@ -1010,6 +1010,11 @@ def parse_config(data: dict) -> ScenarioConfig:
     return ScenarioConfig(**data)
 
 
+# Seasonal generators that count position from row 0. seasonal_spike is
+# anchored to the calendar instead, so it is deliberately absent.
+_CYCLE_FROM_ROW_ZERO = ("seasonal_smooth",)
+
+
 def validate_scenario(config: ScenarioConfig) -> list[str]:
     """Soft validation: return warnings for suspicious-but-legal scenarios.
 
@@ -1063,18 +1068,20 @@ def validate_scenario(config: ScenarioConfig) -> list[str]:
             f"({cycle} {config.period} periods); seasonality will not be visible."
         )
 
-    # Known limitation: start_period only relabels the output; seasonal
-    # generators still begin their cycle at index 0, so a mid-year start has
-    # the wrong seasonal phase.
+    # Generators that start their cycle at row 0 rather than at the calendar
+    # year, so a mid-year start leaves them out of phase with their labels.
     if config.start_period is not None:
         _, offset = parse_period(config.start_period, config.period)
         if offset != 0:
-            warnings.append(
-                f"start_period '{config.start_period}' begins mid-cycle; "
-                f"seasonal generators and the disease baseline still start "
-                f"their seasonal phase at the cycle start, so seasonality is "
-                f"not aligned to the calendar."
-            )
+            for spec in config.series:
+                if spec.generate in _CYCLE_FROM_ROW_ZERO:
+                    warnings.append(
+                        f"series '{spec.name}' uses '{spec.generate}', which "
+                        f"starts its cycle at the first row rather than at "
+                        f"the calendar year, so with start_period "
+                        f"'{config.start_period}' its seasonal phase does "
+                        f"not match the period labels."
+                    )
 
     # If the largest lag covers the whole training split, every training
     # target is warm-up NaN — nothing to learn from.

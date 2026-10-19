@@ -159,7 +159,7 @@ year boundary.
 |---|---|---|
 | `baseline` | `2.0` | Dry-season level. |
 | `spike_height` | `20.0` | Rise above baseline at the peak. |
-| `spike_center` | mid-year | Period offset of the peak within the year. |
+| `spike_center` | mid-year | Which period of the year peaks, counting from 1 — `7` is July on monthly data. Anchored to the calendar, so a July peak stays in July whatever `start_period` says. |
 | `spike_width` | `4.0` | Width in periods (> 0). |
 | `noise` | `0.5` | Gaussian noise; `0` is fully deterministic. |
 | `clamp_min` | unset | Floor — set `0` for rainfall. |

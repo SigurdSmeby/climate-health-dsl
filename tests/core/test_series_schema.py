@@ -516,3 +516,47 @@ def test_location_population_may_be_a_generator():
         )
     )
     assert config.population_for("north").generate == "linear_trend"
+
+
+# ------------------------------------------------- mid-year start warning
+
+
+def _warnings_for(generate: str, start: str = "2000-07") -> list[str]:
+    from dsl.core.config.schema import validate_scenario
+
+    config = parse_config(
+        {
+            "period": "monthly",
+            "n_total": 24,
+            "seed": 1,
+            "start_period": start,
+            "locations": {"loc": {"population": 100_000}},
+            "series": [
+                {"name": "rain", "generate": generate},
+                {
+                    "name": "disease_cases",
+                    "counts": {},
+                    "depends_on": [{"series": "rain", "lag": 1}],
+                },
+            ],
+        }
+    )
+    return validate_scenario(config)
+
+
+def test_no_phase_warning_for_a_calendar_aligned_generator():
+    """seasonal_spike positions itself against the calendar, so it is fine."""
+    assert not any("phase" in w for w in _warnings_for("seasonal_spike"))
+
+
+def test_phase_warning_names_the_generator_that_is_affected():
+    found = [w for w in _warnings_for("seasonal_smooth") if "phase" in w]
+    assert found, "seasonal_smooth still starts its cycle at row 0"
+    assert "seasonal_smooth" in found[0]
+    assert "rain" in found[0]  # says which series, not just which generator
+
+
+def test_no_phase_warning_when_the_year_starts_at_the_cycle_start():
+    assert not any(
+        "phase" in w for w in _warnings_for("seasonal_smooth", start="2000-01")
+    )

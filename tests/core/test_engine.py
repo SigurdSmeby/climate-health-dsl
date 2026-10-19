@@ -116,7 +116,7 @@ def test_generator_params_are_passed_through():
     a = run(config_with_seed(1))
     b = run(config_with_seed(2))
     assert np.array_equal(a["rainfall"], b["rainfall"])
-    assert int(np.argmax(a["rainfall"])) == 10
+    assert int(np.argmax(a["rainfall"])) == 9  # spike_center counts from 1
 
 
 def test_unknown_generator_name_raises_with_available():
