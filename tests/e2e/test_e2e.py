@@ -93,8 +93,22 @@ def run_dsl(*args, cwd):
     try:
         with redirect_stdout(out), redirect_stderr(err):
             code = main([*args])
-    except SystemExit as exc:  # argparse errors exit rather than return
-        code = exc.code if isinstance(exc.code, int) else 1
+    except SystemExit as exc:
+        # argparse exits rather than returning. A bare sys.exit() carries
+        # None, which the shell reads as success, so it must not become 1.
+        if exc.code is None:
+            code = 0
+        elif isinstance(exc.code, int):
+            code = exc.code
+        else:
+            code = 1  # a message, which the interpreter prints and exits 1
+    except Exception:  # noqa: BLE001 — any crash must keep its output
+        # Attach whatever was printed before the crash: without this the
+        # traceback arrives with no sign of what the run was doing.
+        raise AssertionError(
+            f"dsl {' '.join(args)} raised\n"
+            f"stdout:\n{out.getvalue()}\nstderr:\n{err.getvalue()}"
+        ) from None
     finally:
         os.chdir(before)
     return Result(code, out.getvalue(), err.getvalue())
@@ -184,6 +198,36 @@ def test_e2e_case(case_dir, tmp_path):
         assert a == b, "reproduction from metadata.json was not byte-identical"
 
 
+@pytest.mark.parametrize(
+    "raised, expected",
+    [
+        (SystemExit(None), 0),  # a bare sys.exit() is success
+        (SystemExit(0), 0),
+        (SystemExit(2), 2),  # argparse's usage error
+        (SystemExit("a message"), 1),  # printed, then exit 1
+    ],
+)
+def test_run_dsl_reads_exit_codes_the_way_a_shell_does(
+    raised, expected, monkeypatch, tmp_path
+):
+    """A run reported as failing when it succeeded would be worse than slow."""
+    monkeypatch.setitem(
+        globals(), "main", lambda argv: (_ for _ in ()).throw(raised)
+    )
+    assert run_dsl("run", "x", cwd=tmp_path).returncode == expected
+
+
+def test_a_crash_reports_what_the_run_had_printed(monkeypatch, tmp_path):
+    """Captured output must not be swallowed with the traceback."""
+    def boom(argv):
+        print("got this far")
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setitem(globals(), "main", boom)
+    with pytest.raises(AssertionError, match="got this far"):
+        run_dsl("run", "x", cwd=tmp_path)
+
+
 def test_the_console_script_entry_point_works(tmp_path):
     """`dsl` must run as an installed command, not just as an import.
 
@@ -191,10 +235,17 @@ def test_the_console_script_entry_point_works(tmp_path):
     thing standing between a broken [project.scripts] entry and a release
     nobody can run.
     """
-    raw = yaml.safe_load((CASES_DIR / "basic_run" / "scenario.yaml").read_text())
+    if shutil.which("dsl") is None:
+        pytest.skip("dsl is not on PATH — run pytest inside the venv")
+
+    # Copy the whole case directory, so a scenario with sibling data files
+    # still resolves them if this ever points at a different case.
+    work = tmp_path / "work"
+    shutil.copytree(CASES_DIR / "basic_run", work)
+    scenario = work / "scenario.yaml"
+    raw = yaml.safe_load(scenario.read_text())
     raw.pop("_expect", None)
     raw.pop("_run", None)
-    scenario = tmp_path / "s.yaml"
     scenario.write_text(yaml.safe_dump(raw))
     result = subprocess.run(
         ["dsl", "run", str(scenario), "-o", str(tmp_path / "out")],
