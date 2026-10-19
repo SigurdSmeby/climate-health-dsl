@@ -416,9 +416,12 @@ def _warnings(entries: list[dict], events: list[dict]) -> list[str]:
         but absent from that fold's test half. Empty when every fold tests
         everything.
     """
+    # Labelled exactly as _side stores them, or a disambiguated collision
+    # would be looked up under its raw kind, find nothing, and warn that
+    # every fold is missing something the summary just counted.
     planted: dict[str, set[str]] = defaultdict(set)
     for event in events:
-        planted[event["series"]].add(event["kind"])
+        planted[event["series"]].add(_kind_label(event, events))
 
     warnings = []
     for fold in entries:

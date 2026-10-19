@@ -635,3 +635,31 @@ def test_an_ordinary_event_name_is_left_alone():
     assert set(summary) == {"seasonal_spike", "storm"}
     assert summary["seasonal_spike"]["test"] == 2
     assert summary["storm"]["test"] == 1
+
+
+def test_a_disambiguated_name_does_not_invent_missing_features():
+    """`_warnings` looks features up by the label `_side` stored them under.
+    Looking up the raw kind instead found nothing, so every fold warned that
+    a feature was missing while the summary beside it counted that feature.
+    """
+    config = parse_config(_collision_scenario("seasonal_spike"))
+    report = build_report(config, run(config))
+
+    # Whatever the labels, a fold whose summary counts a feature must not be
+    # warned about that same feature.
+    for fold in report["folds"]:
+        for label, counts in fold["summary"].items():
+            if counts["test"]:
+                assert not [
+                    w
+                    for w in report["warnings"]
+                    if f"fold {fold['index']}:" in w and f"'{label}'" in w
+                ], f"warned about {label}, which fold {fold['index']} tests"
+
+    # The collision must not change which folds warn at all: an ordinary
+    # name is the control.
+    plain = build_report(
+        parse_config(_collision_scenario("storm")),
+        run(parse_config(_collision_scenario("storm"))),
+    )
+    assert len(report["warnings"]) == len(plain["warnings"])
