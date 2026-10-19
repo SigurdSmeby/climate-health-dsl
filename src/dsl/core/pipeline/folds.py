@@ -348,9 +348,14 @@ def _side(
         if event["location"] is not None and event["location"] not in locations:
             continue
         if event["index"] in wanted:
-            counted[event["series"]][event["kind"]].append(labels[event["index"]])
+            # Keyed by origin as well as name: a regional event and a
+            # generator's per-location feature are counted by incompatible
+            # rules (once, versus once per place), so an event named after
+            # the generator beside it must not land in the same bucket.
+            kind = _kind_label(event, events)
+            counted[event["series"]][kind].append(labels[event["index"]])
             if event["location"] is not None:
-                places[event["series"]][event["kind"]].add(event["location"])
+                places[event["series"]][kind].add(event["location"])
 
     return {
         "rows": len(rows),
@@ -372,6 +377,28 @@ def _side(
             for series, kinds in counted.items()
         },
     }
+
+
+def _kind_label(event: dict, events: list[dict]) -> str:
+    """The name a feature is reported under, disambiguated on collision.
+
+    A regional event counts once however many series react to it; a
+    generator's feature counts once per location. Sharing a bucket would
+    apply both rules to one number, so a name used by both origins is
+    spelled out. The common case — no collision — keeps the plain name.
+
+    Args:
+        event: The feature being labelled.
+        events: Every planted feature, to see whether the name collides.
+
+    Returns:
+        The kind, or "<kind> (event)" / "<kind> (generator)" on a collision.
+    """
+    kind = event["kind"]
+    origins = {e["location"] is None for e in events if e["kind"] == kind}
+    if len(origins) < 2:
+        return kind
+    return f"{kind} (event)" if event["location"] is None else f"{kind} (generator)"
 
 
 def _warnings(entries: list[dict], events: list[dict]) -> list[str]:

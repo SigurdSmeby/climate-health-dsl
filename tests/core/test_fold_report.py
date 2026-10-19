@@ -589,3 +589,49 @@ def test_the_matrix_explains_its_columns_before_the_table():
     # It must say which side is which, not just name them.
     assert "learn from" in preamble or "learns from" in preamble
     assert "scored on" in preamble or "measured on" in preamble
+
+
+def _collision_scenario(event_name):
+    """Two locations, a seasonal generator, and an event free to share its
+    name. The report's whole job is an exact count, so a name must not make
+    two different things share one number."""
+    return make_config_dict(
+        n_total=48,
+        period="monthly",
+        locations={"a": {"population": 100_000}, "b": {"population": 200_000}},
+        split={"kind": "time", "k": 4},
+        events={event_name: {"per_fold": 1}},
+        series=[
+            series_dict(
+                "rain",
+                generate="seasonal_spike",
+                params={"spike_center": 7},
+                events={event_name: {"add": 5.0}},
+            ),
+            series_dict("cases", counts={}, depends_on=[{"series": "rain", "lag": 1}]),
+        ],
+    )
+
+
+def test_an_event_named_after_a_generator_is_counted_separately():
+    """A regional event counts once however many series react to it; a
+    generator's feature counts once per location. Sharing a bucket applied
+    both rules to one number: fold 0 read 3 for two per-location peaks plus
+    one regional event, with `where` claiming 'a, b' for something partly
+    regional."""
+    config = parse_config(_collision_scenario("seasonal_spike"))
+    summary = build_report(config, run(config))["folds"][0]["summary"]
+
+    assert summary["seasonal_spike (generator)"]["test"] == 2  # one per location
+    assert summary["seasonal_spike (event)"]["test"] == 1  # regional, counted once
+
+
+def test_an_ordinary_event_name_is_left_alone():
+    """The disambiguation must only appear on a real collision, or every
+    report grows labels nobody needs."""
+    config = parse_config(_collision_scenario("storm"))
+    summary = build_report(config, run(config))["folds"][0]["summary"]
+
+    assert set(summary) == {"seasonal_spike", "storm"}
+    assert summary["seasonal_spike"]["test"] == 2
+    assert summary["storm"]["test"] == 1

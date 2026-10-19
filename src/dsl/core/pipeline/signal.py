@@ -46,7 +46,9 @@ def build_signal(
             continue
         values = LagTransform(n=dep.lag).apply(parents[dep.series], rng)
         for tf in dep.transforms:
-            values = get_transform(tf.name)(**tf.params).apply(values, rng)
+            values = _build_transform(tf.name, tf.params, spec.name).apply(
+                values, rng
+            )
         signal = signal + dep.weight * _standardize(values)
 
     if spec.autoregressive is not None:
@@ -55,6 +57,34 @@ def build_signal(
         )
 
     return signal
+
+
+
+def _build_transform(name: str, params: dict, series: str):
+    """Instantiate a transform, naming the series when a param is wrong.
+
+    Mirrors ``engine._build_generator``: a typo'd param otherwise escapes as
+    a raw TypeError from the constructor, which no caller catches — so it
+    ends a ``--watch`` session with a traceback instead of a message.
+
+    Args:
+        name: The transform's registered name (e.g. "threshold").
+        params: Keyword params for its constructor.
+        series: The series whose dependency carries this transform.
+
+    Returns:
+        The instantiated transform, ready for .apply(...).
+
+    Errors Caught (raised to caller):
+        ValueError: If a param is unexpected or of the wrong type.
+    """
+    try:
+        return get_transform(name)(**params)
+    except TypeError as exc:
+        raise ValueError(
+            f"series '{series}': transform '{name}' got an invalid param "
+            f"({exc})."
+        ) from exc
 
 
 def apply_missing(
