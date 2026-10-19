@@ -483,17 +483,51 @@ def test_a_generator_error_is_a_clean_message_not_a_traceback(tmp_path):
     assert main(["run", str(path), "-o", str(tmp_path / "out")]) == 1
 
 
-def test_a_bad_plot_format_is_a_clean_error(tmp_path, capsys):
-    """plot_dataset sat outside the error guard, so a bad extension gave a
-    traceback — and under --watch it killed the loop."""
+def test_a_bad_plot_format_is_rejected_before_anything_runs(tmp_path, capsys):
+    """A typo'd format is an ARGUMENT error, so argparse rejects it (exit 2)
+    before the dataset is generated. It used to be caught at write time,
+    which meant paying for a full run first — and left it looking like the
+    environment failures that are only a warning."""
     path = write_scenario(tmp_path, base_scenario())
-    code = main([
-        "run", str(path), "-o", str(tmp_path / "out"),
-        "--plot", "--plot-format", "bogus",
-    ])
-    assert code == 1
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit) as excinfo:
+        main([
+            "run", str(path), "-o", str(out),
+            "--plot", "--plot-format", "bogus",
+        ])
+    assert excinfo.value.code == 2
     err = capsys.readouterr().err
-    assert err.startswith("error:") or "\nerror:" in err
+    assert "invalid choice" in err
+    assert "Traceback" not in err
+    assert not out.exists(), "nothing should be written for an argument error"
+
+
+def test_a_plot_that_cannot_be_written_does_not_lose_the_run(tmp_path, capsys):
+    """Static formats go through kaleido, which needs a browser and raises
+    whatever that failure happens to be. The data is already written and
+    valid at that point, so throwing it away — and ending a --watch session
+    with a traceback — is the wrong answer on a machine with no chrome."""
+    import dsl._run as run_module
+
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("kaleido: no chrome")
+
+    monkeypatched = run_module.plot_dataset
+    run_module.plot_dataset = boom
+    try:
+        code = main([
+            "run", str(path), "-o", str(out), "--plot", "--plot-format", "png",
+        ])
+    finally:
+        run_module.plot_dataset = monkeypatched
+
+    assert code == 0
+    assert (out / "simulated_data.csv").is_file()
+    err = capsys.readouterr().err
+    assert "could not write the plot" in err
     assert "Traceback" not in err
 
 

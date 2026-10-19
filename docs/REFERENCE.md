@@ -304,7 +304,7 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 |---|---|---|
 | `-o`, `--out-dir DIR` | auto-named | Where to write. Omitted, an auto-named folder under `out/` keeps earlier runs intact. |
 | `--plot` | off | Also write a plot. |
-| `--plot-format FMT` | `html` | `html` (interactive), `png`, `svg`, `pdf`. |
+| `--plot-format FMT` | `html` | `html` (interactive), `png`, `svg`, `pdf`, `jpg`, `jpeg`. A static format needs kaleido and a browser; if it cannot write, the run still succeeds and the data is kept — only the plot is skipped, with a warning. |
 | `--plot-ticks N` | one year | Gridline every N periods. The default follows `period`, so 12 on monthly data and every tick is the same month. Use `6` for a half-year grid. |
 | `--watch` | off | Re-run on every save; live-reloading plot with `--plot`. |
 | `--new` | off | Skip the continue-or-new prompt. |

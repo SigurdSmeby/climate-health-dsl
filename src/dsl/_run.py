@@ -107,22 +107,32 @@ def _run_once(
 
         if plot:
             # Mark where evaluation begins, so the part a model is scored on
-            # is visible in the chart. Inside the guard: an unsupported
-            # --plot-format would otherwise traceback, and kill --watch.
+            # is visible in the chart.
             plot_path = out_dir / f"plot.{plot_format}"
-            plot_dataset(
-                df,
-                plot_path,
-                train_split=evaluation_boundary(config),
-                period=config.period,
-                tick_every=tick_every,
-                units={
-                    spec.name: spec.unit
-                    for spec in config.series
-                    if spec.unit
-                },
-            )
-            print(f"Wrote plot to {plot_path}")
+            try:
+                plot_dataset(
+                    df,
+                    plot_path,
+                    train_split=evaluation_boundary(config),
+                    period=config.period,
+                    tick_every=tick_every,
+                    units={
+                        spec.name: spec.unit
+                        for spec in config.series
+                        if spec.unit
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001 — see below
+                # The data is already written and valid; only the picture
+                # failed. Static formats go through kaleido, which needs a
+                # browser and raises whatever that failure happens to be —
+                # RuntimeError, OSError, something from the backend — so
+                # the type cannot be enumerated. Letting any of them through
+                # would throw away a good run, and end a --watch session
+                # with a traceback on a machine that simply has no chrome.
+                print(f"warning: could not write the plot ({exc})", file=sys.stderr)
+            else:
+                print(f"Wrote plot to {plot_path}")
     except (ValueError, FileNotFoundError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
