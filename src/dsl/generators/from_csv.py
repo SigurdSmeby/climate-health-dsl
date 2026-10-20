@@ -9,6 +9,8 @@ Hard rule: the generator never invents data. If the CSV holds fewer
 periods than the scenario asks for, that is an error — real data is never
 wrapped, repeated, or extrapolated beyond its available dates.
 """
+import os
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -47,6 +49,12 @@ class FromCsvGenerator(VariableGenerator):
         its own rows. Reads only the location column, and tolerates a
         missing file (generation surfaces that error later).
 
+        Cached per (path, mtime, size): the engine asks once per (location,
+        series) pair, and again when collecting planted features, so a
+        twelve-location scenario re-read the same file dozens of times.
+        Keying on mtime and size rather than the path alone keeps --watch
+        correct when the CSV itself is edited.
+
         Args:
             file: Path to the CSV.
 
@@ -55,14 +63,11 @@ class FromCsvGenerator(VariableGenerator):
             order. Empty list if the file is missing, empty, or has no
             "location" column.
         """
-        path = Path(file)
+        path = Path(os.path.abspath(file))
         if not path.is_file():
             return []
-        try:
-            col = pd.read_csv(path, usecols=["location"])["location"]
-        except (ValueError, pd.errors.EmptyDataError):
-            return []  # no location column / empty file
-        return list(dict.fromkeys(col.tolist()))  # distinct, order-preserving
+        stat = path.stat()
+        return list(_locations_in_cached(str(path), stat.st_mtime_ns, stat.st_size))
 
     def __init__(
         self,
@@ -118,7 +123,7 @@ class FromCsvGenerator(VariableGenerator):
                 don't cover the requested source_location/start_period.
         """
         try:
-            df = pd.read_csv(self.path)
+            df = _read_csv_cached(self.path)
         except pd.errors.EmptyDataError as exc:
             raise ValueError(
                 f"from_csv: {self.path.name} is empty (no columns to read)."
@@ -338,3 +343,71 @@ class FromCsvGenerator(VariableGenerator):
                 f"{self.path.name} (data covers {labels[0]} to {labels[-1]})."
             )
         return df.iloc[labels.index(self.start_period):]
+
+
+@lru_cache(maxsize=32)
+def _locations_in_cached(path: str, mtime_ns: int, size: int) -> tuple[str, ...]:
+    """Read a CSV's distinct locations, memoised on the file's identity.
+
+    Args:
+        path: Path to the CSV.
+        mtime_ns: The file's modification time; part of the cache key so an
+            edited file is re-read rather than served from the cache.
+        size: The file's size, for the same reason.
+
+    Returns:
+        Distinct "location" values in first-seen order, as a tuple so the
+        cached value cannot be mutated by a caller. Empty when the file has
+        no location column or no rows.
+    """
+    try:
+        col = pd.read_csv(path, usecols=["location"])["location"]
+    except (ValueError, pd.errors.EmptyDataError):
+        return ()  # no location column / empty file
+    # dropna first: NaN != NaN, so blank cells never deduplicate and each
+    # one became its own "location" — enough to push a single-location file
+    # down the multi-location branch and fail with "not in the file".
+    return tuple(dict.fromkeys(col.dropna().tolist()))
+
+
+def _read_csv_cached(path: "str | Path") -> pd.DataFrame:
+    """Parse a CSV once per (path, mtime, size), not once per use.
+
+    The engine builds a generator per (location, series), and the feature
+    collector builds them all again, so one file was parsed dozens of times
+    for a multi-location scenario. Keying on mtime and size keeps --watch
+    correct when the CSV is edited between runs.
+
+    Args:
+        path: Path to the CSV.
+
+    Returns:
+        A COPY of the cached frame, so a caller that mutates it cannot
+        corrupt the next read.
+
+    Errors Caught (raised to caller):
+        pd.errors.EmptyDataError: If the file has no columns.
+    """
+    # Absolute, so a relative path cannot name two different files after a
+    # cwd change; (mtime, size) so an edited file is re-read. An edit that
+    # preserves both is indistinguishable from no edit, which is the same
+    # bound every make-style tool works under.
+    path = Path(os.path.abspath(path))
+    stat = path.stat()
+    return _parse_csv(str(path), stat.st_mtime_ns, stat.st_size).copy()
+
+
+@lru_cache(maxsize=16)
+def _parse_csv(path: str, mtime_ns: int, size: int) -> pd.DataFrame:
+    """The memoised parse behind ``_read_csv_cached``.
+
+    Args:
+        path: Path to the CSV.
+        mtime_ns: Modification time, part of the cache key.
+        size: File size, part of the cache key.
+
+    Returns:
+        The parsed frame. Callers must not mutate it — ``_read_csv_cached``
+        hands out copies.
+    """
+    return pd.read_csv(path)

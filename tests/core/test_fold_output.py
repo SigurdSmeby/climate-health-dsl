@@ -238,9 +238,12 @@ def test_plot_marker_is_the_first_test_period_not_a_train_count(tmp_path):
             n_total=48, split={"kind": "time", "k": 4, "scheme": "blocked"}
         )
     )
-    # Fold 0 tests periods 0-11 while training on 12-47, so a train count
-    # (36) would put the marker nowhere near the boundary.
-    assert evaluation_boundary(blocked) == 0
+    # Fold 0 tests periods 0-11 while training on 12-47. A train count (36)
+    # would put the marker nowhere near the boundary — but so does the real
+    # first test period, which is 0: the line lands on the axis edge and
+    # marks nothing. A blocked split tests every period in some fold, so no
+    # single period divides the series, and there is nothing to draw.
+    assert evaluation_boundary(blocked) is None
 
     location = parse_config(
         make_config_dict(

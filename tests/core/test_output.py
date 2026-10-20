@@ -1,5 +1,6 @@
 """Tests for the output CSV and the fold files."""
 import pandas as pd
+import pytest
 
 from dsl.core.config.schema import parse_config
 from dsl.core.pipeline.engine import run
@@ -48,3 +49,88 @@ def test_output_dir_is_created_if_missing(tmp_path):
     out = tmp_path / "does" / "not" / "exist"
     write_output(run(config), config, out)
     assert (out / "simulated_data.csv").is_file()
+
+def test_a_symlinked_metadata_names_the_folder_the_user_pointed_at(tmp_path):
+    """resolve() follows symlinks, so a linked metadata.json named the run
+    after the link's TARGET rather than the folder actually given."""
+    import os
+
+    from dsl._output import _run_name
+
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "metadata.json").write_text("{}")
+    link = tmp_path / "link"
+    link.mkdir()
+    os.symlink(real / "metadata.json", link / "metadata.json")
+
+    assert _run_name(link / "metadata.json") == "link"
+
+
+def test_a_users_own_folds_directory_is_not_deleted(tmp_path):
+    """write_output cleared out_dir/folds unconditionally, so `-o .` on a
+    working directory holding a folds/ destroyed it — with no split: block
+    anywhere in the scenario. Same family as the --replicates data loss,
+    on the single-run path."""
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+    from dsl.core.pipeline.output import write_output
+    from tests.conftest import scenario_dict as make_config_dict
+    from tests.conftest import series_dict
+
+    mine = tmp_path / "folds"
+    mine.mkdir()
+    (mine / "important.txt").write_text("my work")
+
+    config = parse_config(
+        make_config_dict(
+            series=[
+                series_dict("r", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "disease_cases", counts={}, depends_on=[{"series": "r", "lag": 1}]
+                ),
+            ]
+        )
+    )
+    # Refused, not quietly skipped: skipping the delete and writing fold_N
+    # and report.md in anyway is no better than deleting it.
+    with pytest.raises(ValueError, match="did not write"):
+        write_output(run(config), config, tmp_path)
+
+    assert (mine / "important.txt").read_text() == "my work"
+    assert not (mine / "report.md").exists()
+
+
+def test_a_previous_runs_folds_are_still_cleared(tmp_path):
+    """The guard must not stop a rerun with fewer folds from tidying up,
+    or stale fold_N would be read as part of the new run."""
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+    from dsl.core.pipeline.output import write_output
+    from tests.conftest import scenario_dict as make_config_dict
+    from tests.conftest import series_dict
+
+    def built(k):
+        return parse_config(
+            make_config_dict(
+                n_total=48,
+                period="monthly",
+                split={"kind": "time", "k": k},
+                series=[
+                    series_dict("r", generate="flat", params={"level": 5.0}),
+                    series_dict(
+                        "disease_cases",
+                        counts={},
+                        depends_on=[{"series": "r", "lag": 1}],
+                    ),
+                ],
+            )
+        )
+
+    five = built(5)
+    write_output(run(five), five, tmp_path)
+    assert len(list((tmp_path / "folds").glob("fold_*"))) == 5
+
+    two = built(2)
+    write_output(run(two), two, tmp_path)
+    assert len(list((tmp_path / "folds").glob("fold_*"))) == 2

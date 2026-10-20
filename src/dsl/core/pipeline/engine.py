@@ -211,7 +211,16 @@ def _build_series(
         base = _generate_base(config, spec, location)
 
     signal = build_signal(
-        base, spec, built, _child_rng(config.seed, location, "signal", spec.name)
+        base,
+        spec,
+        built,
+        _child_rng(config.seed, location, "signal", spec.name),
+        # Each part of the signal draws from its own stream, so adding a
+        # stochastic transform to one dependency cannot shift the AR(1)
+        # noise or another dependency's draws.
+        stream=lambda *keys: _child_rng(
+            config.seed, location, "signal", spec.name, *keys
+        ),
     )
 
     # Before anything downstream reads this series, so a child sees the
@@ -342,14 +351,19 @@ def _resolved_params(
             params.get("file", "")
         )
         if len(csv_locations) > 1:
-            if location not in csv_locations:
+            # Matched as text: pandas reads a column of 1, 2 as ints, so a
+            # numeric location id failed with "'1' is not in (available:
+            # [1, 2])" — which it plainly is. The CSV's own value is what
+            # goes into source_location, since that is what it filters on.
+            by_text = {str(name): name for name in csv_locations}
+            if location not in by_text:
                 raise ValueError(
                     f"from_csv: {where} has no source_location and output "
                     f"location '{location}' is not in "
                     f"{params.get('file')} (available: {csv_locations}); "
                     f"set source_location or rename the location to match."
                 )
-            params["source_location"] = location
+            params["source_location"] = by_text[location]
     return params
 
 
@@ -423,7 +437,9 @@ def _child_rng(seed: int, *keys: str) -> np.random.Generator:
         A seeded np.random.Generator, deterministic for the same
         (seed, keys).
     """
-    entropy = [int(seed) & 0xFFFFFFFF]
+    # No 32-bit mask: SeedSequence takes an integer of any size, and
+    # masking made seed 5 and seed 4294967301 the same scenario.
+    entropy = [int(seed)]
     for key in keys:
         digest = hashlib.sha256(key.encode("utf-8")).digest()[:4]
         entropy.append(int.from_bytes(digest, "big"))

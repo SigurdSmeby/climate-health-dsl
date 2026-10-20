@@ -37,7 +37,7 @@ series:
 |---|---|---|
 | `period` | required | `daily` \| `weekly` \| `monthly` \| `yearly`. Sets the label format (`20000101`, `2000-W01`, `2000-01`, `2000`) and the periods per year (365/52/12/1). |
 | `n_total` | required | Number of periods to generate. |
-| `seed` | `0` | Seeds all randomness. Same scenario + seed → identical output. |
+| `seed` | `0` | Seeds all randomness. Same scenario + seed → identical output. Any non-negative integer, of any size. |
 | `start_period` | 2000 start | Calendar start, in this resolution: `"2010-07"`, `"2015-W10"`, `"20100615"`, `"2003"`. Relabels only — it does **not** shift the seasonal phase (the run warns if it would matter). |
 | `locations` | `["loc"]` | Mapping of name → `{population}`. Required once any series counts. A bare list works only without a count series. Population may be a generator block. |
 | `events` | `{}` | Named shocks — see below. |
@@ -308,7 +308,7 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 | `--plot-ticks N` | one year | Gridline every N periods. The default follows `period`, so 12 on monthly data and every tick is the same month. Use `6` for a half-year grid. |
 | `--watch` | off | Re-run on every save; live-reloading plot with `--plot`. |
 | `--new` | off | Skip the continue-or-new prompt. |
-| `--replicates`, `-n N` | `1` | N seeded replicates (`base, base+1, …`) into `rep_00/`, `rep_01/`, …, each reproducible. Clears stale output from the folder first, so it refuses a folder holding anything the tool did not write. Not with `--watch`. |
+| `--replicates`, `-n N` | `1` | N seeded replicates (`base, base+1, …`) into `rep_00/`, `rep_01/`, …, each reproducible. Refuses a folder holding anything the tool did not write, and clears stale results only once every replicate has succeeded. Not with `--watch`. |
 
 ## Output
 
@@ -320,7 +320,17 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 | `metadata.json` | always | The ground truth: seed, lags, weights, transforms, rates, generators, version, resolved scenario. Feed back to `dsl run` to reproduce byte-for-byte. |
 | `plot.{html,png,svg,pdf}` | with `--plot` | Faceted series over time, one line per location, a gridline on every year, the evaluation boundary marked. |
 
-Same scenario + seed → identical files. Output is checked against the dataset
+Same scenario + seed → identical files, **on the same version**. Changing how
+the random streams are derived changes the numbers, so a `metadata.json` is
+guaranteed to reproduce its dataset only under the version that wrote it (the
+sidecar records that version). Two such changes have happened:
+
+| Change | What it moved |
+|---|---|
+| Per-component RNG streams | Any scenario using a stochastic transform (`heavy_tail`, `missing`, `block_missing`) or `autoregressive:`. Before it, adding a transform to one dependency shifted another's draws. |
+| Seed no longer masked to 32 bits | Seeds above 2³², which previously aliased onto `seed % 2³²`. |
+
+Output is checked against the dataset
 rules a forecasting tool expects; findings print as `warning:` and the run
 still completes. Synthetic output always satisfies them — findings arise from
 `from_csv` data with gaps or an odd shape:

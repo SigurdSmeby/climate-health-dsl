@@ -699,3 +699,114 @@ def test_a_negative_period_in_at_is_still_rejected():
     """Allowing an empty list must not allow a nonsensical one."""
     with pytest.raises(ValidationError, match="'at' periods must be >= 0"):
         parse_config(_split_scenario({"at": [5, -1]}))
+
+
+def test_multiplier_on_a_counted_series_is_warned_about():
+    """A count series' signal sits on the logit scale around zero, so
+    scaling it moves cases DOWN wherever the signal is negative: a storm
+    with multiplier 3 took one period from 3729 cases to 339."""
+    from dsl.core.config.schema import validate_scenario
+
+    def built(effect, at):
+        return parse_config(
+            make_config_dict(
+                n_total=24,
+                events={"storm": {"at": [at]}},
+                series=[
+                    series_dict(
+                        "rain", generate="seasonal_spike", params={"spike_center": 7}
+                    ),
+                    series_dict(
+                        "disease_cases",
+                        counts={},
+                        events={"storm": effect},
+                        depends_on=[{"series": "rain", "lag": 1, "weight": 1.0}],
+                    ),
+                ],
+            )
+        )
+
+    assert any("logit scale" in w for w in validate_scenario(built({"multiplier": 3.0}, 12)))
+    assert not any(
+        "logit scale" in w for w in validate_scenario(built({"add": 1.0}, 12))
+    )
+
+    # The hazard is real, and it is that the DIRECTION depends on the sign
+    # of the signal in that period: the same multiplier raises cases in one
+    # month and lowers them in another, which no author expects of "a storm
+    # made it worse".
+    directions = set()
+    for at in range(1, 24):
+        scaled = run(built({"multiplier": 3.0}, at))["disease_cases"].to_numpy()
+        flat = run(built({"multiplier": 1.0}, at))["disease_cases"].to_numpy()
+        if scaled[at] != flat[at]:
+            directions.add(scaled[at] > flat[at])
+    assert directions == {True, False}, (
+        f"expected multiplier to move cases both ways, saw {directions}"
+    )
+
+
+def test_a_counted_series_with_its_own_base_is_warned_about():
+    """The base is added unstandardized to the drivers' standardized
+    contributions, so a large one pins the rate at its ceiling and the
+    drivers barely move the counts."""
+    from dsl.core.config.schema import validate_scenario
+
+    def built(**extra):
+        spec = {
+            "counts": {},
+            "depends_on": [{"series": "rain", "lag": 1, "weight": 1.0}],
+        }
+        spec.update(extra)
+        return parse_config(
+            make_config_dict(
+                n_total=36,
+                series=[
+                    series_dict(
+                        "rain", generate="seasonal_spike", params={"spike_center": 7}
+                    ),
+                    series_dict("disease_cases", **spec),
+                ],
+            )
+        )
+
+    with_base = built(generate="flat", params={"level": 50.0})
+    assert any("standardized" in w for w in validate_scenario(with_base))
+    assert not any("standardized" in w for w in validate_scenario(built()))
+
+
+def test_a_harmless_count_base_is_not_warned_about():
+    """Standardized parents contribute about ±1 each, so a base of that
+    order rides along with them. Measured: a flat level of 5 collapses the
+    case range from 19,179 wide to 1,507, while a level of 0 changes
+    nothing — and a warning that fires on the harmless case teaches the
+    reader to ignore it."""
+    from dsl.core.config.schema import validate_scenario
+
+    def built(level):
+        return parse_config(
+            make_config_dict(
+                n_total=36,
+                series=[
+                    series_dict(
+                        "rain", generate="seasonal_spike", params={"spike_center": 7}
+                    ),
+                    series_dict(
+                        "disease_cases",
+                        generate="flat",
+                        params={"level": level},
+                        counts={},
+                        depends_on=[{"series": "rain", "lag": 1, "weight": 1.0}],
+                    ),
+                ],
+            )
+        )
+
+    for harmless in (0.0, 0.5, 1.0):
+        assert not [
+            w for w in validate_scenario(built(harmless)) if "dominate" in w
+        ], harmless
+    for swamping in (2.0, 50.0):
+        assert [
+            w for w in validate_scenario(built(swamping)) if "dominate" in w
+        ], swamping

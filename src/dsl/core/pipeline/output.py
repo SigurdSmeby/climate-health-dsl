@@ -3,6 +3,7 @@
 Every output naming and format decision lives here, so if a downstream tool's
 conventions differ there is one place to adjust.
 """
+import re
 import shutil
 from pathlib import Path
 
@@ -14,6 +15,32 @@ FULL_FILENAME = "simulated_data.csv"
 FOLDS_DIRNAME = "folds"
 TRAIN_FILENAME = "train.csv"
 TEST_FILENAME = "test.csv"
+
+
+
+def _is_our_folds(folds_dir: Path) -> bool:
+    """Was this ``folds/`` written by a previous run?
+
+    A directory holding only ``fold_N`` subdirectories and the report files
+    is one of ours. Anything else — a user's own folds/ under ``-o .`` —
+    stops the run, so nothing is deleted from it and nothing is written
+    into it.
+
+    Args:
+        folds_dir: The candidate directory.
+
+    Returns:
+        True when every entry is one this tool writes, including an empty
+        directory. False as soon as anything foreign is found.
+    """
+    ours = {"report.md", "report.json"}
+    for entry in folds_dir.iterdir():
+        if entry.name in ours and entry.is_file():
+            continue
+        if entry.is_dir() and re.fullmatch(r"fold_\d+", entry.name):
+            continue
+        return False
+    return True
 
 
 def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) -> None:
@@ -40,8 +67,21 @@ def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) 
 
     folds_dir = out_dir / FOLDS_DIRNAME
     # Clear first, so a rerun with fewer folds (or none) leaves nothing of the
-    # previous run behind to be mistaken for part of this one.
+    # previous run behind to be mistaken for part of this one — but only a
+    # folds/ this tool recognises as its own. `-o .` on a working directory
+    # that happens to hold a folds/ would otherwise delete it, with no
+    # split: block anywhere in the scenario.
     if folds_dir.exists():
+        if not _is_our_folds(folds_dir):
+            # Refuse rather than skip the delete and write anyway: mixing
+            # fold_N dirs and report.md into someone's own folds/ is no
+            # better than deleting it, and the mkdir below would fail
+            # half-way through in the cases where a name collides.
+            raise ValueError(
+                f"{folds_dir} holds files this tool did not write, so the "
+                f"fold output will not be placed there. Point -o at a new "
+                f"or empty folder, or move that directory aside."
+            )
         shutil.rmtree(folds_dir)
 
     folds = config.folds()

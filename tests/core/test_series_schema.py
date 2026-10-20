@@ -843,3 +843,44 @@ def test_unit_does_not_change_the_generated_values():
         )["cases"].to_numpy()
 
     assert np.allclose(built("mm"), built(None), equal_nan=True)
+
+
+def test_a_weight_zero_parent_may_have_any_lag():
+    """build_signal skips a weight-0 parent outright, so its lag blanks
+    nothing. The hard check rejected it anyway, which made a decoy fail to
+    PARSE — while the soft warning beside it already knew to ignore one."""
+    parse_config(
+        make_config_dict(
+            n_total=24,
+            series=[
+                series_dict("r", generate="flat", params={"level": 5.0}),
+                series_dict("decoy", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "disease_cases",
+                    counts={},
+                    depends_on=[
+                        {"series": "r", "lag": 1, "weight": 1.0},
+                        {"series": "decoy", "lag": 30, "weight": 0},
+                    ],
+                ),
+            ],
+        )
+    )
+
+
+def test_a_weight_zero_parent_must_still_exist():
+    """Skipping the lag checks must not skip the name check: a typo is a
+    typo whatever the weight."""
+    with pytest.raises(ValidationError, match="not a defined series"):
+        parse_config(
+            make_config_dict(
+                series=[
+                    series_dict("r", generate="flat", params={"level": 5.0}),
+                    series_dict(
+                        "disease_cases",
+                        counts={},
+                        depends_on=[{"series": "typo", "lag": 1, "weight": 0}],
+                    ),
+                ]
+            )
+        )

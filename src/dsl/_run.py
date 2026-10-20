@@ -17,7 +17,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from dsl._output import _numbered_dir_suffix
+from dsl._output import _PLOT_FORMATS, _numbered_dir_suffix, _run_name
 from dsl._scenario import _friendly_error, _load_and_parse
 from dsl.core.config.schema import ScenarioConfig, validate_scenario
 from dsl.core.pipeline.dataset_rules import check_dataset
@@ -36,6 +36,8 @@ def _run_once(
     seed_override: int | None = None,
     config: ScenarioConfig | None = None,
     tick_every: int | None = None,
+    report_dir: Path | None = None,
+    quiet_warnings: bool = False,
 ) -> int:
     """Parse → generate → write (and optionally plot) one scenario.
 
@@ -76,8 +78,11 @@ def _run_once(
         return 1
 
     # Non-fatal warnings: inform and proceed.
-    for warning in validate_scenario(config):
-        print(f"warning: {warning}", file=sys.stderr)
+    if not quiet_warnings:
+        # Replicates share one scenario, so these would otherwise repeat
+        # identically N times and bury the per-replicate output.
+        for warning in validate_scenario(config):
+            print(f"warning: {warning}", file=sys.stderr)
 
     # Generate, check the dataset rules, write. Generation can fail on input
     # the schema can't catch (a bad generator param, a malformed from_csv
@@ -93,17 +98,32 @@ def _run_once(
         ):
             print(f"warning: {finding}", file=sys.stderr)
 
+        # Where to SAY the files went: a replicate run writes into a
+        # staging folder and swaps it in, so naming the real path would
+        # point the reader at one that is gone by the time they read it.
+        shown = report_dir if report_dir is not None else out_dir
+
+        # The plot names this tool writes, by name rather than by glob:
+        # `plot.*` also matched a user's own plot.py or plot.csv under
+        # `-o .`, and deleted them. Before the data lands, because a step
+        # after this one can still fail and leave the old picture beside
+        # new data.
+        for name in _PLOT_NAMES:
+            (out_dir / name).unlink(missing_ok=True)
+
         write_output(df, config, out_dir)
+        # The ground-truth sidecar goes down with the data, before the
+        # report: the report re-runs the generators and so can fail on its
+        # own, and a folder holding a CSV with no metadata.json is a
+        # dataset that cannot say what made it or reproduce itself.
+        write_metadata(config, out_dir)
         # What each fold actually contains, so a fold that cannot measure
         # what the scenario planted is visible rather than silently scored
         # well. This re-runs the generators to read what they planted, so it
         # can hit the same input errors generation can — and under --watch an
         # escaping exception would kill the watch loop.
         write_report(config, df, out_dir)
-        # The ground-truth sidecar: records the resolved scenario so the
-        # dataset is self-describing and reproducible.
-        write_metadata(config, out_dir)
-        print(f"Wrote {len(df)} rows to {out_dir}/")
+        print(f"Wrote {len(df)} rows to {shown}/")
 
         if plot:
             # Mark where evaluation begins, so the part a model is scored on
@@ -132,8 +152,15 @@ def _run_once(
                 # with a traceback on a machine that simply has no chrome.
                 print(f"warning: could not write the plot ({exc})", file=sys.stderr)
             else:
-                print(f"Wrote plot to {plot_path}")
-    except (ValueError, FileNotFoundError, KeyError) as exc:
+                print(f"Wrote plot to {shown / plot_path.name}")
+    except Exception as exc:  # noqa: BLE001 — see below
+        # Deliberately everything. This function's contract is "report the
+        # problem and return 1", and the callers depend on it: --watch
+        # keeps going so the author can fix the scenario and save again,
+        # and a replicate run reports which one failed. Enumerating the
+        # types meant each new one — OSError from a full disk, a pandas
+        # error from a malformed CSV, an IndexError from a generator —
+        # ended a watch session with a traceback until someone hit it.
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
@@ -141,9 +168,18 @@ def _run_once(
 
 # Everything a run writes into its output directory. Anything else found
 # there belongs to the user, so the replicate cleanup must not touch it.
+# Where a replicate run builds its set before swapping it in. Left behind
+# only by a run killed mid-write, and cleared by the next one.
+_STAGING_NAME = ".partial"
+
+# Every plot file a run can write, derived from the formats the CLI
+# accepts so the two cannot drift — the hand-written list had fallen
+# behind on jpg and jpeg.
+_PLOT_NAMES = frozenset(f"plot.{ext}" for ext in (*_PLOT_FORMATS, "json"))
+
 _RUN_OUTPUT_NAMES = frozenset(
     {"simulated_data.csv", "metadata.json", "folds"}
-) | frozenset(f"plot.{ext}" for ext in ("html", "png", "svg", "pdf", "json"))
+) | _PLOT_NAMES
 
 
 def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
@@ -165,8 +201,9 @@ def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
     foreign = sorted(
         entry.name
         for entry in out_dir.iterdir()
-        if entry.name not in keep
+        if not (entry.name in keep and entry.is_dir())
         and entry.name not in _RUN_OUTPUT_NAMES
+        and entry.name != _STAGING_NAME
         and _numbered_dir_suffix(entry, "rep_") is None
     )
     return foreign[:5] + ["…"] if len(foreign) > 5 else foreign
@@ -201,12 +238,10 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
         print(f"error: {msg}", file=sys.stderr)
         return 1
     base_seed = base_config.seed
-    # A reused folder may hold a previous run's output — more rep_NN/ dirs
-    # than this run writes, or a single run's CSVs and folds/ from before
-    # --replicates was used. Either would be read as part of this run, so
-    # clear anything this run will not itself overwrite.
+    # Checked before anything is written: refusing a folder the tool does
+    # not own has to happen while it is still untouched.
+    keep = {f"rep_{i:02d}" for i in range(args.replicates)}
     if out_dir.is_dir():
-        keep = {f"rep_{i:02d}" for i in range(args.replicates)}
         foreign = _foreign_entries(out_dir, keep)
         if foreign:
             print(
@@ -219,26 +254,60 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
                 file=sys.stderr,
             )
             return 1
+    # Staged, then swapped. Clearing up front destroyed the previous
+    # results before anything replaced them; writing in place instead left
+    # a failed run's new rep_00 sitting among an older run's rep_01..04,
+    # which still looks like one valid set from the outside. Neither is a
+    # thing this tool should hand to someone.
+    staging = out_dir / _STAGING_NAME
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    try:
+        for i in range(args.replicates):
+            code = _run_once(
+                args.scenario, staging / f"rep_{i:02d}", args.plot,
+                args.plot_format,
+                config=base_config.model_copy(update={"seed": base_seed + i}),
+                tick_every=getattr(args, "plot_ticks", None),
+                report_dir=out_dir / f"rep_{i:02d}",
+                quiet_warnings=i > 0,
+            )
+            if code != 0:
+                return code
+
+        # A complete set exists, so the old one can go. Everything here is
+        # output this tool wrote — the foreign check above already refused
+        # the folder otherwise.
+        #
+        # Each new rep_NN is moved into place over the old one FIRST, so a
+        # kill partway leaves a mix of complete replicates rather than a
+        # gap. Only then is whatever the new set does not cover removed:
+        # extra rep_NN from a longer previous run, and a single run's CSVs
+        # from before --replicates was used. A true atomic swap would need
+        # to exchange two directories, which no portable call offers.
+        staged = sorted(staging.iterdir())
+        for new_rep in staged:
+            landing = out_dir / new_rep.name
+            if landing.is_dir():
+                shutil.rmtree(landing)
+            new_rep.rename(landing)
+        written = {rep.name for rep in staged}
         for stale in out_dir.iterdir():
-            if stale.name in keep:
+            if stale == staging or stale.name in written:
                 continue
             if stale.is_dir():
                 shutil.rmtree(stale)
             else:
                 stale.unlink()
-    for i in range(args.replicates):
-        code = _run_once(
-            args.scenario, out_dir / f"rep_{i:02d}", args.plot, args.plot_format,
-            config=base_config.model_copy(update={"seed": base_seed + i}),
-            tick_every=getattr(args, "plot_ticks", None),
-        )
-        if code != 0:
-            return code
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
     return 0
 
 
 def _changed(path: str, last_mtime: float) -> tuple[bool, float]:
-    """Has ``path``'s mtime advanced past ``last_mtime``?
+    """Has ``path``'s mtime moved since ``last_mtime``?
 
     A missing file (mid-save by some editors) counts as unchanged.
 
@@ -251,10 +320,14 @@ def _changed(path: str, last_mtime: float) -> tuple[bool, float]:
         remember for the next check (unchanged from last_mtime if missing).
     """
     try:
-        mtime = Path(path).stat().st_mtime
+        # Nanoseconds, and != rather than >: an editor that writes twice
+        # within one clock tick, or restores an older copy, still counts as
+        # a change — and a save the watcher misses is a save the author
+        # waits for forever.
+        mtime = Path(path).stat().st_mtime_ns
     except FileNotFoundError:
         return False, last_mtime
-    return mtime > last_mtime, mtime
+    return mtime != last_mtime, mtime
 
 
 # Injected into plot.html under --watch: poll a version the server bumps on each
@@ -288,13 +361,21 @@ def _inject_reload(html_path: Path) -> None:
     """
     if not html_path.is_file():
         return
-    html = html_path.read_text()
+    html = html_path.read_text(encoding="utf-8")
     if "__plot_version__" not in html:
-        html = html.replace("</body>", _RELOAD_SCRIPT + "</body>", 1)
-        html_path.write_text(html)
+        # The LAST </body>: plotly's own output can embed one earlier, and
+        # a script injected before the real end of the document may not
+        # run. rfind returns -1 when there is none, which would splice the
+        # script in before the final character, so append instead.
+        cut = html.rfind("</body>")
+        if cut == -1:
+            html += _RELOAD_SCRIPT
+        else:
+            html = html[:cut] + _RELOAD_SCRIPT + html[cut:]
+        html_path.write_text(html, encoding="utf-8")
 
 
-def _serve(out_dir: Path, version: list[int]) -> "http.server.HTTPServer":
+def _serve(out_dir: Path, version: list[int]) -> "http.server.ThreadingHTTPServer":
     """Serve ``out_dir`` on a free localhost port; expose the reload version.
 
     ``version`` is a one-element list shared with the watch loop — the handler
@@ -306,7 +387,7 @@ def _serve(out_dir: Path, version: list[int]) -> "http.server.HTTPServer":
             reload script and bumped by the watch loop after each re-run.
 
     Returns:
-        The running HTTPServer (already serving in a daemon thread).
+        The running server (already serving in a daemon thread).
     """
     class Handler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
@@ -324,7 +405,10 @@ def _serve(out_dir: Path, version: list[int]) -> "http.server.HTTPServer":
             pass
 
     handler = functools.partial(Handler, directory=str(out_dir))
-    server = http.server.HTTPServer(("127.0.0.1", 0), handler)
+    # Threading: a single-threaded server blocks on one slow request,
+    # and the page polls for a version bump while also fetching the
+    # plot — so one stalled fetch could freeze the reload.
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 
@@ -351,7 +435,16 @@ def _watch_loop(
     Returns:
         Exit code: 0 (Ctrl-C is the normal way to stop watching).
     """
-    last_mtime = Path(scenario).stat().st_mtime
+    # st_mtime_ns, matching what _changed returns and compares — seeding
+    # this with float seconds made the two never equal, so the loop
+    # re-ran once at startup without anyone saving anything.
+    try:
+        last_mtime = Path(scenario).stat().st_mtime_ns
+    except FileNotFoundError:
+        # An editor that saves by rename-and-replace can make the file
+        # vanish for a moment. _changed already tolerates that; this stat
+        # sits outside the loop's handlers, so it has to as well.
+        last_mtime = 0
     serve = plot and plot_format == "html"
     server = None
     version = [0]
@@ -382,6 +475,9 @@ def _watch_loop(
     finally:
         if server is not None:
             server.shutdown()
+            # Releases the listening socket; without it the port stays
+            # bound for the rest of the process.
+            server.server_close()
 
 
 def _prompt_continue(scenario: str) -> Path | None:
@@ -409,7 +505,7 @@ def _prompt_continue(scenario: str) -> Path | None:
         choice = input("> ").strip().lower()
     except EOFError:
         return None
-    if choice.isdigit() and 1 <= int(choice) <= len(runs):
+    if choice.isdecimal() and 1 <= int(choice) <= len(runs):
         chosen = runs[int(choice) - 1]
         print(f"continuing in {chosen}/ (overwriting it).")
         return chosen
@@ -429,7 +525,7 @@ def _scenario_runs(scenario: str) -> list[Path]:
     # Must match _resolve_out_dir: a metadata.json names its parent folder,
     # not the file, or the prompt searches for out/metadata and finds nothing.
     path = Path(scenario)
-    name = path.parent.name if path.name == "metadata.json" else path.stem
+    name = _run_name(path)
     out = Path("out")
     if not out.is_dir():
         return []

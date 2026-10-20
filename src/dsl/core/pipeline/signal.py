@@ -20,6 +20,7 @@ def build_signal(
     spec,
     parents: dict[str, np.ndarray],
     rng: np.random.Generator,
+    stream=None,
 ) -> np.ndarray:
     """Combine a series' base with its parents' contributions.
 
@@ -29,7 +30,14 @@ def build_signal(
         spec: The SeriesSpec being built (its depends_on and autoregressive).
         parents: Already-built values of every series this one depends on,
             keyed by name.
-        rng: Seeded generator for this series' randomness.
+        rng: Seeded generator for this series' randomness. Used directly
+            only when ``stream`` is None.
+        stream: Callable taking key strings and returning an independent
+            generator. Each stochastic transform and the AR(1) noise gets
+            its own, so adding a transform to one dependency cannot shift
+            another's draws — the guarantee the per-component keying is
+            there to make. Defaults to reusing ``rng`` for every caller
+            that has no keying of its own.
 
     Returns:
         The finished float signal, NaN wherever a lag warm-up or a missing
@@ -40,22 +48,34 @@ def build_signal(
         KeyError: If a dependency's transform name is not registered.
     """
     signal = base.astype(float)
+    # Without a factory every draw comes off one stream, so a stochastic
+    # transform consumes the shocks the AR(1) would have used.
+    if stream is None:
+        def stream(*_keys):
+            return rng
 
     # A weight-0 parent is skipped rather than multiplied out, so its warm-up
     # NaNs don't blank rows it has no influence on.
     for dep in spec.depends_on:
         if dep.weight == 0:
             continue
-        values = LagTransform(n=dep.lag).apply(parents[dep.series], rng)
-        for tf in dep.transforms:
+        values = LagTransform(n=dep.lag).apply(
+            parents[dep.series], stream("lag", dep.series)
+        )
+        for index, tf in enumerate(dep.transforms):
+            # Keyed by position as well as name: the same transform twice
+            # on one parent must not draw the same numbers.
             values = _build_transform(tf.name, tf.params, spec.name).apply(
-                values, rng
+                values, stream("transform", dep.series, tf.name, str(index))
             )
         signal = signal + dep.weight * _standardize(values)
 
     if spec.autoregressive is not None:
         signal = signal + _ar1(
-            spec.autoregressive.phi, spec.autoregressive.noise, len(signal), rng
+            spec.autoregressive.phi,
+            spec.autoregressive.noise,
+            len(signal),
+            stream("ar1"),
         )
 
     return signal

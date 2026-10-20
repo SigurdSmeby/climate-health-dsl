@@ -260,3 +260,92 @@ def test_from_csv_daily_gap_rejected(tmp_path, rng):
     gen = FromCsvGenerator(file=str(csv), column="rainfall")
     with pytest.raises(ValueError, match="gap|consecutive"):
         gen.generate(2, "daily", rng)
+
+
+def test_a_csv_is_parsed_once_per_version(tmp_path, rng):
+    """The engine builds a generator per (location, series), and collects
+    planted features by building them all again, so one file was parsed
+    dozens of times for a multi-location scenario."""
+    import pandas as pd
+
+    from dsl.generators import from_csv as module
+
+    path = write_csv(
+        tmp_path / "c.csv", [f"2000-{m:02d}" for m in range(1, 13)],
+        rainfall=list(range(12)),
+    )
+    module._parse_csv.cache_clear()
+
+    calls = []
+    original = pd.read_csv
+
+    def counting(*args, **kwargs):
+        calls.append(args[0])
+        return original(*args, **kwargs)
+
+    module.pd.read_csv = counting
+    try:
+        gen = FromCsvGenerator(file=str(path), column="rainfall")
+        for _ in range(5):
+            gen.generate(12, "monthly", rng)
+    finally:
+        module.pd.read_csv = original
+
+    assert len(calls) == 1, f"parsed {len(calls)} times, expected 1"
+
+
+def test_an_edited_csv_is_re_read(tmp_path, rng):
+    """The cache is keyed on mtime and size, not the path, or --watch
+    would keep serving the file as it was when the session started."""
+    import time
+
+    import numpy as np
+
+    path = write_csv(
+        tmp_path / "c.csv", [f"2000-{m:02d}" for m in range(1, 13)],
+        rainfall=[1.0] * 12,
+    )
+    gen = FromCsvGenerator(file=str(path), column="rainfall")
+    assert np.allclose(gen.generate(3, "monthly", rng), 1.0)
+
+    time.sleep(0.01)
+    write_csv(path, [f"2000-{m:02d}" for m in range(1, 13)], rainfall=[9.0] * 12)
+    assert np.allclose(gen.generate(3, "monthly", rng), 9.0)
+
+
+def test_a_caller_cannot_corrupt_the_cached_frame(tmp_path):
+    """Handing out the cached object itself would let one series' edits
+    reach the next read."""
+    from dsl.generators.from_csv import _read_csv_cached
+
+    path = write_csv(
+        tmp_path / "c.csv", [f"2000-{m:02d}" for m in range(1, 13)],
+        rainfall=[1.0] * 12,
+    )
+    frame = _read_csv_cached(path)
+    frame.loc[0, "rainfall"] = -999.0
+    assert _read_csv_cached(path).loc[0, "rainfall"] == 1.0
+
+
+def test_blank_location_cells_are_not_counted_as_locations(tmp_path):
+    """NaN != NaN, so blank cells never deduplicate and each became its own
+    "location" — enough to push a single-location file down the
+    multi-location branch and fail with "not in the file"."""
+    import pandas as pd
+
+    from dsl.generators.from_csv import _locations_in_cached
+
+    path = tmp_path / "gappy.csv"
+    pd.DataFrame(
+        [
+            {
+                "time_period": f"2000-{m:02d}",
+                "location": "oslo" if m % 2 else None,
+                "rainfall": 5.0,
+            }
+            for m in range(1, 13)
+        ]
+    ).to_csv(path, index=False)
+    _locations_in_cached.cache_clear()
+
+    assert FromCsvGenerator.locations_in(str(path)) == ["oslo"]

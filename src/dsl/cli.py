@@ -19,12 +19,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from dsl._output import _resolve_out_dir, _write_starter
+from dsl._output import _PLOT_FORMATS, _resolve_out_dir, _write_starter
 from dsl._run import _prompt_continue, _run_once, _run_replicates, _watch_loop
-
-# Mirrors plot.py's accepted extensions, without the dot: argparse takes the
-# format as a bare word.
-_PLOT_FORMATS = ("html", "png", "svg", "pdf", "jpg", "jpeg")
 
 
 def _positive_int(text: str) -> int:
@@ -164,7 +160,9 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--replicates",
         "-n",
-        type=int,
+        # The same argparse type --plot-ticks uses: a count below 1 is an
+        # argument error, so it costs nothing and nothing is written.
+        type=_positive_int,
         default=1,
         help=(
             "generate N replicates with seeds base, base+1, … into rep_00/, "
@@ -181,10 +179,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "list":
         return _list_blocks()
 
-    # Cheap flag validation before anything interactive/side-effecting below.
-    if args.replicates < 1:
-        print("error: --replicates must be >= 1", file=sys.stderr)
-        return 1
 
     # Where to write. With no -o and no --new, offer to continue an existing run
     # rather than spawning out/<name>_1, _2, … An explicit -o always wins; --new

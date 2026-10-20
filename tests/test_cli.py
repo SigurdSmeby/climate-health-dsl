@@ -1,4 +1,5 @@
 """Smoke tests for the `dsl run` command-line interface."""
+import inspect
 import urllib.request
 from pathlib import Path
 
@@ -324,15 +325,32 @@ def test_new_refuses_overwrite_without_force(tmp_path, capsys):
     assert "period: monthly\n" not in scenario.read_text()
 
 
-def test_changed_detects_mtime_advance(tmp_path):
-    # The watch loop's change check: a newer mtime is a change, a missing
-    # file is treated as unchanged (some editors unlink mid-save).
+def test_changed_detects_any_mtime_move(tmp_path):
+    """The watch loop's change check. It compares nanoseconds with != , not
+    seconds with >: an editor that writes twice inside one clock tick, or
+    restores an older copy, is still a change — and a save the watcher
+    misses is a save the author waits for forever."""
     f = tmp_path / "s.yaml"
     f.write_text("a")
-    mtime = f.stat().st_mtime
+    mtime = f.stat().st_mtime_ns
+
     assert _changed(str(f), mtime) == (False, mtime)
     assert _changed(str(f), mtime - 1)[0] is True
+    # An OLDER file than last seen — a restored backup — also counts.
+    assert _changed(str(f), mtime + 1)[0] is True
+    # A missing file is unchanged: some editors unlink mid-save.
     assert _changed(str(tmp_path / "gone.yaml"), mtime) == (False, mtime)
+
+
+def test_changed_sees_a_save_within_the_same_second(tmp_path):
+    """Second resolution could miss a quick second save entirely."""
+    f = tmp_path / "s.yaml"
+    f.write_text("a")
+    _, first = _changed(str(f), 0)
+    f.write_text("b")
+    changed, second = _changed(str(f), first)
+    assert changed, "a rewrite in the same second went unnoticed"
+    assert second != first
 
 
 def test_run_once_writes_files(tmp_path):
@@ -629,3 +647,250 @@ def test_the_bare_list_form_of_locations_still_works(tmp_path):
         "series:\n  - { name: r, generate: flat, params: { level: 5.0 } }\n"
     )
     assert main(["run", str(path), "-o", str(tmp_path / "out")]) == 0
+
+
+def test_a_scenario_reads_its_own_data_whatever_the_cwd(tmp_path, monkeypatch):
+    """A relative from_csv path was resolved against the CURRENT directory
+    first, so a file of the same name in the shell's cwd silently replaced
+    the one the scenario ships with: the same scenario produced 999.0 run
+    from one folder and 1.0 from another."""
+    import pandas as pd
+
+    def csv_at(folder, value):
+        folder.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(
+            {
+                "time_period": [f"2000-{m:02d}" for m in range(1, 13)],
+                "rain": [value] * 12,
+            }
+        ).to_csv(folder / "data.csv", index=False)
+
+    project, elsewhere = tmp_path / "project", tmp_path / "elsewhere"
+    csv_at(project, 1.0)
+    csv_at(elsewhere, 999.0)
+    (project / "s.yaml").write_text(
+        "period: monthly\nn_total: 12\nseed: 1\nstart_period: 2000-01\n"
+        "locations: { loc: { population: 100000 } }\n"
+        "series:\n"
+        "  - { name: rain, generate: from_csv, params: { file: data.csv, column: rain } }\n"
+        "  - { name: disease_cases, counts: {}, depends_on: [{ series: rain, lag: 1 }] }\n"
+    )
+
+    monkeypatch.chdir(elsewhere)
+    out = tmp_path / "out"
+    assert main(["run", str(project / "s.yaml"), "-o", str(out)]) == 0
+    rain = pd.read_csv(out / "simulated_data.csv")["rain"]
+    assert rain.iloc[0] == 1.0, "read the cwd's data.csv instead of its own"
+
+
+def test_a_failed_step_still_leaves_a_self_describing_folder(tmp_path):
+    """metadata.json is written with the data, not after the fold report.
+    The report re-runs the generators and can fail on its own, and a CSV
+    with no sidecar is a dataset that cannot say what made it."""
+    import dsl._run as run_module
+
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+
+    original = run_module.write_report
+
+    def boom(*args, **kwargs):
+        raise ValueError("report blew up")
+
+    run_module.write_report = boom
+    try:
+        assert main(["run", str(path), "-o", str(out)]) == 1
+    finally:
+        run_module.write_report = original
+
+    assert (out / "simulated_data.csv").is_file()
+    assert (out / "metadata.json").is_file(), "data without its own sidecar"
+
+
+@pytest.mark.parametrize("second", [["--plot", "--plot-format", "html"], []])
+def test_a_run_leaves_only_the_plot_it_made(tmp_path, second):
+    """Switching --plot-format, or dropping --plot, left the previous
+    picture beside data it no longer describes."""
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out), "--plot",
+                 "--plot-format", "png"]) == 0
+    assert (out / "plot.png").is_file()
+
+    assert main(["run", str(path), "-o", str(out), *second]) == 0
+    assert not (out / "plot.png").exists()
+    assert (out / "plot.html").is_file() is bool(second)
+
+
+def test_a_failed_plot_removes_the_previous_one(tmp_path, capsys):
+    """Under --watch the browser reloads plot.html after every run, so a
+    plot left from an earlier save would be served as if it described the
+    data just written."""
+    import dsl._run as run_module
+
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out), "--plot"]) == 0
+    assert (out / "plot.html").is_file()
+
+    original = run_module.plot_dataset
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("kaleido: no chrome")
+
+    run_module.plot_dataset = boom
+    try:
+        assert main(["run", str(path), "-o", str(out), "--plot"]) == 0
+    finally:
+        run_module.plot_dataset = original
+
+    assert not (out / "plot.html").exists(), "stale plot left beside new data"
+    assert "could not write the plot" in capsys.readouterr().err
+
+
+def test_the_reload_script_goes_after_the_last_body(tmp_path):
+    """plotly's own output can embed a </body> earlier in the document, and
+    a script spliced in before the real end may not run. rfind returns -1
+    when there is none, which would splice it before the final character."""
+    from dsl._run import _inject_reload
+
+    page = tmp_path / "plot.html"
+    page.write_text("<html><body>a</body><div>x</div><body>b</body></html>")
+    _inject_reload(page)
+    html = page.read_text()
+    assert html.index("__plot_version__") > html.rindex("<body>")
+
+    bare = tmp_path / "bare.html"
+    bare.write_text("<html>no body here</html>")
+    _inject_reload(bare)
+    assert bare.read_text().startswith("<html>no body here</html>")
+
+
+def test_a_bare_metadata_path_names_the_run_it_came_from(tmp_path, monkeypatch):
+    """`dsl run metadata.json` from inside the run folder gives a bare
+    filename, whose .parent.name is "" — which named the output out/
+    rather than out/<run>."""
+    from dsl._output import _resolve_out_dir
+
+    run_dir = tmp_path / "myrun"
+    run_dir.mkdir()
+    (run_dir / "metadata.json").write_text("{}")
+    monkeypatch.chdir(run_dir)
+    assert _resolve_out_dir("metadata.json", None).name == "myrun"
+
+
+def test_the_watch_loop_does_not_re_run_without_a_save(tmp_path):
+    """The loop seeded last_mtime with float st_mtime while _changed
+    compares nanoseconds, so the two never matched and --watch re-ran once
+    at startup with nothing changed."""
+    from dsl._run import _changed
+
+    path = write_scenario(tmp_path, base_scenario())
+    # Seeded exactly as _watch_loop seeds it.
+    seeded = Path(path).stat().st_mtime_ns
+    assert _changed(str(path), seeded)[0] is False
+
+
+def test_a_failed_step_does_not_leave_the_old_plot(tmp_path):
+    """Clearing plot.* after the data and report steps was not enough: a
+    report that fails still leaves the previous picture beside new data."""
+    import dsl._run as run_module
+
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out), "--plot",
+                 "--plot-format", "png"]) == 0
+    assert (out / "plot.png").is_file()
+
+    original = run_module.write_report
+    run_module.write_report = lambda *a, **k: (_ for _ in ()).throw(
+        ValueError("report blew up")
+    )
+    try:
+        assert main(["run", str(path), "-o", str(out), "--plot",
+                     "--plot-format", "png"]) == 1
+    finally:
+        run_module.write_report = original
+
+    assert not (out / "plot.png").exists()
+
+
+@pytest.mark.parametrize("exc", [IndexError("boom"), TypeError("bad"), RuntimeError("r")])
+def test_any_failure_is_reported_rather_than_raised(tmp_path, capsys, exc):
+    """_run_once's contract is "report the problem and return 1", and the
+    callers depend on it: --watch keeps going so the author can fix the
+    scenario and save again. Enumerating the types meant each new one ended
+    a watch session with a traceback until someone hit it."""
+    import dsl._run as run_module
+
+    path = write_scenario(tmp_path, base_scenario())
+    original = run_module.write_report
+
+    def boom(*args, **kwargs):
+        raise exc
+
+    run_module.write_report = boom
+    try:
+        assert main(["run", str(path), "-o", str(tmp_path / "out")]) == 1
+    finally:
+        run_module.write_report = original
+
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert "error:" in err
+
+
+def test_the_first_mtime_read_tolerates_a_missing_file(tmp_path):
+    """An editor saving by rename-and-replace makes the file vanish for a
+    moment. _changed already tolerates that, but the watch loop's opening
+    stat sat outside its handlers and would traceback. Checked through the
+    same helper the loop uses, since _watch_loop itself never returns."""
+    import dsl._run as run_module
+
+    source = inspect.getsource(run_module._watch_loop)
+    assert "except FileNotFoundError" in source, "the opening stat is unguarded"
+
+    # And the behaviour it falls back to: a sentinel that reads as changed,
+    # so the first save is never missed.
+    assert run_module._changed(str(tmp_path / "gone.yaml"), 0) == (False, 0)
+    real = tmp_path / "s.yaml"
+    real.write_text("a")
+    assert run_module._changed(str(real), 0)[0] is True
+
+
+def test_a_users_own_plot_files_are_not_deleted(tmp_path, monkeypatch):
+    """Clearing stale plots by globbing plot.* also matched a user's own
+    plot.py or plot.csv under `-o .`, and deleted them before writing
+    anything. The names this tool writes are known, so it deletes those."""
+    path = write_scenario(tmp_path, base_scenario())
+    (tmp_path / "plot.py").write_text("import matplotlib")
+    (tmp_path / "plot.csv").write_text("x,y")
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", str(path), "-o", "."]) == 0
+
+    assert (tmp_path / "plot.py").read_text() == "import matplotlib"
+    assert (tmp_path / "plot.csv").read_text() == "x,y"
+
+
+def test_the_plot_names_cover_every_accepted_format(tmp_path):
+    """The hand-written list had fallen behind on jpg and jpeg, so those
+    were neither cleared as stale nor protected in a replicate folder."""
+    from dsl._output import _PLOT_FORMATS
+    from dsl._run import _PLOT_NAMES
+
+    for fmt in _PLOT_FORMATS:
+        assert f"plot.{fmt}" in _PLOT_NAMES, fmt
+
+
+def test_a_stale_plot_of_another_format_is_still_replaced(tmp_path):
+    """Deleting by name must not stop the cleanup working."""
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out), "--plot",
+                 "--plot-format", "png"]) == 0
+    assert main(["run", str(path), "-o", str(out), "--plot",
+                 "--plot-format", "html"]) == 0
+
+    assert (out / "plot.html").is_file()
+    assert not (out / "plot.png").exists()
