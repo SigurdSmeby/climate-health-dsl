@@ -17,7 +17,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from dsl._output import _numbered_dir_suffix, _run_name
+from dsl._output import _PLOT_FORMATS, _numbered_dir_suffix, _run_name
 from dsl._scenario import _friendly_error, _load_and_parse
 from dsl.core.config.schema import ScenarioConfig, validate_scenario
 from dsl.core.pipeline.dataset_rules import check_dataset
@@ -103,12 +103,13 @@ def _run_once(
         # point the reader at one that is gone by the time they read it.
         shown = report_dir if report_dir is not None else out_dir
 
-        # Every plot.*, and before the data lands: a run that switches
-        # --plot-format or drops --plot would otherwise leave the previous
-        # picture beside data it no longer describes — and a step after
-        # this one can still fail, so clearing later is not enough.
-        for stale in out_dir.glob("plot.*"):
-            stale.unlink()
+        # The plot names this tool writes, by name rather than by glob:
+        # `plot.*` also matched a user's own plot.py or plot.csv under
+        # `-o .`, and deleted them. Before the data lands, because a step
+        # after this one can still fail and leave the old picture beside
+        # new data.
+        for name in _PLOT_NAMES:
+            (out_dir / name).unlink(missing_ok=True)
 
         write_output(df, config, out_dir)
         # The ground-truth sidecar goes down with the data, before the
@@ -171,9 +172,14 @@ def _run_once(
 # only by a run killed mid-write, and cleared by the next one.
 _STAGING_NAME = ".partial"
 
+# Every plot file a run can write, derived from the formats the CLI
+# accepts so the two cannot drift — the hand-written list had fallen
+# behind on jpg and jpeg.
+_PLOT_NAMES = frozenset(f"plot.{ext}" for ext in (*_PLOT_FORMATS, "json"))
+
 _RUN_OUTPUT_NAMES = frozenset(
     {"simulated_data.csv", "metadata.json", "folds"}
-) | frozenset(f"plot.{ext}" for ext in ("html", "png", "svg", "pdf", "json"))
+) | _PLOT_NAMES
 
 
 def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:

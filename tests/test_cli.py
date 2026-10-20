@@ -856,3 +856,41 @@ def test_the_first_mtime_read_tolerates_a_missing_file(tmp_path):
     real = tmp_path / "s.yaml"
     real.write_text("a")
     assert run_module._changed(str(real), 0)[0] is True
+
+
+def test_a_users_own_plot_files_are_not_deleted(tmp_path, monkeypatch):
+    """Clearing stale plots by globbing plot.* also matched a user's own
+    plot.py or plot.csv under `-o .`, and deleted them before writing
+    anything. The names this tool writes are known, so it deletes those."""
+    path = write_scenario(tmp_path, base_scenario())
+    (tmp_path / "plot.py").write_text("import matplotlib")
+    (tmp_path / "plot.csv").write_text("x,y")
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", str(path), "-o", "."]) == 0
+
+    assert (tmp_path / "plot.py").read_text() == "import matplotlib"
+    assert (tmp_path / "plot.csv").read_text() == "x,y"
+
+
+def test_the_plot_names_cover_every_accepted_format(tmp_path):
+    """The hand-written list had fallen behind on jpg and jpeg, so those
+    were neither cleared as stale nor protected in a replicate folder."""
+    from dsl._output import _PLOT_FORMATS
+    from dsl._run import _PLOT_NAMES
+
+    for fmt in _PLOT_FORMATS:
+        assert f"plot.{fmt}" in _PLOT_NAMES, fmt
+
+
+def test_a_stale_plot_of_another_format_is_still_replaced(tmp_path):
+    """Deleting by name must not stop the cleanup working."""
+    path = write_scenario(tmp_path, base_scenario())
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out), "--plot",
+                 "--plot-format", "png"]) == 0
+    assert main(["run", str(path), "-o", str(out), "--plot",
+                 "--plot-format", "html"]) == 0
+
+    assert (out / "plot.html").is_file()
+    assert not (out / "plot.png").exists()

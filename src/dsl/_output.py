@@ -107,6 +107,12 @@ series:
 """
 
 
+# The plot formats --plot-format accepts. Here rather than in cli.py so
+# _run can derive the filenames it owns from the same list, without the
+# import going the wrong way round.
+_PLOT_FORMATS = ("html", "png", "svg", "pdf", "jpg", "jpeg")
+
+
 def _run_name(path: Path) -> str:
     """The run name a scenario or metadata path stands for.
 

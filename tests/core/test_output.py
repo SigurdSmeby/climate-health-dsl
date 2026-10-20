@@ -1,5 +1,6 @@
 """Tests for the output CSV and the fold files."""
 import pandas as pd
+import pytest
 
 from dsl.core.config.schema import parse_config
 from dsl.core.pipeline.engine import run
@@ -91,9 +92,13 @@ def test_a_users_own_folds_directory_is_not_deleted(tmp_path):
             ]
         )
     )
-    write_output(run(config), config, tmp_path)
+    # Refused, not quietly skipped: skipping the delete and writing fold_N
+    # and report.md in anyway is no better than deleting it.
+    with pytest.raises(ValueError, match="did not write"):
+        write_output(run(config), config, tmp_path)
 
     assert (mine / "important.txt").read_text() == "my work"
+    assert not (mine / "report.md").exists()
 
 
 def test_a_previous_runs_folds_are_still_cleared(tmp_path):

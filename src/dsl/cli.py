@@ -19,12 +19,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from dsl._output import _resolve_out_dir, _write_starter
+from dsl._output import _PLOT_FORMATS, _resolve_out_dir, _write_starter
 from dsl._run import _prompt_continue, _run_once, _run_replicates, _watch_loop
-
-# Mirrors plot.py's accepted extensions, without the dot: argparse takes the
-# format as a bare word.
-_PLOT_FORMATS = ("html", "png", "svg", "pdf", "jpg", "jpeg")
 
 
 def _positive_int(text: str) -> int:

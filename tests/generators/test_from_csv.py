@@ -325,3 +325,27 @@ def test_a_caller_cannot_corrupt_the_cached_frame(tmp_path):
     frame = _read_csv_cached(path)
     frame.loc[0, "rainfall"] = -999.0
     assert _read_csv_cached(path).loc[0, "rainfall"] == 1.0
+
+
+def test_blank_location_cells_are_not_counted_as_locations(tmp_path):
+    """NaN != NaN, so blank cells never deduplicate and each became its own
+    "location" — enough to push a single-location file down the
+    multi-location branch and fail with "not in the file"."""
+    import pandas as pd
+
+    from dsl.generators.from_csv import _locations_in_cached
+
+    path = tmp_path / "gappy.csv"
+    pd.DataFrame(
+        [
+            {
+                "time_period": f"2000-{m:02d}",
+                "location": "oslo" if m % 2 else None,
+                "rainfall": 5.0,
+            }
+            for m in range(1, 13)
+        ]
+    ).to_csv(path, index=False)
+    _locations_in_cached.cache_clear()
+
+    assert FromCsvGenerator.locations_in(str(path)) == ["oslo"]

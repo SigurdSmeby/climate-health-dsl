@@ -23,7 +23,8 @@ def _is_our_folds(folds_dir: Path) -> bool:
 
     A directory holding only ``fold_N`` subdirectories and the report files
     is one of ours. Anything else — a user's own folds/ under ``-o .`` —
-    is left alone, and the run writes nothing into it.
+    stops the run, so nothing is deleted from it and nothing is written
+    into it.
 
     Args:
         folds_dir: The candidate directory.
@@ -70,7 +71,17 @@ def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) 
     # folds/ this tool recognises as its own. `-o .` on a working directory
     # that happens to hold a folds/ would otherwise delete it, with no
     # split: block anywhere in the scenario.
-    if folds_dir.exists() and _is_our_folds(folds_dir):
+    if folds_dir.exists():
+        if not _is_our_folds(folds_dir):
+            # Refuse rather than skip the delete and write anyway: mixing
+            # fold_N dirs and report.md into someone's own folds/ is no
+            # better than deleting it, and the mkdir below would fail
+            # half-way through in the cases where a name collides.
+            raise ValueError(
+                f"{folds_dir} holds files this tool did not write, so the "
+                f"fold output will not be placed there. Point -o at a new "
+                f"or empty folder, or move that directory aside."
+            )
         shutil.rmtree(folds_dir)
 
     folds = config.folds()

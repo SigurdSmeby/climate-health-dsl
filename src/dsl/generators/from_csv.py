@@ -364,7 +364,10 @@ def _locations_in_cached(path: str, mtime_ns: int, size: int) -> tuple[str, ...]
         col = pd.read_csv(path, usecols=["location"])["location"]
     except (ValueError, pd.errors.EmptyDataError):
         return ()  # no location column / empty file
-    return tuple(dict.fromkeys(col.tolist()))  # distinct, order-preserving
+    # dropna first: NaN != NaN, so blank cells never deduplicate and each
+    # one became its own "location" — enough to push a single-location file
+    # down the multi-location branch and fail with "not in the file".
+    return tuple(dict.fromkeys(col.dropna().tolist()))
 
 
 def _read_csv_cached(path: "str | Path") -> pd.DataFrame:
