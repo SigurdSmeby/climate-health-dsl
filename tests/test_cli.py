@@ -1,4 +1,5 @@
 """Smoke tests for the `dsl run` command-line interface."""
+import inspect
 import urllib.request
 from pathlib import Path
 
@@ -837,3 +838,21 @@ def test_any_failure_is_reported_rather_than_raised(tmp_path, capsys, exc):
     err = capsys.readouterr().err
     assert "Traceback" not in err
     assert "error:" in err
+
+
+def test_the_first_mtime_read_tolerates_a_missing_file(tmp_path):
+    """An editor saving by rename-and-replace makes the file vanish for a
+    moment. _changed already tolerates that, but the watch loop's opening
+    stat sat outside its handlers and would traceback. Checked through the
+    same helper the loop uses, since _watch_loop itself never returns."""
+    import dsl._run as run_module
+
+    source = inspect.getsource(run_module._watch_loop)
+    assert "except FileNotFoundError" in source, "the opening stat is unguarded"
+
+    # And the behaviour it falls back to: a sentinel that reads as changed,
+    # so the first save is never missed.
+    assert run_module._changed(str(tmp_path / "gone.yaml"), 0) == (False, 0)
+    real = tmp_path / "s.yaml"
+    real.write_text("a")
+    assert run_module._changed(str(real), 0)[0] is True

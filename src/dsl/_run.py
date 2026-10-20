@@ -195,7 +195,7 @@ def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
     foreign = sorted(
         entry.name
         for entry in out_dir.iterdir()
-        if entry.name not in keep
+        if not (entry.name in keep and entry.is_dir())
         and entry.name not in _RUN_OUTPUT_NAMES
         and entry.name != _STAGING_NAME
         and _numbered_dir_suffix(entry, "rep_") is None
@@ -432,7 +432,13 @@ def _watch_loop(
     # st_mtime_ns, matching what _changed returns and compares — seeding
     # this with float seconds made the two never equal, so the loop
     # re-ran once at startup without anyone saving anything.
-    last_mtime = Path(scenario).stat().st_mtime_ns
+    try:
+        last_mtime = Path(scenario).stat().st_mtime_ns
+    except FileNotFoundError:
+        # An editor that saves by rename-and-replace can make the file
+        # vanish for a moment. _changed already tolerates that; this stat
+        # sits outside the loop's handlers, so it has to as well.
+        last_mtime = 0
     serve = plot and plot_format == "html"
     server = None
     version = [0]

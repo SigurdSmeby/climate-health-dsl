@@ -317,3 +317,18 @@ def test_scenario_warnings_print_once_not_once_per_replicate(tmp_path, capsys):
 
     err = capsys.readouterr().err
     assert err.count("nothing depends on it") == 1
+
+
+def test_a_file_named_like_a_replicate_is_refused_not_overwritten(tmp_path, capsys):
+    """`keep` exempted any entry with a rep_NN name, file or not, so the
+    foreign check passed and the rename then failed mid-swap — after every
+    replicate had already been generated."""
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "rep_00").write_text("my notes")
+
+    assert main(["run", EXAMPLE, "-o", str(out), "--replicates", "2"]) == 1
+    assert (out / "rep_00").read_text() == "my notes"
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert "rep_00" in err
