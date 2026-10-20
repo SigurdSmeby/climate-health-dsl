@@ -812,3 +812,28 @@ def test_a_failed_step_does_not_leave_the_old_plot(tmp_path):
         run_module.write_report = original
 
     assert not (out / "plot.png").exists()
+
+
+@pytest.mark.parametrize("exc", [IndexError("boom"), TypeError("bad"), RuntimeError("r")])
+def test_any_failure_is_reported_rather_than_raised(tmp_path, capsys, exc):
+    """_run_once's contract is "report the problem and return 1", and the
+    callers depend on it: --watch keeps going so the author can fix the
+    scenario and save again. Enumerating the types meant each new one ended
+    a watch session with a traceback until someone hit it."""
+    import dsl._run as run_module
+
+    path = write_scenario(tmp_path, base_scenario())
+    original = run_module.write_report
+
+    def boom(*args, **kwargs):
+        raise exc
+
+    run_module.write_report = boom
+    try:
+        assert main(["run", str(path), "-o", str(tmp_path / "out")]) == 1
+    finally:
+        run_module.write_report = original
+
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert "error:" in err

@@ -37,6 +37,7 @@ def _run_once(
     config: ScenarioConfig | None = None,
     tick_every: int | None = None,
     report_dir: Path | None = None,
+    quiet_warnings: bool = False,
 ) -> int:
     """Parse → generate → write (and optionally plot) one scenario.
 
@@ -77,8 +78,11 @@ def _run_once(
         return 1
 
     # Non-fatal warnings: inform and proceed.
-    for warning in validate_scenario(config):
-        print(f"warning: {warning}", file=sys.stderr)
+    if not quiet_warnings:
+        # Replicates share one scenario, so these would otherwise repeat
+        # identically N times and bury the per-replicate output.
+        for warning in validate_scenario(config):
+            print(f"warning: {warning}", file=sys.stderr)
 
     # Generate, check the dataset rules, write. Generation can fail on input
     # the schema can't catch (a bad generator param, a malformed from_csv
@@ -148,11 +152,14 @@ def _run_once(
                 print(f"warning: could not write the plot ({exc})", file=sys.stderr)
             else:
                 print(f"Wrote plot to {shown / plot_path.name}")
-    except (ValueError, FileNotFoundError, KeyError, OSError) as exc:
-        # OSError too: a full disk or an unwritable output folder is an
-        # ordinary thing to hit, and under --watch a traceback ends the
-        # session instead of letting the author free some space and save
-        # again. (FileNotFoundError is an OSError, kept for clarity.)
+    except Exception as exc:  # noqa: BLE001 — see below
+        # Deliberately everything. This function's contract is "report the
+        # problem and return 1", and the callers depend on it: --watch
+        # keeps going so the author can fix the scenario and save again,
+        # and a replicate run reports which one failed. Enumerating the
+        # types meant each new one — OSError from a full disk, a pandas
+        # error from a malformed CSV, an IndexError from a generator —
+        # ended a watch session with a traceback until someone hit it.
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
@@ -258,6 +265,7 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
                 config=base_config.model_copy(update={"seed": base_seed + i}),
                 tick_every=getattr(args, "plot_ticks", None),
                 report_dir=out_dir / f"rep_{i:02d}",
+                quiet_warnings=i > 0,
             )
             if code != 0:
                 return code

@@ -296,3 +296,24 @@ def test_the_new_set_lands_before_the_old_one_is_removed(tmp_path):
     for rep in out.iterdir():
         assert (rep / "simulated_data.csv").is_file()
         assert (rep / "metadata.json").is_file()
+
+
+def test_scenario_warnings_print_once_not_once_per_replicate(tmp_path, capsys):
+    """Replicates share one parsed scenario, differing only by seed, so a
+    soft warning about the scenario is the same every time — printing it N
+    times buries the per-replicate output."""
+    path = tmp_path / "s.yaml"
+    path.write_text(
+        "period: monthly\nn_total: 24\nseed: 1\n"
+        "locations: { loc: { population: 100000 } }\n"
+        "series:\n"
+        "  - { name: orphan, generate: flat, params: { level: 5.0 } }\n"
+        "  - { name: r, generate: flat, params: { level: 5.0 } }\n"
+        "  - { name: disease_cases, counts: {}, "
+        "depends_on: [{ series: r, lag: 1 }] }\n"
+    )
+    assert main(["run", str(path), "-o", str(tmp_path / "out"),
+                 "--replicates", "3"]) == 0
+
+    err = capsys.readouterr().err
+    assert err.count("nothing depends on it") == 1

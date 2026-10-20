@@ -34,14 +34,20 @@ def evaluation_boundary(config: ScenarioConfig) -> int | None:
 
     Returns:
         The first test period of fold 0, or None when the scenario has no
-        split or splits by location. Note this is NOT the size of fold 0's
-        training set — those coincide only for an expanding split, since a
-        blocked fold trains on the periods AFTER its test block.
+        split, splits by location, or uses the blocked scheme — which
+        tests every period in some fold, so no single period divides the
+        series. For an expanding split this also happens to be the size of
+        fold 0's training set.
 
     Errors Caught (raised to caller):
         ValueError: If the split is invalid (already rejected at parse time).
     """
     if config.split is None or config.split.kind != "time":
+        return None
+    # A blocked split reserves nothing: fold 0's test block starts at period
+    # 0, so the line would sit on the axis edge and mark nothing. There is
+    # no single boundary to draw when every period is tested in some fold.
+    if config.split.scheme == "blocked":
         return None
     folds = config.folds()
     return folds[0].test_periods[0] if folds else None
