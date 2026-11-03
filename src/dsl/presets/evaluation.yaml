@@ -1,0 +1,58 @@
+# A scenario ready to score a forecaster against: two climate drivers, a
+# counted disease, and five expanding time folds with a storm in every
+# fold's test half.
+#
+# `split:` writes folds/fold_N/{train,test}.csv plus folds/report.md, which
+# answers what a split cannot — does each fold still test what the scenario
+# planted? A fold whose test half holds no storm would score well on storm
+# recovery for the wrong reason.
+#
+#   preset: evaluation
+#   n_total: 240            # more periods, same setup
+#
+# 120 periods is deliberate: with 5 expanding folds, a shorter run leaves
+# fold 1's test half too narrow for the yearly rainfall peak to land in it,
+# and the report then (correctly) warns that the fold cannot measure it.
+period: monthly
+n_total: 120
+seed: 42
+
+locations:
+  north: { population: 300000 }
+  south: { population: 180000 }
+
+series:
+  - name: rainfall
+    generate: seasonal_spike
+    unit: mm
+    params:
+      spike_height: 30
+      clamp_min: 0
+    events:
+      # A range rather than a fixed multiplier: a constant 2.5 would let a
+      # model match the data by memorising it.
+      storm: { multiplier: { min: 2.0, max: 3.5 } }
+
+  - name: temperature
+    generate: seasonal_smooth
+    unit: C
+    params:
+      mean: 25
+      amplitude: 6
+
+  - name: disease_cases
+    counts: {}
+    depends_on:
+      - { series: rainfall, lag: 2, weight: 1.0 }
+      - { series: temperature, lag: 1, weight: 0.4 }
+
+split:
+  kind: time
+  k: 5
+  scheme: expanding
+
+events:
+  # One per fold's test half, placed from the split itself — so the periods
+  # move on their own if you change k or n_total. Which series react, and
+  # how, is declared per series above.
+  storm: { per_fold: [1, 1, 1, 1, 1] }

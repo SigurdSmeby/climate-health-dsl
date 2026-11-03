@@ -305,3 +305,43 @@ def test_overriding_one_location_keeps_the_others(tmp_path):
     assert sorted(df["location"].unique()) == ["north", "south"]
     populations = df.groupby("location")["population"].first().to_dict()
     assert populations == {"north": 100000, "south": 180000}
+
+
+# --- The bundled set. -------------------------------------------------------
+
+
+def test_the_bundled_presets_are_the_documented_three():
+    assert available() == ["climate", "evaluation", "minimal"]
+
+
+def test_the_minimal_preset_is_a_one_line_scenario(tmp_path):
+    import pandas as pd
+
+    path = tmp_path / "s.yaml"
+    path.write_text("preset: minimal\n")
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out)]) == 0
+    df = pd.read_csv(out / "simulated_data.csv")
+    assert list(df.columns) == [
+        "time_period", "location", "rainfall", "disease_cases", "population",
+    ]
+
+
+def test_the_evaluation_preset_writes_folds_and_a_report(tmp_path):
+    """It exists so folds do not have to be retyped, so the folds and the
+    report are the thing to assert."""
+    import json
+
+    path = tmp_path / "s.yaml"
+    path.write_text("preset: evaluation\n")
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out)]) == 0
+
+    assert sorted(p.name for p in (out / "folds").iterdir()) == [
+        *[f"fold_{i}" for i in range(5)], "report.json", "report.md",
+    ]
+    report = json.loads((out / "folds" / "report.json").read_text())
+    assert len(report["folds"]) == 5
+    # The point of the preset: every fold's test half can actually measure
+    # the storm the scenario plants.
+    assert not report["warnings"], report["warnings"]

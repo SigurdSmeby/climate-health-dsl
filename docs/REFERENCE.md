@@ -296,7 +296,7 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 |---|---|
 | `dsl new [path]` | Write a commented starter scenario. `-f` overwrites. |
 | `dsl run <scenario>` | Generate from a scenario YAML, or reproduce from a `metadata.json`. |
-| `dsl list` | List the registered generators, transforms and emitters. |
+| `dsl list` | List the registered generators, transforms, emitters and presets. |
 
 ### `dsl run` options
 
@@ -321,7 +321,18 @@ n_total: 120
 
 That is a complete, runnable scenario — two climate drivers, two locations and
 a counted disease with planted lags, over 120 periods instead of the preset's
-60. `dsl list` names the presets that ship.
+60.
+
+Three ship (`dsl list` names them):
+
+| Preset | What you get |
+|---|---|
+| `minimal` | the smallest scenario that runs: one location, rainfall driving disease two periods later, 36 periods |
+| `climate` | two drivers (rainfall + temperature) on different lags, two locations, 60 periods |
+| `evaluation` | `climate`, plus five expanding time folds and a storm in every fold's test half, over 120 periods — ready to score a forecaster against |
+
+A preset is an ordinary scenario file in `src/dsl/presets/`, so adding one is
+dropping a YAML there — no code, no registration.
 
 ### Overriding
 
