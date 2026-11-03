@@ -875,7 +875,7 @@ def test_a_users_own_plot_files_are_not_deleted(tmp_path, monkeypatch):
 
 def test_the_plot_names_cover_every_accepted_format(tmp_path):
     """The hand-written list had fallen behind on jpg and jpeg, so those
-    were neither cleared as stale nor protected in a replicate folder."""
+    were neither cleared as stale nor protected in a run folder."""
     from dsl._output import _PLOT_FORMATS
     from dsl._run import _PLOT_NAMES
 

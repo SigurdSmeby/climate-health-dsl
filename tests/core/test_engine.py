@@ -613,7 +613,7 @@ def test_a_csv_backed_population_resolves_per_location(tmp_path):
 def test_seeds_a_power_of_two_apart_are_different_scenarios():
     """The seed was masked to 32 bits, so seed 5 and seed 4294967301 were
     the same dataset — surprising, and it silently shrinks the seed space
-    a replicate sweep draws from."""
+    a seed sweep draws from."""
     import numpy as np
 
     from dsl.core.pipeline.engine import _child_rng

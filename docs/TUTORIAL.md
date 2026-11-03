@@ -195,13 +195,34 @@ straight line.
 
 ## 11. Go further
 
-```bash
-uv run dsl run my_scenario.yaml -o out/study --replicates 20
+Any value in the scenario can say which values to try, and the run writes one
+dataset per combination:
+
+```yaml
+seed: { sweep: { from: 42, to: 61 } }
 ```
 
-Twenty datasets with seeds `42, 43, …`, each independently reproducible. Run a
-forecaster over all of them and report the spread, so a result is not a fluke
-of one draw.
+```bash
+uv run dsl run my_scenario.yaml -o out/study
+```
+
+Twenty datasets in `out/study/seed_42/`, `seed_43/`, …, each independently
+reproducible. Run a forecaster over all of them and report the spread, so a
+result is not a fluke of one draw.
+
+The same trick answers a different question when the swept value is a planted
+relationship rather than the seed:
+
+```yaml
+depends_on:
+  - series: rainfall
+    lag: { sweep: [1, 2, 3] }
+    weight: { sweep: { from: 0.2, to: 1.0, step: 0.2 } }
+```
+
+Fifteen datasets covering three lags at five effect strengths — enough to ask
+at what point a model stops recovering what you planted. See
+[REFERENCE.md](REFERENCE.md#sweeps-one-scenario-many-datasets) for the rules.
 
 The four bundled [examples](../examples/) each show one thing in full:
 [`minimal`](../examples/minimal.yaml),

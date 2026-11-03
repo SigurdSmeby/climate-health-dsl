@@ -1,9 +1,9 @@
-"""Execute a scenario: run once, run replicates, or watch for changes.
+"""Execute a scenario: run once, run a sweep, or watch for changes.
 
 This module owns everything that happens after the output directory is
-decided: parse-generate-write one scenario, run it N times into rep_NN/
-dirs with varying seeds, or re-run it automatically on every save and
-(for HTML plots) live-reload a browser tab.
+decided: parse-generate-write one scenario, run every combination a swept
+scenario stands for into one directory each, or re-run it automatically on
+every save and (for HTML plots) live-reload a browser tab.
 """
 import argparse
 import functools
@@ -39,7 +39,6 @@ def _run_once(
     out_dir: Path,
     plot: bool,
     plot_format: str,
-    seed_override: int | None = None,
     config: ScenarioConfig | None = None,
     tick_every: int | None = None,
     report_dir: Path | None = None,
@@ -55,9 +54,8 @@ def _run_once(
             (if plot) the plot file into.
         plot: Whether to also write a plot of the dataset.
         plot_format: Plot file format (e.g. "html", "png").
-        seed_override: Passed to _load_and_parse when config is None.
-        config: An already-parsed ScenarioConfig (e.g. from a replicate loop
-            that parsed once and only varies the seed), to skip re-parsing
+        config: An already-parsed ScenarioConfig (e.g. from a sweep that
+            parsed the file once per combination), to skip re-parsing
             ``scenario`` from disk.
         tick_every: Plot gridline spacing in periods. Defaults to one year.
 
@@ -74,7 +72,7 @@ def _run_once(
     # --- Parse + validate. Any hard error exits here, before generating. ---
     try:
         if config is None:
-            config = _load_and_parse(scenario, seed_override)
+            config = _load_and_parse(scenario)
     except (FileNotFoundError, ValueError, ValidationError) as exc:
         # Print to stderr (the conventional stream for errors) and return a
         # non-zero code so scripts and CI notice the failure. A ValidationError
@@ -85,8 +83,9 @@ def _run_once(
 
     # Non-fatal warnings: inform and proceed.
     if not quiet_warnings:
-        # Replicates share one scenario, so these would otherwise repeat
-        # identically N times and bury the per-replicate output.
+        # A sweep varies scalar values, not the scenario's shape, so these
+        # would otherwise repeat identically N times and bury the per-run
+        # output.
         for warning in validate_scenario(config):
             print(f"warning: {warning}", file=sys.stderr)
 
@@ -104,7 +103,7 @@ def _run_once(
         ):
             print(f"warning: {finding}", file=sys.stderr)
 
-        # Where to SAY the files went: a replicate run writes into a
+        # Where to SAY the files went: a multi-run set writes into a
         # staging folder and swaps it in, so naming the real path would
         # point the reader at one that is gone by the time they read it.
         shown = report_dir if report_dir is not None else out_dir
@@ -163,7 +162,7 @@ def _run_once(
         # Deliberately everything. This function's contract is "report the
         # problem and return 1", and the callers depend on it: --watch
         # keeps going so the author can fix the scenario and save again,
-        # and a replicate run reports which one failed. Enumerating the
+        # and a multi-run set reports which one failed. Enumerating the
         # types meant each new one — OSError from a full disk, a pandas
         # error from a malformed CSV, an IndexError from a generator —
         # ended a watch session with a traceback until someone hit it.
@@ -172,9 +171,7 @@ def _run_once(
     return 0
 
 
-# Everything a run writes into its output directory. Anything else found
-# there belongs to the user, so the replicate cleanup must not touch it.
-# Where a replicate run builds its set before swapping it in. Left behind
+# Where a multi-run set is built before being swapped in. Left behind
 # only by a run killed mid-write, and cleared by the next one.
 _STAGING_NAME = ".partial"
 
@@ -183,13 +180,18 @@ _STAGING_NAME = ".partial"
 # behind on jpg and jpeg.
 _PLOT_NAMES = frozenset(f"plot.{ext}" for ext in (*_PLOT_FORMATS, "json"))
 
+# Everything a run writes into its output directory. Anything else found
+# there belongs to the user, so the set cleanup must not touch it.
 _RUN_OUTPUT_NAMES = frozenset(
     {"simulated_data.csv", "metadata.json", "folds"}
 ) | _PLOT_NAMES
 
-# Written at the root of a multi-run set rather than inside a run, so the
-# foreign check must recognise them as this tool's own output.
-_SET_INDEX_NAMES = frozenset({"sweep.json"})
+# Written at the root of a sweep's output folder, which is what marks that
+# folder as one this tool built as a set — see _foreign_entries. Its
+# contents are a later change: something has to map a run directory back
+# to the values that made it, since the name cannot be parsed (a float's
+# '.' and a negative's '-' are slugged away).
+_SWEEP_INDEX_NAME = "sweep.json"
 
 
 def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
@@ -200,9 +202,15 @@ def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
     working directory is the case this guards: the scenario file itself, a
     thesis, a src/ tree.
 
-    A leftover run directory from a previous set counts as output: it holds
-    a ``metadata.json``, which only this tool writes. Sweep labels have no
-    recognisable name shape, so there is nothing else to go on.
+    A run directory this set is not about to write is foreign even though
+    it holds a ``metadata.json`` — unless ``out_dir`` holds a sweep index,
+    which only a sweep writes and which therefore identifies the folder as
+    one this tool built as a set. Without that distinction, sweeping into
+    ``out/`` — where ``dsl run`` auto-names every run — deleted every other
+    scenario's dataset, because each of those also holds a metadata.json.
+
+    So a previous sweep's leftovers in its own folder are cleanable, while
+    unrelated runs sitting beside each other are not.
 
     Args:
         out_dir: The directory about to be cleaned.
@@ -212,56 +220,20 @@ def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
         Up to five foreign names (with a trailing "…" entry if there are
         more), or an empty list when the directory is safe to clean.
     """
+    # A sweep's own folder: its leftover run directories may be cleared.
+    # Any other folder's are someone else's results.
+    is_sweep_folder = (out_dir / _SWEEP_INDEX_NAME).is_file()
+
     foreign = sorted(
         entry.name
         for entry in out_dir.iterdir()
         if not (entry.name in keep and entry.is_dir())
         and entry.name not in _RUN_OUTPUT_NAMES
-        and entry.name not in _SET_INDEX_NAMES
+        and entry.name != _SWEEP_INDEX_NAME
         and entry.name != _STAGING_NAME
-        and _numbered_dir_suffix(entry, "rep_") is None
-        and not (entry / "metadata.json").is_file()
+        and not (is_sweep_folder and (entry / "metadata.json").is_file())
     )
     return foreign[:5] + ["…"] if len(foreign) > 5 else foreign
-
-
-def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
-    """Run the scenario N times with seeds base, base+1, … into rep_NN/ dirs.
-
-    Args:
-        args: Parsed CLI args (scenario, replicates, plot, plot_format, watch).
-        out_dir: Parent directory; each replicate writes into out_dir/rep_NN/.
-
-    Returns:
-        Exit code: 0 if all replicates succeed, 1 on the first failure
-        (--watch combined with --replicates is also a failure).
-
-    Errors Caught (logged to stderr):
-        FileNotFoundError: If the scenario file doesn't exist.
-        ValueError: If the scenario is invalid.
-        ValidationError: If pydantic validation fails.
-    """
-    if args.watch:
-        print("error: --watch cannot be combined with --replicates", file=sys.stderr)
-        return 1
-    # Parse once — every replicate is the same scenario, differing only by
-    # seed, so there's no need to re-read and re-validate the file per
-    # replicate (or, for a from_csv-backed scenario, re-read its CSV source).
-    try:
-        base_config = _load_and_parse(args.scenario)
-    except (FileNotFoundError, ValueError, ValidationError) as exc:
-        msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
-        print(f"error: {msg}", file=sys.stderr)
-        return 1
-    base_seed = base_config.seed
-    return _run_set(
-        args,
-        out_dir,
-        [
-            (f"rep_{i:02d}", base_config.model_copy(update={"seed": base_seed + i}))
-            for i in range(args.replicates)
-        ],
-    )
 
 
 def _run_set(
@@ -271,9 +243,8 @@ def _run_set(
 ) -> int:
     """Write a named set of runs into ``out_dir``, one subdirectory each.
 
-    Shared by ``--replicates`` (which varies the seed) and a swept scenario
-    (which varies parameters). Each set is staged in ``.partial`` and swapped
-    in, so a failure partway never replaces a good set with half of one.
+    Each set is staged in ``.partial`` and swapped in, so a failure partway
+    never replaces a good set with half of one.
 
     Args:
         args: Parsed CLI args (plot, plot_format, scenario).
@@ -283,8 +254,8 @@ def _run_set(
     Returns:
         Exit code: 0 if every run succeeds, 1 on the first failure.
     """
-    # Checked before anything is written: refusing a folder the tool does
-    # not own has to happen while it is still untouched.
+    # Checked before anything is written — and before announcing the work,
+    # so a refusal is not printed under a line saying it had begun.
     keep = {label for label, _ in runs}
     if out_dir.is_dir():
         foreign = _foreign_entries(out_dir, keep)
@@ -301,9 +272,11 @@ def _run_set(
             return 1
     # Staged, then swapped. Clearing up front destroyed the previous
     # results before anything replaced them; writing in place instead left
-    # a failed run's new rep_00 sitting among an older run's rep_01..04,
-    # which still looks like one valid set from the outside. Neither is a
-    # thing this tool should hand to someone.
+    # a failed run's first new directory sitting among an older set's
+    # remaining ones, which still looks like one valid set from the
+    # outside. Neither is a thing this tool should hand to someone.
+    if len(runs) > 1:
+        print(f"Sweeping {len(runs)} runs into {out_dir}/")
     staging = out_dir / _STAGING_NAME
     if staging.exists():
         shutil.rmtree(staging)
@@ -325,21 +298,28 @@ def _run_set(
         # output this tool wrote — the foreign check above already refused
         # the folder otherwise.
         #
-        # Each new rep_NN is moved into place over the old one FIRST, so a
-        # kill partway leaves a mix of complete replicates rather than a
-        # gap. Only then is whatever the new set does not cover removed:
-        # extra rep_NN from a longer previous run, and a single run's CSVs
-        # from before --replicates was used. A true atomic swap would need
+        # Each new directory is moved into place over the old one FIRST, so
+        # a kill partway leaves a mix of complete runs rather than a gap.
+        # Only then is whatever the new set does not cover removed: extra
+        # directories from a wider previous sweep, and a single run's CSVs
+        # from a plain run into the same folder. A true atomic swap would need
         # to exchange two directories, which no portable call offers.
         staged = sorted(staging.iterdir())
-        for new_rep in staged:
-            landing = out_dir / new_rep.name
+        for fresh in staged:
+            landing = out_dir / fresh.name
             if landing.is_dir():
                 shutil.rmtree(landing)
-            new_rep.rename(landing)
-        written = {rep.name for rep in staged}
+            fresh.rename(landing)
+        written = {run_dir.name for run_dir in staged}
+        # Before the stale sweep, so the folder is already marked as a
+        # set's own if anything below fails partway.
+        (out_dir / _SWEEP_INDEX_NAME).write_text("{}\n")
         for stale in out_dir.iterdir():
-            if stale == staging or stale.name in written:
+            if (
+                stale == staging
+                or stale.name in written
+                or stale.name == _SWEEP_INDEX_NAME
+            ):
                 continue
             if stale.is_dir():
                 shutil.rmtree(stale)
@@ -606,13 +586,6 @@ def _run_sweep(args: argparse.Namespace, out_dir: Path) -> int:
     if args.watch:
         print("error: --watch cannot be combined with a sweep", file=sys.stderr)
         return 1
-    if args.replicates > 1:
-        print(
-            "error: --replicates cannot be combined with a sweep.\n"
-            "       Sweep the seed instead: seed: {sweep: [42, 43, 44]}",
-            file=sys.stderr,
-        )
-        return 1
     try:
         runs = [
             (label, _parse_dict(variant))
@@ -622,5 +595,4 @@ def _run_sweep(args: argparse.Namespace, out_dir: Path) -> int:
         msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
         print(f"error: {msg}", file=sys.stderr)
         return 1
-    print(f"Sweeping {len(runs)} runs into {out_dir}/")
     return _run_set(args, out_dir, runs)

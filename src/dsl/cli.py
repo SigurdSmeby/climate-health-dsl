@@ -12,7 +12,7 @@ exit code BEFORE anything is generated; warnings are printed to stderr
 
 The implementation is split across a few internal modules:
 ``_scenario.py`` (load/parse/validate), ``_run.py`` (execute: once,
-replicates, watch), and ``_output.py`` (output directory + starter
+sweeps, watch), and ``_output.py`` (output directory + starter
 template). This file owns only argument parsing and dispatch.
 """
 import argparse
@@ -20,13 +20,7 @@ import sys
 from pathlib import Path
 
 from dsl._output import _PLOT_FORMATS, _resolve_out_dir, _write_starter
-from dsl._run import (
-    _prompt_continue,
-    _run_once,
-    _run_replicates,
-    _run_sweep,
-    _watch_loop,
-)
+from dsl._run import _prompt_continue, _run_once, _run_sweep, _watch_loop
 from dsl._scenario import _load_scenario_dict
 from dsl._sweep import has_sweep
 
@@ -165,20 +159,6 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="skip the continue prompt; always write a fresh auto-named folder",
     )
-    run_parser.add_argument(
-        "--replicates",
-        "-n",
-        # The same argparse type --plot-ticks uses: a count below 1 is an
-        # argument error, so it costs nothing and nothing is written.
-        type=_positive_int,
-        default=1,
-        help=(
-            "generate N replicates with seeds base, base+1, … into rep_00/, "
-            "rep_01/, … (each independently reproducible). Default 1 = a single "
-            "run written directly to the output folder. Clears stale results "
-            "from the folder first, so it needs one holding only its own output."
-        ),
-    )
     args = parser.parse_args(argv)
 
     if args.command == "new":
@@ -205,9 +185,6 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-
-    if args.replicates > 1:
-        return _run_replicates(args, out_dir)
 
     code = _run_once(
         args.scenario, out_dir, args.plot, args.plot_format,

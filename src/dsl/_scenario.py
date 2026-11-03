@@ -109,35 +109,23 @@ def _parse_dict(scenario: dict) -> ScenarioConfig:
     return parse_config(scenario)
 
 
-def _load_and_parse(scenario: str, seed_override: int | None = None) -> ScenarioConfig:
+def _load_and_parse(scenario: str) -> ScenarioConfig:
     """Load + validate a scenario file. Raises on any hard error.
 
-    Shared by ``_run_once`` and ``_run_replicates`` so both report
-    parse/validation errors identically.
+    Used by ``_run_once`` for the single-run and ``--watch`` paths.
 
     Args:
         scenario: Path to the scenario YAML file or metadata.json.
-        seed_override: If given, replaces the parsed seed (used for
-            replicates), so the written metadata records the actual seed.
 
     Returns:
         A validated ScenarioConfig.
 
     Errors Caught (raised to caller):
         FileNotFoundError: If the scenario file doesn't exist.
-        ValueError: If seed_override is negative, or the scenario is invalid
-            in a way pydantic doesn't catch.
+        ValueError: If the scenario is invalid in a way pydantic doesn't catch.
         ValidationError: If pydantic validation fails.
     """
-    config = parse_config(_load_scenario_dict(scenario))
-    if seed_override is not None:
-        # model_copy skips validation and (unlike model_dump()+model_validate())
-        # preserves location_overrides, so check the one constraint that
-        # matters — ScenarioConfig.seed is `ge=0` — by hand instead.
-        if seed_override < 0:
-            raise ValueError(f"seed_override must be >= 0, got {seed_override}.")
-        config = config.model_copy(update={"seed": seed_override})
-    return config
+    return parse_config(_load_scenario_dict(scenario))
 
 
 def _friendly_error(exc: ValidationError) -> str:

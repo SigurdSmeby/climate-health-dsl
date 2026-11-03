@@ -201,11 +201,36 @@ def test_a_swept_run_reproduces_from_its_own_metadata(tmp_path):
     ).read_text()
 
 
-def test_sweep_with_replicates_is_refused(tmp_path):
+def test_the_replicates_flag_is_gone(tmp_path):
+    # Sweeping the seed replaced it; an unrecognised flag is an argparse
+    # error (exit 2), so nothing is generated before it is reported.
     out = tmp_path / "out"
-    assert main([
-        "run", _write(tmp_path, _SCENARIO), "-o", str(out), "-n", "3",
-    ]) == 1
+    with pytest.raises(SystemExit) as excinfo:
+        main(["run", _write(tmp_path, _SCENARIO), "-o", str(out), "-n", "3"])
+    assert excinfo.value.code == 2
+    assert not out.exists()
+
+
+def test_sweeping_the_seed_writes_one_run_per_seed(tmp_path):
+    scenario = {
+        **_SCENARIO,
+        "seed": {SWEEP_KEY: [42, 43, 44]},
+        "series": [
+            {"name": "rainfall", "generate": "seasonal_spike"},
+            {"name": "disease_cases", "counts": {},
+             "depends_on": [{"series": "rainfall", "lag": 1}]},
+        ],
+    }
+    out = tmp_path / "out"
+    assert main(["run", _write(tmp_path, scenario), "-o", str(out)]) == 0
+    assert sorted(
+        p.name for p in out.iterdir() if p.is_dir()
+    ) == ["seed_42", "seed_43", "seed_44"]
+    # Different seeds, different draws — what --replicates was for.
+    data = [
+        (out / f"seed_{s}" / "simulated_data.csv").read_text() for s in (42, 43, 44)
+    ]
+    assert len(set(data)) == 3
 
 
 def test_a_malformed_sweep_fails_before_anything_is_written(tmp_path):
@@ -226,7 +251,9 @@ def test_a_stale_run_directory_is_cleared_by_the_next_sweep(tmp_path):
          "depends_on": [{"series": "rainfall", "lag": {SWEEP_KEY: [1]}}]},
     ]}
     main(["run", _write(tmp_path, narrower), "-o", str(out)])
-    assert sorted(p.name for p in out.iterdir()) == ["spike_height_10__lag_1"]
+    assert sorted(
+        p.name for p in out.iterdir() if p.is_dir()
+    ) == ["spike_height_10__lag_1"]
 
 
 def test_a_sweep_refuses_a_directory_holding_foreign_files(tmp_path):
