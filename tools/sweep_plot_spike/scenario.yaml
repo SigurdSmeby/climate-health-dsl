@@ -1,0 +1,15 @@
+# A 3x3 sweep: rainfall spike height x disease lag. Nine datasets, which is
+# exactly the case the meeting asked about ("panel med ni ting").
+preset: climate
+n_total: 72
+locations:
+  north: { population: 300000 }
+series:
+  - name: rainfall
+    params:
+      spike_height: { sweep: [10, 30, 60] }
+  - name: disease_cases
+    depends_on:
+      - series: rainfall
+        lag: { sweep: [1, 3, 6] }
+        weight: 1.0
