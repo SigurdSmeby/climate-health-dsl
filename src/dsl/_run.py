@@ -18,7 +18,13 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from dsl._output import _PLOT_FORMATS, _numbered_dir_suffix, _run_name
-from dsl._scenario import _friendly_error, _load_and_parse
+from dsl._scenario import (
+    _friendly_error,
+    _load_and_parse,
+    _load_scenario_dict,
+    _parse_dict,
+)
+from dsl._sweep import expand_sweeps
 from dsl.core.config.schema import ScenarioConfig, validate_scenario
 from dsl.core.pipeline.dataset_rules import check_dataset
 from dsl.core.pipeline.engine import run as run_engine
@@ -181,18 +187,26 @@ _RUN_OUTPUT_NAMES = frozenset(
     {"simulated_data.csv", "metadata.json", "folds"}
 ) | _PLOT_NAMES
 
+# Written at the root of a multi-run set rather than inside a run, so the
+# foreign check must recognise them as this tool's own output.
+_SET_INDEX_NAMES = frozenset({"sweep.json"})
+
 
 def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
     """Names in ``out_dir`` that this tool never writes, sorted.
 
-    The replicate cleanup deletes whatever it will not overwrite, so it may
-    only run in a folder that holds output and nothing else. ``-o .`` on a
+    A multi-run set deletes whatever it will not overwrite, so it may only
+    run in a folder that holds output and nothing else. ``-o .`` on a
     working directory is the case this guards: the scenario file itself, a
     thesis, a src/ tree.
 
+    A leftover run directory from a previous set counts as output: it holds
+    a ``metadata.json``, which only this tool writes. Sweep labels have no
+    recognisable name shape, so there is nothing else to go on.
+
     Args:
         out_dir: The directory about to be cleaned.
-        keep: The ``rep_NN`` names this run will write.
+        keep: The run-directory names this run will write.
 
     Returns:
         Up to five foreign names (with a trailing "…" entry if there are
@@ -203,8 +217,10 @@ def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
         for entry in out_dir.iterdir()
         if not (entry.name in keep and entry.is_dir())
         and entry.name not in _RUN_OUTPUT_NAMES
+        and entry.name not in _SET_INDEX_NAMES
         and entry.name != _STAGING_NAME
         and _numbered_dir_suffix(entry, "rep_") is None
+        and not (entry / "metadata.json").is_file()
     )
     return foreign[:5] + ["…"] if len(foreign) > 5 else foreign
 
@@ -238,16 +254,45 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
         print(f"error: {msg}", file=sys.stderr)
         return 1
     base_seed = base_config.seed
+    return _run_set(
+        args,
+        out_dir,
+        [
+            (f"rep_{i:02d}", base_config.model_copy(update={"seed": base_seed + i}))
+            for i in range(args.replicates)
+        ],
+    )
+
+
+def _run_set(
+    args: argparse.Namespace,
+    out_dir: Path,
+    runs: list[tuple[str, ScenarioConfig]],
+) -> int:
+    """Write a named set of runs into ``out_dir``, one subdirectory each.
+
+    Shared by ``--replicates`` (which varies the seed) and a swept scenario
+    (which varies parameters). Each set is staged in ``.partial`` and swapped
+    in, so a failure partway never replaces a good set with half of one.
+
+    Args:
+        args: Parsed CLI args (plot, plot_format, scenario).
+        out_dir: Parent directory; each run writes into out_dir/<label>/.
+        runs: (directory name, already-parsed config) in the order to run.
+
+    Returns:
+        Exit code: 0 if every run succeeds, 1 on the first failure.
+    """
     # Checked before anything is written: refusing a folder the tool does
     # not own has to happen while it is still untouched.
-    keep = {f"rep_{i:02d}" for i in range(args.replicates)}
+    keep = {label for label, _ in runs}
     if out_dir.is_dir():
         foreign = _foreign_entries(out_dir, keep)
         if foreign:
             print(
                 f"error: {out_dir}/ holds files this tool did not write "
                 f"({', '.join(foreign)}), so it will not be cleaned.\n"
-                f"       --replicates clears the output folder of stale "
+                f"       a multi-run set clears the output folder of stale "
                 f"results before it writes.\n"
                 f"       Point -o at a new or empty folder, or remove those "
                 f"entries first.",
@@ -264,13 +309,13 @@ def _run_replicates(args: argparse.Namespace, out_dir: Path) -> int:
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     try:
-        for i in range(args.replicates):
+        for i, (label, config) in enumerate(runs):
             code = _run_once(
-                args.scenario, staging / f"rep_{i:02d}", args.plot,
+                args.scenario, staging / label, args.plot,
                 args.plot_format,
-                config=base_config.model_copy(update={"seed": base_seed + i}),
+                config=config,
                 tick_every=getattr(args, "plot_ticks", None),
-                report_dir=out_dir / f"rep_{i:02d}",
+                report_dir=out_dir / label,
                 quiet_warnings=i > 0,
             )
             if code != 0:
@@ -537,3 +582,45 @@ def _scenario_runs(scenario: str) -> list[Path]:
             numbered.append((n, d))
     runs += [d for _, d in sorted(numbered)]
     return runs
+
+
+def _run_sweep(args: argparse.Namespace, out_dir: Path) -> int:
+    """Run every combination a swept scenario stands for.
+
+    ``main`` calls this when the loaded scenario holds a ``sweep:``. Every
+    variant is parsed up front, so a scenario that is only invalid at the
+    third combination fails before the first one is written.
+
+    Args:
+        args: Parsed CLI args (scenario, plot, plot_format, watch).
+        out_dir: Parent directory; each combination writes into out_dir/<label>/.
+
+    Returns:
+        Exit code: 0 if every combination succeeds, 1 otherwise.
+
+    Errors Caught (logged to stderr):
+        FileNotFoundError: If the scenario file doesn't exist.
+        ValueError: If a sweep spec or a resulting scenario is invalid.
+        ValidationError: If pydantic validation fails on any combination.
+    """
+    if args.watch:
+        print("error: --watch cannot be combined with a sweep", file=sys.stderr)
+        return 1
+    if args.replicates > 1:
+        print(
+            "error: --replicates cannot be combined with a sweep.\n"
+            "       Sweep the seed instead: seed: {sweep: [42, 43, 44]}",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        runs = [
+            (label, _parse_dict(variant))
+            for label, variant in expand_sweeps(_load_scenario_dict(args.scenario))
+        ]
+    except (FileNotFoundError, ValueError, ValidationError) as exc:
+        msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
+        print(f"error: {msg}", file=sys.stderr)
+        return 1
+    print(f"Sweeping {len(runs)} runs into {out_dir}/")
+    return _run_set(args, out_dir, runs)

@@ -20,7 +20,15 @@ import sys
 from pathlib import Path
 
 from dsl._output import _PLOT_FORMATS, _resolve_out_dir, _write_starter
-from dsl._run import _prompt_continue, _run_once, _run_replicates, _watch_loop
+from dsl._run import (
+    _prompt_continue,
+    _run_once,
+    _run_replicates,
+    _run_sweep,
+    _watch_loop,
+)
+from dsl._scenario import _load_scenario_dict
+from dsl._sweep import has_sweep
 
 
 def _positive_int(text: str) -> int:
@@ -189,6 +197,14 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         out_dir = _resolve_out_dir(args.scenario, args.out_dir)
+
+    # A sweep in the YAML is the trigger; there is no flag.
+    try:
+        if has_sweep(_load_scenario_dict(args.scenario)):
+            return _run_sweep(args, out_dir)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     if args.replicates > 1:
         return _run_replicates(args, out_dir)
