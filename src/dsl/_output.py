@@ -173,8 +173,7 @@ def _resolve_out_dir(input_path: str, out_arg: str | None) -> Path:
 def _numbered_dir_suffix(entry: Path, prefix: str) -> int | None:
     """The integer suffix of ``entry`` if its name is ``<prefix><digits>``.
 
-    Shared by ``_run._scenario_runs`` (``out/<name>_<N>`` siblings) and the
-    replicate cleanup (``rep_NN`` dirs) in ``_run._run_replicates``.
+    Used by ``_run._scenario_runs`` for ``out/<name>_<N>`` siblings.
 
     Args:
         entry: A candidate directory entry.

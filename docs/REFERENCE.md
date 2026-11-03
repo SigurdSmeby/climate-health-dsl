@@ -308,7 +308,53 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 | `--plot-ticks N` | one year | Gridline every N periods. The default follows `period`, so 12 on monthly data and every tick is the same month. Use `6` for a half-year grid. |
 | `--watch` | off | Re-run on every save; live-reloading plot with `--plot`. |
 | `--new` | off | Skip the continue-or-new prompt. |
-| `--replicates`, `-n N` | `1` | N seeded replicates (`base, base+1, …`) into `rep_00/`, `rep_01/`, …, each reproducible. Refuses a folder holding anything the tool did not write, and clears stale results only once every replicate has succeeded. Not with `--watch`. |
+
+## Sweeps: one scenario, many datasets
+
+Any value in a scenario can be a one-key `{sweep: ...}` mapping. The run then
+writes **one dataset per combination** instead of one. There is no flag — a
+`sweep:` in the YAML is what triggers it.
+
+```yaml
+series:
+  - name: rainfall
+    generate: seasonal_spike
+    params:
+      spike_height: { sweep: [10, 20, 30] }     # a list of values
+  - name: disease_cases
+    counts: {}
+    depends_on:
+      - series: rainfall
+        lag: { sweep: { from: 1, to: 3 } }      # or a range; `to` is included
+```
+
+That is 3 x 3 = 9 runs:
+
+```
+out/study/
+  spike_height_10__lag_1/   simulated_data.csv  metadata.json  folds/
+  spike_height_10__lag_2/
+  ...
+  spike_height_30__lag_3/
+```
+
+| Rule | Detail |
+|---|---|
+| Values | **Numbers only** — whole or decimal, positive or negative. A string, null, bool, list or dict is an error. |
+| `{from, to, step}` | `step` defaults to 1, and `to` is **inclusive** when it lands on a step (`{from: 10, to: 50, step: 10}` is five values ending at 50). |
+| Order | Cartesian product, in the order the sweeps appear in the file. |
+| Directory names | `<field>_<value>`, joined by `__`. A repeated field name (two `lag`s under different parents) is qualified by what its entry names — `rainfall_lag_1__temperature_lag_5`. `-` becomes `m` and `.` becomes `p`, so `0.5` is `0p5` and `-1.5` is `m1p5`. |
+| Repeated values | An error. `sweep: [2, 2]` would give two runs one directory name. |
+| Per-run metadata | Each directory's `metadata.json` holds **that combination's** values, so any one reproduces alone: `dsl run out/study/spike_height_30__lag_2/metadata.json -o out/repro`. |
+| The output folder | Stale results are cleared first, so it must hold only this tool's own output — a folder with anything else in it is refused, naming what stopped it. The set is built aside and swapped in, so a failure partway never replaces a good set with half of one. |
+| Not with | `--watch`. |
+
+**Seed robustness** is a sweep over `seed:`, which is what the old
+`--replicates` flag did:
+
+```yaml
+seed: { sweep: { from: 42, to: 61 } }    # 20 datasets -> out/study/seed_42/ …
+```
 
 ## Output
 

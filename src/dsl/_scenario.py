@@ -112,13 +112,12 @@ def _parse_dict(scenario: dict) -> ScenarioConfig:
 def _load_and_parse(scenario: str, seed_override: int | None = None) -> ScenarioConfig:
     """Load + validate a scenario file. Raises on any hard error.
 
-    Shared by ``_run_once`` and ``_run_replicates`` so both report
-    parse/validation errors identically.
+    Used by ``_run_once`` for the single-run and ``--watch`` paths.
 
     Args:
         scenario: Path to the scenario YAML file or metadata.json.
-        seed_override: If given, replaces the parsed seed (used for
-            replicates), so the written metadata records the actual seed.
+        seed_override: If given, replaces the parsed seed, so the written
+            metadata records the actual seed.
 
     Returns:
         A validated ScenarioConfig.
