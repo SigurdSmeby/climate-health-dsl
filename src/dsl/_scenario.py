@@ -1,8 +1,9 @@
 """Load, parse, and validate scenario files.
 
-This module handles reading scenario YAML/JSON files, resolving relative
-paths (especially for from_csv generators), validating against the schema,
-and formatting validation errors for CLI output.
+This module handles reading scenario YAML/JSON files, resolving a
+``preset:`` into the scenario it stands for, resolving relative paths
+(especially for from_csv generators), validating against the schema, and
+formatting validation errors for CLI output.
 """
 import difflib
 import typing
@@ -10,6 +11,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
+from dsl._presets import resolve_preset
 from dsl.core.config.loader import load_yaml
 from dsl.core.config.schema import ScenarioConfig, parse_config
 
@@ -35,6 +37,12 @@ def _load_scenario_dict(path: str) -> dict:
     data = load_yaml(path)
     if "scenario" in data and isinstance(data["scenario"], dict):
         data = data["scenario"]
+    # Before anything else looks at the dict: a preset supplies the fields
+    # a sweep, a from_csv path or the schema then work on. Resolved away
+    # here, so `preset:` never reaches the schema and a metadata.json
+    # records the scenario it stood for rather than a name pointing out of
+    # the folder.
+    data = resolve_preset(data)
     # Resolve relative from_csv paths against the scenario file's directory,
     # so a portable folder (scenario.yaml + data.csv) works from any cwd.
     _resolve_from_csv_paths(data, Path(path).resolve().parent)

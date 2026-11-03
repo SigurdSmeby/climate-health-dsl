@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 from dsl._output import _PLOT_FORMATS, _resolve_out_dir, _write_starter
+from dsl._presets import available
 from dsl._run import _prompt_continue, _run_once, _run_sweep, _watch_loop
 from dsl._scenario import _load_scenario_dict
 from dsl._sweep import has_sweep
@@ -47,7 +48,7 @@ def _positive_int(text: str) -> int:
 
 
 def _list_blocks() -> int:
-    """Print the registered generators and transforms (names) for discovery.
+    """Print the registered generators, transforms, emitters and presets.
 
     Returns:
         Exit code: always 0.
@@ -68,6 +69,11 @@ def _list_blocks() -> int:
     print("emitters (a series' output type, written as a block):")
     for name in emitter_registry.names():
         print(f"  {name}")
+    presets = available()
+    if presets:
+        print("presets (a whole scenario to start from, written as preset:):")
+        for name in presets:
+            print(f"  {name}")
     print("\nParams for each: see docs/REFERENCE.md.")
     return 0
 

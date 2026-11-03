@@ -309,6 +309,57 @@ A new output type is one self-registering file — see the [how-to](HOW_TO.md).
 | `--watch` | off | Re-run on every save; live-reloading plot with `--plot`. |
 | `--new` | off | Skip the continue-or-new prompt. |
 
+## Presets: start from a scenario, write only the difference
+
+`preset: <name>` loads a bundled scenario and merges yours over it, so the file
+holds what differs rather than the whole setup:
+
+```yaml
+preset: climate
+n_total: 120
+```
+
+That is a complete, runnable scenario — two climate drivers, two locations and
+a counted disease with planted lags, over 120 periods instead of the preset's
+60. `dsl list` names the presets that ship.
+
+### Overriding
+
+Per field, not per block. A series you name is merged into the preset's, and
+the ones you do not mention are kept:
+
+```yaml
+preset: climate
+series:
+  - name: rainfall
+    params: { spike_height: 40 }      # only this value changes
+```
+
+`rainfall` keeps its `generate`, `unit` and other params; `temperature` and
+`disease_cases` are untouched.
+
+| In the scenario | Result |
+|---|---|
+| a scalar (`n_total: 120`) | replaces the preset's |
+| a mapping (`locations:`) | merged key by key, so one location's population can change alone |
+| a list of **named** entries (`series`, `transforms`) | merged per entry on `name:`; unmentioned entries kept, new names appended |
+| `depends_on` | merged per entry on `series:`, so one lag can change without restating the other parents |
+| a list with nothing to identify entries by | replaced wholesale — matching by position would make your scenario's meaning depend on the preset's ordering |
+| an explicit `null` (`split: ~`) | replaces the preset's value, which is how you turn a preset's block off |
+
+### Rules
+
+- **A preset is an ordinary scenario file.** `dsl run` one directly to see what
+  it produces, or copy it as a starting point and use no preset at all.
+- **One level.** A preset cannot itself name a preset.
+- **Nothing is removed.** A preset only supplies and is overridden; a scenario
+  cannot delete a series the preset declares.
+- **`preset:` never reaches the output.** It is resolved before validation, so
+  a run's `metadata.json` records the scenario it stood for — the dataset
+  reproduces from its own folder, with no dependency on the preset file.
+- An unknown name is an error listing what is available, with a suggestion for
+  a near miss.
+
 ## Sweeps: one scenario, many datasets
 
 Any value in a scenario can be a one-key `{sweep: ...}` mapping. The run then
