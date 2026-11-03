@@ -92,17 +92,12 @@ def test_two_sweeps_on_the_same_field_name_are_qualified_by_their_parent():
 
 def test_float_values_keep_their_dot_out_of_the_label():
     # A directory name with a '.' or '-' in it is what sweep.json exists to
-    # avoid parsing; the label itself stays filesystem-plain regardless.
+    # avoid parsing; the label stays filesystem-plain regardless.
     runs = expand_sweeps({"series": [
         {"name": "x", "params": {"weight": {SWEEP_KEY: [0.5, -1.5]}}},
     ]})
     assert [label for label, _ in runs] == ["weight_0p5", "weight_m1p5"]
     assert [cfg["series"][0]["params"]["weight"] for _, cfg in runs] == [0.5, -1.5]
-
-
-def test_string_values_are_slugified():
-    runs = expand_sweeps({"period": {SWEEP_KEY: ["monthly", "weekly"]}})
-    assert [label for label, _ in runs] == ["period_monthly", "period_weekly"]
 
 
 @pytest.mark.parametrize("bad,message", [
@@ -240,3 +235,74 @@ def test_a_sweep_refuses_a_directory_holding_foreign_files(tmp_path):
     (out / "thesis.tex").write_text("mine")
     assert main(["run", _write(tmp_path, _SCENARIO), "-o", str(out)]) == 1
     assert (out / "thesis.tex").is_file()
+
+
+# --- Review follow-ups: numeric-only values, exact float ranges, unique labels. ---
+
+
+def test_a_float_range_reaches_its_endpoint():
+    # (0.3 - 0) / 0.1 is 2.9999… in binary floating point, so truncating
+    # dropped the endpoint and a weight sweep silently lost its last value.
+    runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0, "to": 0.3, "step": 0.1}}})
+    assert [round(cfg["w"], 10) for _, cfg in runs] == [0.0, 0.1, 0.2, 0.3]
+
+
+def test_a_float_range_is_inclusive_like_an_integer_one():
+    runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0.5, "to": 2.0, "step": 0.5}}})
+    assert [round(cfg["w"], 10) for _, cfg in runs] == [0.5, 1.0, 1.5, 2.0]
+
+
+def test_a_float_range_still_stops_before_overshooting():
+    runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0, "to": 1, "step": 0.3}}})
+    assert [round(cfg["w"], 10) for _, cfg in runs] == [0.0, 0.3, 0.6, 0.9]
+
+
+def test_a_negative_step_counts_down_inclusively():
+    runs = expand_sweeps({"n": {SWEEP_KEY: {"from": 3, "to": 1, "step": -1}}})
+    assert [cfg["n"] for _, cfg in runs] == [3, 2, 1]
+
+
+@pytest.mark.parametrize("value", ["monthly", None, True, [1], {"a": 1}],
+                         ids=["str", "null", "bool", "list", "dict"])
+def test_only_numbers_can_be_swept(value):
+    with pytest.raises(ValueError, match="number"):
+        expand_sweeps({"n_total": {SWEEP_KEY: [1, value]}})
+
+
+@pytest.mark.parametrize("bound", ["from", "to", "step"])
+def test_a_range_bound_must_be_a_number(bound):
+    spec = {"from": 1, "to": 5, "step": 1, bound: "x"}
+    with pytest.raises(ValueError, match="number"):
+        expand_sweeps({"n_total": {SWEEP_KEY: spec}})
+
+
+def test_a_repeated_value_in_a_sweep_is_rejected():
+    # Two identical values would give two runs one directory name, so the
+    # second silently overwrote the first: N combinations, fewer than N
+    # datasets, no warning. It is a typo every time.
+    with pytest.raises(ValueError, match="repeat"):
+        expand_sweeps({"n_total": {SWEEP_KEY: [10, 20, 10]}})
+
+
+def test_equal_values_of_different_numeric_types_also_repeat():
+    with pytest.raises(ValueError, match="repeat"):
+        expand_sweeps({"n_total": {SWEEP_KEY: [2, 2.0]}})
+
+
+def test_every_combination_gets_its_own_directory_name():
+    runs = expand_sweeps({
+        "series": [
+            {"name": "a", "params": {"p": {SWEEP_KEY: [1, 2]}}},
+            {"name": "b", "params": {"q": {SWEEP_KEY: [0.5, 1.5]}}},
+        ],
+    })
+    labels = [label for label, _ in runs]
+    assert len(set(labels)) == len(labels) == 4
+
+
+def test_a_sweep_in_a_bare_list_element_is_expanded():
+    # Found nothing here before, so the run silently became a single
+    # unswept one — a no-op is the worst way to decline a sweep.
+    runs = expand_sweeps({"xs": [{SWEEP_KEY: [1, 2]}]})
+    assert [cfg["xs"][0] for _, cfg in runs] == [1, 2]
+    assert [label for label, _ in runs] == ["xs_1", "xs_2"]

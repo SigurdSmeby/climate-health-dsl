@@ -25,6 +25,39 @@ SWEEP_KEY = "sweep"
 
 _RANGE_KEYS = {"from", "to", "step"}
 
+# Equality of a float range's endpoint, which binary floating point cannot
+# hit exactly: (0.3 - 0) / 0.1 is 2.9999…, not 3.
+_TOLERANCE = 1e-9
+
+
+def _number(value: Any, where: str, what: str) -> int | float:
+    """``value`` as a number, or a clean error naming where it came from.
+
+    Only whole and decimal numbers can be swept (1, 1.0, -0.5). A bool is
+    an int in Python but never a value anyone means to sweep, and a string
+    reaches arithmetic as an uncaught TypeError, so both are refused here —
+    at the front, before anything is multiplied or compared.
+
+    Args:
+        value: The scalar to check.
+        where: The field name holding the sweep, for the message.
+        what: What ``value`` is ("value", "'from'", …), for the message.
+
+    Returns:
+        ``value`` unchanged, once it is known to be a number.
+
+    Errors Caught (raised to caller):
+        ValueError: If value is not an int or float.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        shown = "null" if value is None else repr(value)
+        # ValueError, not TypeError: bad scenario content, which the CLI
+        # catches to print a clean error instead of a traceback.
+        raise ValueError(  # noqa: TRY004
+            f"sweep on '{where}': {what} must be a number, got {shown}."
+        )
+    return value
+
 
 def _values(spec: Any, where: str) -> list:
     """The values one sweep spec stands for.
@@ -42,7 +75,19 @@ def _values(spec: Any, where: str) -> list:
     if isinstance(spec, list):
         if not spec:
             raise ValueError(f"sweep on '{where}' needs at least one value, got [].")
-        return spec
+        values = [_number(value, where, "value") for value in spec]
+        # Two equal values would give two runs the same directory name, so
+        # the second would overwrite the first: fewer datasets than
+        # combinations asked for, silently. 2 and 2.0 are the same value.
+        seen = set()
+        for value in values:
+            if value in seen:
+                raise ValueError(
+                    f"sweep on '{where}' repeats the value {value!r}; "
+                    f"each value must appear once."
+                )
+            seen.add(value)
+        return values
     if not isinstance(spec, dict):
         # ValueError, not TypeError: bad scenario content, which the CLI
         # catches to print a clean error instead of a traceback.
@@ -62,7 +107,9 @@ def _values(spec: Any, where: str) -> list:
             raise ValueError(
                 f"sweep range on '{where}' needs '{required}'."
             )
-    start, stop, step = spec["from"], spec["to"], spec.get("step", 1)
+    start = _number(spec["from"], where, "'from'")
+    stop = _number(spec["to"], where, "'to'")
+    step = _number(spec.get("step", 1), where, "'step'")
     if step == 0:
         raise ValueError(f"sweep range on '{where}' needs a non-zero step.")
     if (stop - start) * step < 0:
@@ -71,9 +118,12 @@ def _values(spec: Any, where: str) -> list:
             f"{stop} by {step}."
         )
 
-    # Inclusive of 'to' when it lands exactly on a step. Built by
+    # Inclusive of 'to': `from: 10, to: 50, step: 10` means five values
+    # ending at 50, which is how the YAML reads. The tolerance is what
+    # makes that true for decimals too — (0.3 - 0) / 0.1 is 2.9999…, so
+    # truncating alone dropped the endpoint. Values are built by
     # multiplying rather than accumulating, so a float step does not drift.
-    count = int((stop - start) / step) + 1
+    count = int((stop - start) / step + _TOLERANCE) + 1
     return [start + i * step for i in range(count)]
 
 
@@ -88,10 +138,7 @@ def _slug(value: Any) -> str:
     ambiguous to split on, so they become ``p`` and a leading ``m``.
     ``sweep.json`` carries the real values; this only has to be readable.
     """
-    text = str(value)
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return "".join(c if c.isalnum() else "_" for c in text)
-    return text.replace("-", "m").replace(".", "p")
+    return str(value).replace("-", "m").replace(".", "p")
 
 
 def _owner(node: dict) -> str:
@@ -136,7 +183,20 @@ def _find(node: Any, path: tuple) -> list[tuple[tuple, str, list, str]]:
                 found += _find(value, (*path, key))
     elif isinstance(node, list):
         for index, value in enumerate(node):
-            found += _find(value, (*path, index))
+            # A sweep can be the element itself, not just a value inside
+            # it. Missing that made the whole run silently unswept.
+            if isinstance(value, dict) and set(value) == {SWEEP_KEY}:
+                field = str(path[-1]) if path else SWEEP_KEY
+                # No owner: the element IS the sweep, so there is no
+                # sibling naming it.
+                found.append((
+                    (*path, index),
+                    field,
+                    _values(value[SWEEP_KEY], field),
+                    "",
+                ))
+            else:
+                found += _find(value, (*path, index))
     return found
 
 
