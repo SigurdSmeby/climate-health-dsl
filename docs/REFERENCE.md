@@ -346,8 +346,52 @@ out/study/
 | Directory names | `<field>_<value>`, joined by `__`. A repeated field name (two `lag`s under different parents) is qualified by what its entry names — `rainfall_lag_1__temperature_lag_5`. `-` becomes `m` and `.` becomes `p`, so `0.5` is `0p5` and `-1.5` is `m1p5`. |
 | Repeated values | An error. `sweep: [2, 2]` would give two runs one directory name. |
 | Per-run metadata | Each directory's `metadata.json` holds **that combination's** values, so any one reproduces alone: `dsl run out/study/spike_height_30__lag_2/metadata.json -o out/repro`. |
+| `sweep.json` | An index at the root saying which directory is which run — see below. |
 | The output folder | Stale results are cleared first, so it must hold only this tool's own output — a folder with anything else in it is refused, naming what stopped it. The set is built aside and swapped in, so a failure partway never replaces a good set with half of one. |
 | Not with | `--watch`. |
+
+### `sweep.json`
+
+A sweep writes an index beside the run directories. Evaluation tools identify
+rows by **filename** (`chap export-metrics` does), so joining a model's scores
+back to the parameters that produced them needs a translation from directory
+name to values — and the name cannot serve, because `0.5` is written `0p5` and
+`-1.5` is written `m1p5`.
+
+```json
+{
+  "dsl_version": "1.7.1",
+  "swept": ["spike_height", "lag"],
+  "runs": [
+    {
+      "dir": "spike_height_10__lag_1",
+      "params": { "spike_height": 10, "lag": 1 },
+      "seed": 42,
+      "dataset": "spike_height_10__lag_1/simulated_data.csv"
+    }
+  ]
+}
+```
+
+| Key | What |
+|---|---|
+| `swept` | The fields this scenario varies, in the order they appear in it — the same order their values appear in each `dir`. |
+| `runs[].dir` | The run directory's name, relative to the sweep folder. |
+| `runs[].params` | What that run set each swept field to, as a **number** — not the slug in the name. |
+| `runs[].seed` | That run's seed, which is what `metadata.json` reproduces from. |
+| `runs[].dataset` | The CSV's path relative to the sweep folder, so a consumer need not know this tool's layout. |
+
+Rewritten whole on every sweep, never merged: an entry describing a directory
+that is gone is worse than no index. Its presence also marks the folder as a
+sweep's own, which is what lets a later sweep clear leftovers there while
+refusing to touch unrelated runs.
+
+Joining scores to parameters is then two lines:
+
+```python
+index = json.load(open("out/study/sweep.json"))
+params = pd.DataFrame([{**r["params"], "dir": r["dir"]} for r in index["runs"]])
+```
 
 **Seed robustness** is a sweep over `seed:` — N datasets differing only by
 draw, so a result can be reported as a spread rather than one number:

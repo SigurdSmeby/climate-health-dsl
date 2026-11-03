@@ -8,6 +8,7 @@ every save and (for HTML plots) live-reload a browser tab.
 import argparse
 import functools
 import http.server
+import json
 import shutil
 import sys
 import threading
@@ -17,6 +18,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from dsl import __version__
 from dsl._output import _PLOT_FORMATS, _numbered_dir_suffix, _run_name
 from dsl._scenario import (
     _friendly_error,
@@ -30,7 +32,7 @@ from dsl.core.pipeline.dataset_rules import check_dataset
 from dsl.core.pipeline.engine import run as run_engine
 from dsl.core.pipeline.folds import evaluation_boundary, write_report
 from dsl.core.pipeline.metadata import write_metadata
-from dsl.core.pipeline.output import write_output
+from dsl.core.pipeline.output import FULL_FILENAME, write_output
 from dsl.core.pipeline.plot import plot_dataset
 
 
@@ -187,11 +189,49 @@ _RUN_OUTPUT_NAMES = frozenset(
 ) | _PLOT_NAMES
 
 # Written at the root of a sweep's output folder, which is what marks that
-# folder as one this tool built as a set — see _foreign_entries. Its
-# contents are a later change: something has to map a run directory back
-# to the values that made it, since the name cannot be parsed (a float's
-# '.' and a negative's '-' are slugged away).
+# folder as one this tool built as a set — see _foreign_entries.
 _SWEEP_INDEX_NAME = "sweep.json"
+
+
+def _write_sweep_index(
+    out_dir: Path, runs: list[tuple[str, ScenarioConfig, dict]]
+) -> None:
+    """Write ``sweep.json``: which directory holds which combination.
+
+    ``chap export-metrics`` identifies rows by filename, so joining a
+    model's scores back to the parameters that produced them needs a
+    translation from directory name to values. The directory name cannot
+    serve: a float's ``.`` and a negative's ``-`` are slugged away, and two
+    sweeps on one field name are qualified by their parent.
+
+    Rewritten whole on every sweep, never merged — an entry describing a
+    directory that is gone is worse than no index.
+
+    Args:
+        out_dir: The sweep's output folder (the parent of the run dirs).
+        runs: (directory name, config, swept values) per combination.
+
+    Errors Caught (raised to caller):
+        OSError: If the file cannot be written.
+    """
+    index = {
+        "dsl_version": __version__,
+        # The swept fields, in the order they appear in the scenario —
+        # which is also the order their values appear in each label.
+        "swept": list(runs[0][2]) if runs else [],
+        "runs": [
+            {
+                "dir": label,
+                "params": params,
+                "seed": config.seed,
+                # Named rather than built by the reader, so joining does
+                # not require knowing this tool's layout.
+                "dataset": f"{label}/{FULL_FILENAME}",
+            }
+            for label, config, params in runs
+        ],
+    }
+    (out_dir / _SWEEP_INDEX_NAME).write_text(json.dumps(index, indent=2) + "\n")
 
 
 def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
@@ -239,7 +279,7 @@ def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
 def _run_set(
     args: argparse.Namespace,
     out_dir: Path,
-    runs: list[tuple[str, ScenarioConfig]],
+    runs: list[tuple[str, ScenarioConfig, dict]],
 ) -> int:
     """Write a named set of runs into ``out_dir``, one subdirectory each.
 
@@ -249,14 +289,15 @@ def _run_set(
     Args:
         args: Parsed CLI args (plot, plot_format, scenario).
         out_dir: Parent directory; each run writes into out_dir/<label>/.
-        runs: (directory name, already-parsed config) in the order to run.
+        runs: (directory name, already-parsed config, swept values) in the
+            order to run. The values go into ``sweep.json``.
 
     Returns:
         Exit code: 0 if every run succeeds, 1 on the first failure.
     """
     # Checked before anything is written — and before announcing the work,
     # so a refusal is not printed under a line saying it had begun.
-    keep = {label for label, _ in runs}
+    keep = {label for label, _, _ in runs}
     if out_dir.is_dir():
         foreign = _foreign_entries(out_dir, keep)
         if foreign:
@@ -282,7 +323,7 @@ def _run_set(
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     try:
-        for i, (label, config) in enumerate(runs):
+        for i, (label, config, _) in enumerate(runs):
             code = _run_once(
                 args.scenario, staging / label, args.plot,
                 args.plot_format,
@@ -313,7 +354,7 @@ def _run_set(
         written = {run_dir.name for run_dir in staged}
         # Before the stale sweep, so the folder is already marked as a
         # set's own if anything below fails partway.
-        (out_dir / _SWEEP_INDEX_NAME).write_text("{}\n")
+        _write_sweep_index(out_dir, runs)
         for stale in out_dir.iterdir():
             if (
                 stale == staging
@@ -588,8 +629,10 @@ def _run_sweep(args: argparse.Namespace, out_dir: Path) -> int:
         return 1
     try:
         runs = [
-            (label, _parse_dict(variant))
-            for label, variant in expand_sweeps(_load_scenario_dict(args.scenario))
+            (label, _parse_dict(variant), params)
+            for label, variant, params in expand_sweeps(
+                _load_scenario_dict(args.scenario)
+            )
         ]
     except (FileNotFoundError, ValueError, ValidationError) as exc:
         msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc

@@ -9,6 +9,7 @@ existed, which is why the comments name failures the current code cannot
 reach.
 """
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -32,6 +33,11 @@ def _sweep_scenario(tmp_path, values=(42, 43), name="s.yaml") -> str:
 
 def _labels(values) -> list[str]:
     return [f"seed_{v}" for v in values]
+
+
+def _index(out) -> dict:
+    """``sweep.json``, parsed."""
+    return json.loads((out / "sweep.json").read_text())
 
 
 def _run_dirs(out) -> list[str]:
@@ -342,15 +348,12 @@ def test_each_run_is_reproducible_from_its_own_metadata(tmp_path):
 
 
 def test_a_sweep_writes_an_index_file(tmp_path):
-    import json
-
     out = tmp_path / "out"
     assert main(["run", _sweep_scenario(tmp_path), "-o", str(out)]) == 0
-    index = out / "sweep.json"
-    assert index.is_file()
-    # A placeholder, but valid JSON — so filling it in later adds keys
-    # rather than also changing the format.
-    assert json.loads(index.read_text()) == {}
+    assert (out / "sweep.json").is_file()
+    # Its presence is what marks the folder as a set's own, which the
+    # cleanup relies on; its contents are asserted below.
+    assert set(_index(out)) == {"dsl_version", "swept", "runs"}
 
 
 def test_a_plain_run_writes_no_index(tmp_path):
@@ -404,3 +407,100 @@ def test_re_sweeping_a_sweeps_own_folder_clears_its_leftovers(tmp_path):
     ]) == 0
     assert sorted(p.name for p in out.iterdir() if p.is_dir()) == _labels((42, 43))
     assert (out / "sweep.json").is_file()
+
+
+# --- sweep.json's contents: which directory is which run. -------------------
+#
+# `chap export-metrics` identifies rows by filename, so joining a model's
+# scores back to the parameters that produced them needs a translation from
+# directory name to values. Parsing the name cannot do it: a float's '.' and
+# a negative's '-' are slugged away, and two sweeps on one field name are
+# qualified by their parent.
+
+
+def test_the_index_lists_every_run_with_its_values(tmp_path):
+    scenario = {
+        **_BASE,
+        "series": [
+            {"name": "rainfall", "generate": "seasonal_spike",
+             "params": {"spike_height": {"sweep": [10, 40]}}},
+            {"name": "disease_cases", "counts": {},
+             "depends_on": [{"series": "rainfall", "lag": {"sweep": [1, 2]},
+                             "weight": 1.0}]},
+        ],
+    }
+    path = tmp_path / "s.yaml"
+    path.write_text(yaml.safe_dump(scenario))
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out)]) == 0
+
+    index = _index(out)
+    assert index["swept"] == ["spike_height", "lag"]
+    assert [run["dir"] for run in index["runs"]] == [
+        "spike_height_10__lag_1",
+        "spike_height_10__lag_2",
+        "spike_height_40__lag_1",
+        "spike_height_40__lag_2",
+    ]
+    assert index["runs"][0]["params"] == {"spike_height": 10, "lag": 1}
+    assert index["runs"][3]["params"] == {"spike_height": 40, "lag": 2}
+    # Every directory on disk is described, and nothing that is not there.
+    assert {run["dir"] for run in index["runs"]} == set(_run_dirs(out))
+
+
+def test_the_index_records_the_seed_of_each_run(tmp_path):
+    """The seed is what makes a run reproducible, and a seed sweep is the
+    case where it is the thing that varies."""
+    out = tmp_path / "out"
+    assert main(["run", _sweep_scenario(tmp_path, (42, 43)), "-o", str(out)]) == 0
+
+    index = _index(out)
+    assert [run["seed"] for run in index["runs"]] == [42, 43]
+    assert [run["params"]["seed"] for run in index["runs"]] == [42, 43]
+
+
+def test_the_index_records_a_float_value_not_its_slug(tmp_path):
+    """The directory is called weight_0p5; the join needs 0.5."""
+    scenario = {**_BASE, "series": [
+        {"name": "rainfall", "generate": "seasonal_spike"},
+        {"name": "disease_cases", "counts": {}, "depends_on": [
+            {"series": "rainfall", "lag": 1, "weight": {"sweep": [0.5, -1.5]}},
+        ]},
+    ]}
+    path = tmp_path / "s.yaml"
+    path.write_text(yaml.safe_dump(scenario))
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out)]) == 0
+
+    index = _index(out)
+    assert [run["dir"] for run in index["runs"]] == ["weight_0p5", "weight_m1p5"]
+    assert [run["params"]["weight"] for run in index["runs"]] == [0.5, -1.5]
+
+
+def test_the_index_names_the_dataset_to_read(tmp_path):
+    """A consumer joining scores to parameters needs the CSV path, and
+    building it by hand means knowing this tool's layout."""
+    out = tmp_path / "out"
+    assert main(["run", _sweep_scenario(tmp_path), "-o", str(out)]) == 0
+
+    for run in _index(out)["runs"]:
+        assert (out / run["dataset"]).is_file()
+        assert run["dataset"].endswith("simulated_data.csv")
+
+
+def test_the_index_is_rewritten_not_merged(tmp_path):
+    """A stale entry describing a directory that is gone is worse than no
+    index at all."""
+    out = tmp_path / "out"
+    main(["run", _sweep_scenario(tmp_path, (42, 43, 44)), "-o", str(out)])
+    main(["run", _sweep_scenario(tmp_path, (42, 43), "narrow.yaml"), "-o", str(out)])
+
+    assert [run["dir"] for run in _index(out)["runs"]] == _labels((42, 43))
+
+
+def test_the_index_says_which_version_wrote_it(tmp_path):
+    from dsl import __version__
+
+    out = tmp_path / "out"
+    assert main(["run", _sweep_scenario(tmp_path), "-o", str(out)]) == 0
+    assert _index(out)["dsl_version"] == __version__

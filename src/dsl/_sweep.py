@@ -219,23 +219,28 @@ def has_sweep(scenario: dict) -> bool:
     return bool(_find(scenario, ()))
 
 
-def expand_sweeps(scenario: dict) -> list[tuple[str, dict]]:
-    """One (label, scenario) pair per combination of swept values.
+def expand_sweeps(scenario: dict) -> list[tuple[str, dict, dict]]:
+    """One (label, scenario, values) triple per combination of swept values.
+
+    ``values`` maps each swept field to what this combination set it to —
+    the real number, not the slug in the label — so a consumer can join a
+    run directory back to the parameters that produced it without parsing
+    its name.
 
     Args:
         scenario: The loaded scenario dict. Not mutated.
 
     Returns:
-        ``[("", scenario)]`` when nothing is swept — a plain run, so the
-        caller needs no special case. Otherwise one pair per combination in
-        document order, labelled ``spike_height_10__lag_1``.
+        ``[("", scenario, {})]`` when nothing is swept — a plain run, so the
+        caller needs no special case. Otherwise one triple per combination
+        in document order, labelled ``spike_height_10__lag_1``.
 
     Errors Caught (raised to caller):
         ValueError: If a sweep spec is malformed (see ``_values``).
     """
     sweeps = _find(scenario, ())
     if not sweeps:
-        return [("", scenario)]
+        return [("", scenario, {})]
 
     parts = _label_parts(sweeps)
     runs = []
@@ -246,7 +251,7 @@ def expand_sweeps(scenario: dict) -> list[tuple[str, dict]]:
         label = "__".join(
             f"{part}_{_slug(value)}" for part, value in zip(parts, combination)
         )
-        runs.append((label, variant))
+        runs.append((label, variant, dict(zip(parts, combination))))
     return runs
 
 
