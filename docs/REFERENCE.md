@@ -349,8 +349,8 @@ out/study/
 | The output folder | Stale results are cleared first, so it must hold only this tool's own output — a folder with anything else in it is refused, naming what stopped it. The set is built aside and swapped in, so a failure partway never replaces a good set with half of one. |
 | Not with | `--watch`. |
 
-**Seed robustness** is a sweep over `seed:`, which is what the old
-`--replicates` flag did:
+**Seed robustness** is a sweep over `seed:` — N datasets differing only by
+draw, so a result can be reported as a spread rather than one number:
 
 ```yaml
 seed: { sweep: { from: 42, to: 61 } }    # 20 datasets -> out/study/seed_42/ …

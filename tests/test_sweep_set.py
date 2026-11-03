@@ -3,9 +3,10 @@
 A swept scenario writes N datasets into one directory, so it has to answer
 the questions a single run never faces: what happens to results already
 there, what a half-finished run leaves behind, and which folders it may
-clear at all. These were written for ``--replicates`` and are kept here,
-pointed at a sweep, because the sweep now shares that machinery
-(``_run_set``) and is the only thing left using it.
+clear at all. They are pointed at a sweep, which is the only
+thing that writes such a set; several describe bugs found before sweeps
+existed, which is why the comments name failures the current code cannot
+reach.
 """
 import argparse
 from pathlib import Path

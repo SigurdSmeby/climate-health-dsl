@@ -39,7 +39,6 @@ def _run_once(
     out_dir: Path,
     plot: bool,
     plot_format: str,
-    seed_override: int | None = None,
     config: ScenarioConfig | None = None,
     tick_every: int | None = None,
     report_dir: Path | None = None,
@@ -55,7 +54,6 @@ def _run_once(
             (if plot) the plot file into.
         plot: Whether to also write a plot of the dataset.
         plot_format: Plot file format (e.g. "html", "png").
-        seed_override: Passed to _load_and_parse when config is None.
         config: An already-parsed ScenarioConfig (e.g. from a sweep that
             parsed the file once per combination), to skip re-parsing
             ``scenario`` from disk.
@@ -74,7 +72,7 @@ def _run_once(
     # --- Parse + validate. Any hard error exits here, before generating. ---
     try:
         if config is None:
-            config = _load_and_parse(scenario, seed_override)
+            config = _load_and_parse(scenario)
     except (FileNotFoundError, ValueError, ValidationError) as exc:
         # Print to stderr (the conventional stream for errors) and return a
         # non-zero code so scripts and CI notice the failure. A ValidationError
@@ -173,8 +171,6 @@ def _run_once(
     return 0
 
 
-# Everything a run writes into its output directory. Anything else found
-# there belongs to the user, so the set cleanup must not touch it.
 # Where a multi-run set is built before being swapped in. Left behind
 # only by a run killed mid-write, and cleared by the next one.
 _STAGING_NAME = ".partial"
@@ -184,6 +180,8 @@ _STAGING_NAME = ".partial"
 # behind on jpg and jpeg.
 _PLOT_NAMES = frozenset(f"plot.{ext}" for ext in (*_PLOT_FORMATS, "json"))
 
+# Everything a run writes into its output directory. Anything else found
+# there belongs to the user, so the set cleanup must not touch it.
 _RUN_OUTPUT_NAMES = frozenset(
     {"simulated_data.csv", "metadata.json", "folds"}
 ) | _PLOT_NAMES
@@ -292,12 +290,12 @@ def _run_set(
         # from a plain run into the same folder. A true atomic swap would need
         # to exchange two directories, which no portable call offers.
         staged = sorted(staging.iterdir())
-        for new_rep in staged:
-            landing = out_dir / new_rep.name
+        for fresh in staged:
+            landing = out_dir / fresh.name
             if landing.is_dir():
                 shutil.rmtree(landing)
-            new_rep.rename(landing)
-        written = {rep.name for rep in staged}
+            fresh.rename(landing)
+        written = {run_dir.name for run_dir in staged}
         for stale in out_dir.iterdir():
             if stale == staging or stale.name in written:
                 continue
