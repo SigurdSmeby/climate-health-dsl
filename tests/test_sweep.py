@@ -377,3 +377,82 @@ def test_reported_values_keep_their_real_type_not_the_slug():
     runs = expand_sweeps({"w": {SWEEP_KEY: [0.5, -1.5]}})
     assert [params["w"] for _, _, params in runs] == [0.5, -1.5]
     assert [label for label, _, _ in runs] == ["w_0p5", "w_m1p5"]
+
+
+# --- The index has to describe every swept value, exactly. ------------------
+
+
+def test_two_unqualifiable_sweeps_on_one_field_are_rejected():
+    """The label shows both values (xs_1__xs_7) but a dict keyed by field
+    name can hold only one, so the index silently described a run by the
+    wrong parameters — a join built on it would be wrong rather than
+    broken. Neither sweep has a name/series sibling to qualify it, so
+    there is no name to tell them apart by."""
+    with pytest.raises(ValueError, match="cannot be told apart"):
+        expand_sweeps({"xs": [{SWEEP_KEY: [1, 2]}, {SWEEP_KEY: [7, 8]}]})
+
+
+def test_two_sweeps_on_one_field_are_fine_when_their_entries_are_named():
+    runs = expand_sweeps({
+        "series": [
+            {"name": "disease_cases", "depends_on": [
+                {"series": "rainfall", "lag": {SWEEP_KEY: [1, 2]}},
+                {"series": "temperature", "lag": {SWEEP_KEY: [5]}},
+            ]},
+        ],
+    })
+    assert [params for _, _, params in runs] == [
+        {"rainfall_lag": 1, "temperature_lag": 5},
+        {"rainfall_lag": 2, "temperature_lag": 5},
+    ]
+
+
+def test_every_swept_value_appears_in_the_report():
+    """One entry per sweep, always — the count is what makes the index
+    trustworthy."""
+    runs = expand_sweeps({
+        "a": {SWEEP_KEY: [1, 2]},
+        "b": {SWEEP_KEY: [3]},
+        "c": {SWEEP_KEY: [4, 5]},
+    })
+    for label, _, params in runs:
+        assert len(params) == 3, label
+        assert label.count("__") == 2
+
+
+@pytest.mark.parametrize("spec,expected", [
+    ({"from": 0, "to": 0.3, "step": 0.1}, [0.0, 0.1, 0.2, 0.3]),
+    ({"from": 0.1, "to": 0.7, "step": 0.2}, [0.1, 0.3, 0.5, 0.7]),
+    ({"from": 0.05, "to": 0.2, "step": 0.05}, [0.05, 0.1, 0.15, 0.2]),
+    ({"from": 1, "to": 3, "step": 1}, [1, 2, 3]),
+], ids=["tenths", "offset-tenths", "hundredths", "ints-untouched"])
+def test_a_float_range_gives_clean_values_not_binary_dust(spec, expected):
+    """start + i*step is exact enough to compare against 'to' but stored
+    0.30000000000000004, which then showed up in a directory name and in
+    sweep.json."""
+    runs = expand_sweeps({"w": {SWEEP_KEY: spec}})
+    assert [params["w"] for _, _, params in runs] == expected
+
+
+def test_a_drifting_float_does_not_reach_the_directory_name():
+    runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0, "to": 0.3, "step": 0.1}}})
+    assert [label for label, _, _ in runs] == ["w_0p0", "w_0p1", "w_0p2", "w_0p3"]
+
+
+def test_an_int_range_keeps_integer_values():
+    runs = expand_sweeps({"n": {SWEEP_KEY: {"from": 1, "to": 3}}})
+    assert [params["n"] for _, _, params in runs] == [1, 2, 3]
+    assert all(isinstance(params["n"], int) for _, _, params in runs)
+
+
+def test_a_listed_float_is_left_exactly_as_written():
+    # A value the author typed is theirs; only generated ones are rounded.
+    runs = expand_sweeps({"w": {SWEEP_KEY: [0.1234567890123, 2.5]}})
+    assert [params["w"] for _, _, params in runs] == [0.1234567890123, 2.5]
+
+
+def test_a_range_written_in_exponent_form_is_left_unrounded():
+    # repr(1e-05) has no literal decimals to count, so guessing a precision
+    # would be worse than leaving these alone.
+    runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0.0, "to": 2e-05, "step": 1e-05}}})
+    assert [params["w"] for _, _, params in runs] == [0.0, 1e-05, 2e-05]
