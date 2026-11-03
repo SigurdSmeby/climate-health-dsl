@@ -1,0 +1,19 @@
+# The pitch: the base lives in the preset, the scenario is the difference.
+#
+# Overriding north's population must NOT drop the preset's south, and
+# overriding one rainfall param must not drop its generator or clamp_min —
+# so 24 periods x 2 locations = 48 rows, with both preset series present.
+_expect:
+  exit_code: 0
+  files_exist:
+  - simulated_data.csv
+  - metadata.json
+  column_exists: [rainfall, temperature, disease_cases, location]
+  reproduce: true
+preset: climate
+n_total: 24
+locations:
+  north: { population: 100000 }
+series:
+- name: rainfall
+  params: { spike_height: 40 }
