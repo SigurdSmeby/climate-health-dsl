@@ -15,6 +15,8 @@ series:
     params: { mean: 12, amplitude: 4 }
 ```
 
+And a whole *scenario* you keep retyping is a [preset](REFERENCE.md#presets-start-from-a-scenario-write-only-the-difference) — a plain scenario YAML dropped in `src/dsl/presets/`, usable as `preset: <filename>` with no code and no registration. `dsl list` picks it up automatically.
+
 A new *shape* is one new file in `src/dsl/generators/`:
 
 ```python
@@ -48,6 +50,15 @@ Note the auto-import loop skips modules whose name starts with `_`, so a scratch
 The only core file ever edited after the initial build is `src/dsl/core/config/schema.py`, and only for a genuinely new top-level concept (a new series field, a new global setting) — with schema tests in the same commit.
 
 See the [reference](REFERENCE.md#generators) for the full list of built-in generators, transforms and emitters to use as more examples, and [CODE_STYLE_GUIDE.md](CODE_STYLE_GUIDE.md) for the docstring/comment conventions new code should follow.
+
+## Add a preset
+
+A preset is an ordinary scenario file in `src/dsl/presets/`, and the filename is the name you write in YAML. Nothing registers it — `available()` globs the folder, so dropping `tropical.yaml` there makes `preset: tropical` work and `dsl list` show it.
+
+Two things to check before adding one:
+
+- **It must run on its own.** `preset: <name>` with nothing else is a complete scenario; there is a test that runs every bundled preset exactly that way.
+- **If it sets `split:`, keep it warning-free.** `folds/report.md` warns when a fold's test half cannot measure something the scenario plants, and a preset meant for evaluation should not ship with that warning. The `evaluation` preset uses 120 periods for exactly this reason — fewer leaves fold 1's test half too narrow for the yearly rainfall peak.
 
 ## See also
 

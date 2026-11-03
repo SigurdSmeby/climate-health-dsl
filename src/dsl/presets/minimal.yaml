@@ -1,0 +1,24 @@
+# The smallest scenario that runs: rainfall drives disease two months later.
+# Everything else is a default.
+#
+# Use it when you want one thing of your own and nothing else:
+#
+#   preset: minimal
+#   n_total: 120
+period: monthly
+n_total: 36
+
+locations:
+  loc:
+    population: 100000
+
+series:
+  - name: rainfall
+    generate: seasonal_spike
+
+  # `counts:` is what makes this a disease signal rather than a float column.
+  - name: disease_cases
+    counts: {}
+    depends_on:
+      - series: rainfall
+        lag: 2

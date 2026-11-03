@@ -210,6 +210,11 @@ Twenty datasets in `out/study/seed_42/`, `seed_43/`, …, each independently
 reproducible. Run a forecaster over all of them and report the spread, so a
 result is not a fluke of one draw.
 
+Each run directory holds its own `metadata.json`, and a `sweep.json` beside
+them maps every directory to the values that made it — needed because a
+directory called `weight_0p5` cannot be parsed back into `0.5` reliably, and
+evaluation tools identify rows by filename.
+
 The same trick answers a different question when the swept value is a planted
 relationship rather than the seed:
 
@@ -223,6 +228,36 @@ depends_on:
 Fifteen datasets covering three lags at five effect strengths — enough to ask
 at what point a model stops recovering what you planted. See
 [REFERENCE.md](REFERENCE.md#sweeps-one-scenario-many-datasets) for the rules.
+
+### Skip the typing: presets
+
+Everything in this tutorial was written by hand so you could see what each
+field does. Once you know, `preset:` gives you a whole scenario and your file
+says only the difference:
+
+```yaml
+preset: evaluation
+n_total: 240
+```
+
+That is two climate drivers, two locations, a counted disease with planted
+lags, five expanding folds and a storm in every fold's test half — over 240
+periods instead of the preset's 120. `dsl list` names the three that ship
+(`minimal`, `climate`, `evaluation`).
+
+Overriding is per field, not per block, so this changes one parameter and
+keeps the rest of the preset's rainfall intact:
+
+```yaml
+preset: climate
+series:
+  - name: rainfall
+    params: { spike_height: 40 }
+```
+
+A preset is an ordinary scenario file, so `dsl run` one directly to see what it
+produces. See [REFERENCE.md](REFERENCE.md#presets-start-from-a-scenario-write-only-the-difference)
+for the merge rules.
 
 The four bundled [examples](../examples/) each show one thing in full:
 [`minimal`](../examples/minimal.yaml),
