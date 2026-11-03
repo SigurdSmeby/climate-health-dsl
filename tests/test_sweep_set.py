@@ -34,6 +34,15 @@ def _labels(values) -> list[str]:
     return [f"seed_{v}" for v in values]
 
 
+def _run_dirs(out) -> list[str]:
+    """The run directories in ``out``, sorted.
+
+    Not everything in a sweep's folder is a run: ``sweep.json`` sits beside
+    them, so these tests compare the directories rather than the listing.
+    """
+    return sorted(p.name for p in out.iterdir() if p.is_dir())
+
+
 def test_each_combination_writes_a_full_dataset(tmp_path):
     out = tmp_path / "out"
     assert main(["run", _sweep_scenario(tmp_path), "-o", str(out)]) == 0
@@ -51,7 +60,7 @@ def test_a_reused_folder_clears_a_previous_single_run(tmp_path):
 
     assert main(["run", _sweep_scenario(tmp_path), "-o", str(out)]) == 0
     assert not (out / "simulated_data.csv").exists()
-    assert sorted(p.name for p in out.iterdir()) == _labels((42, 43))
+    assert _run_dirs(out) == _labels((42, 43))
 
 
 def test_a_folder_holding_other_files_is_refused_not_cleaned(tmp_path, capsys):
@@ -101,13 +110,31 @@ def test_output_of_a_previous_run_is_not_foreign(tmp_path):
     for name in ("simulated_data.csv", "metadata.json", "plot.html", "plot.png"):
         (out / name).write_text("x")
     (out / "folds").mkdir()
-    # A run directory from a previous, differently-shaped sweep: named
-    # nothing in particular, recognised by the metadata.json in it.
+    # A run directory left by a previous, differently-shaped sweep. It is
+    # cleanable only because sweep.json says this folder is a sweep's own;
+    # the same directory sitting in a folder without one belongs to another
+    # scenario's run and is protected.
+    (out / "sweep.json").write_text("{}")
     stale = out / "seed_99"
     stale.mkdir()
     (stale / "metadata.json").write_text("{}")
 
     assert _foreign_entries(out, keep={"seed_42"}) == []
+
+
+def test_another_scenarios_run_is_foreign_without_a_sweep_index(tmp_path):
+    """The same leftover directory, in a folder no sweep built: this is
+    `out/`, where `dsl run` auto-names every run, so those directories are
+    other scenarios' datasets rather than a set's own leftovers."""
+    from dsl._run import _foreign_entries
+
+    out = tmp_path / "out"
+    out.mkdir()
+    other = out / "important_study"
+    other.mkdir()
+    (other / "metadata.json").write_text("{}")
+
+    assert _foreign_entries(out, keep={"seed_42"}) == ["important_study"]
 
 
 def test_stale_run_folders_are_cleared(tmp_path):
@@ -120,7 +147,7 @@ def test_stale_run_folders_are_cleared(tmp_path):
     assert main([
         "run", _sweep_scenario(tmp_path, (42, 43), "narrow.yaml"), "-o", str(out),
     ]) == 0
-    assert sorted(p.name for p in out.iterdir()) == _labels((42, 43))
+    assert _run_dirs(out) == _labels((42, 43))
 
 
 def test_a_failed_run_keeps_the_previous_set(tmp_path, monkeypatch):
@@ -130,7 +157,7 @@ def test_a_failed_run_keeps_the_previous_set(tmp_path, monkeypatch):
 
     out = tmp_path / "out"
     assert main(["run", _sweep_scenario(tmp_path, (42, 43, 44)), "-o", str(out)]) == 0
-    before = sorted(p.name for p in out.iterdir())
+    before = _run_dirs(out)
     assert before == _labels((42, 43, 44))
 
     monkeypatch.setattr(run_module, "_run_once", lambda *a, **k: 1)
@@ -139,7 +166,7 @@ def test_a_failed_run_keeps_the_previous_set(tmp_path, monkeypatch):
         watch=False, plot_ticks=None,
     )
     assert run_module._run_sweep(args, out) == 1
-    assert sorted(p.name for p in out.iterdir()) == before
+    assert _run_dirs(out) == before
 
 
 def test_a_failed_run_never_mixes_two_sets(tmp_path):
@@ -153,7 +180,8 @@ def test_a_failed_run_never_mixes_two_sets(tmp_path):
     wide = _sweep_scenario(tmp_path, range(42, 47))
     assert main(["run", wide, "-o", str(out)]) == 0
     before = {
-        d.name: (d / "simulated_data.csv").read_bytes() for d in sorted(out.iterdir())
+        name: (out / name / "simulated_data.csv").read_bytes()
+        for name in _run_dirs(out)
     }
     assert len(before) == 5
 
@@ -186,7 +214,8 @@ def test_a_failed_run_never_mixes_two_sets(tmp_path):
         monkey.undo()
 
     after = {
-        d.name: (d / "simulated_data.csv").read_bytes() for d in sorted(out.iterdir())
+        name: (out / name / "simulated_data.csv").read_bytes()
+        for name in _run_dirs(out)
     }
     assert after == before, (
         "a failed run left its own output among the previous set's — one "
@@ -199,7 +228,7 @@ def test_a_successful_run_still_clears_a_stale_set(tmp_path):
     out = tmp_path / "out"
     main(["run", _sweep_scenario(tmp_path, (42, 43, 44)), "-o", str(out)])
     main(["run", _sweep_scenario(tmp_path, (42, 43), "narrow.yaml"), "-o", str(out)])
-    assert sorted(p.name for p in out.iterdir()) == _labels((42, 43))
+    assert _run_dirs(out) == _labels((42, 43))
 
 
 def test_a_reused_run_folder_does_not_keep_its_old_plot(tmp_path):
@@ -225,7 +254,7 @@ def test_a_leftover_staging_folder_does_not_block_the_next_run(tmp_path):
     (out / ".partial" / "seed_42").mkdir(parents=True)
 
     assert main(["run", scenario, "-o", str(out)]) == 0
-    assert sorted(p.name for p in out.iterdir()) == _labels((42, 43))
+    assert _run_dirs(out) == _labels((42, 43))
 
 
 def test_the_messages_name_where_the_files_actually_are(tmp_path, capsys):
@@ -252,10 +281,10 @@ def test_the_new_set_lands_before_the_old_one_is_removed(tmp_path):
         "run", _sweep_scenario(tmp_path, (42, 43), "narrow.yaml"), "-o", str(out),
     ]) == 0
 
-    assert sorted(p.name for p in out.iterdir()) == _labels((42, 43))
-    for run_dir in out.iterdir():
-        assert (run_dir / "simulated_data.csv").is_file()
-        assert (run_dir / "metadata.json").is_file()
+    assert _run_dirs(out) == _labels((42, 43))
+    for name in _run_dirs(out):
+        assert (out / name / "simulated_data.csv").is_file()
+        assert (out / name / "metadata.json").is_file()
 
 
 def test_scenario_warnings_print_once_not_once_per_run(tmp_path, capsys):
@@ -301,3 +330,77 @@ def test_each_run_is_reproducible_from_its_own_metadata(tmp_path):
     orig = pd.read_csv(out / "seed_43" / "simulated_data.csv")
     again = pd.read_csv(repro / "simulated_data.csv")
     assert orig.equals(again)
+
+
+# --- sweep.json as the marker of a folder this tool built as a set. ---------
+#
+# Its CONTENTS are a later change: `chap export-metrics` identifies rows by
+# filename, so something has to map a directory name back to the values that
+# made it (parsing the name cannot, since a float's '.' and a negative's '-'
+# are slugged away). Here it only has to exist, because that is what tells
+# the cleanup which folders are a sweep's own.
+
+
+def test_a_sweep_writes_an_index_file(tmp_path):
+    import json
+
+    out = tmp_path / "out"
+    assert main(["run", _sweep_scenario(tmp_path), "-o", str(out)]) == 0
+    index = out / "sweep.json"
+    assert index.is_file()
+    # A placeholder, but valid JSON — so filling it in later adds keys
+    # rather than also changing the format.
+    assert json.loads(index.read_text()) == {}
+
+
+def test_a_plain_run_writes_no_index(tmp_path):
+    out = tmp_path / "out"
+    assert main(["run", "examples/minimal.yaml", "-o", str(out)]) == 0
+    assert not (out / "sweep.json").exists()
+
+
+def test_a_sweep_does_not_delete_another_scenarios_run(tmp_path, capsys):
+    """`out/` is where `dsl run` auto-names every run, so it is exactly the
+    folder most likely to hold datasets a sweep must not touch. Treating
+    any metadata.json-bearing directory as this tool's own to delete lost
+    a complete unrelated dataset, silently."""
+    out = tmp_path / "out"
+    assert main(["run", "examples/minimal.yaml", "-o", str(out / "important")]) == 0
+    before = (out / "important" / "simulated_data.csv").read_bytes()
+
+    assert main(["run", _sweep_scenario(tmp_path), "-o", str(out)]) == 1
+
+    assert (out / "important" / "simulated_data.csv").read_bytes() == before
+    err = capsys.readouterr().err
+    assert "important" in err
+
+
+def test_a_sweep_replaces_a_plain_run_in_the_same_folder(tmp_path):
+    """A plain run's own files (simulated_data.csv, metadata.json, folds/)
+    are this tool's output by name, so pointing -o at a folder you already
+    ran into keeps working — the single dataset is replaced by the set.
+
+    What a sweep must not touch is a *sibling run directory*; that is
+    `test_a_sweep_does_not_delete_another_scenarios_run`.
+    """
+    out = tmp_path / "out"
+    assert main(["run", "examples/minimal.yaml", "-o", str(out)]) == 0
+    assert (out / "simulated_data.csv").is_file()
+
+    assert main(["run", _sweep_scenario(tmp_path), "-o", str(out)]) == 0
+    assert not (out / "simulated_data.csv").exists()
+    assert _run_dirs(out) == _labels((42, 43))
+
+
+def test_re_sweeping_a_sweeps_own_folder_clears_its_leftovers(tmp_path):
+    """A folder holding sweep.json is one this tool built as a set, so a
+    narrower sweep into it may clear what it no longer covers."""
+    out = tmp_path / "out"
+    assert main(["run", _sweep_scenario(tmp_path, (42, 43, 44)), "-o", str(out)]) == 0
+    assert (out / "sweep.json").is_file()
+
+    assert main([
+        "run", _sweep_scenario(tmp_path, (42, 43), "narrow.yaml"), "-o", str(out),
+    ]) == 0
+    assert sorted(p.name for p in out.iterdir() if p.is_dir()) == _labels((42, 43))
+    assert (out / "sweep.json").is_file()

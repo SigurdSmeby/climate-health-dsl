@@ -186,9 +186,12 @@ _RUN_OUTPUT_NAMES = frozenset(
     {"simulated_data.csv", "metadata.json", "folds"}
 ) | _PLOT_NAMES
 
-# Written at the root of a multi-run set rather than inside a run, so the
-# foreign check must recognise them as this tool's own output.
-_SET_INDEX_NAMES = frozenset({"sweep.json"})
+# Written at the root of a sweep's output folder, which is what marks that
+# folder as one this tool built as a set — see _foreign_entries. Its
+# contents are a later change: something has to map a run directory back
+# to the values that made it, since the name cannot be parsed (a float's
+# '.' and a negative's '-' are slugged away).
+_SWEEP_INDEX_NAME = "sweep.json"
 
 
 def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
@@ -199,9 +202,15 @@ def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
     working directory is the case this guards: the scenario file itself, a
     thesis, a src/ tree.
 
-    A leftover run directory from a previous set counts as output: it holds
-    a ``metadata.json``, which only this tool writes. Run directories are
-    named after the values they swept, so there is no name shape to go on.
+    A run directory this set is not about to write is foreign even though
+    it holds a ``metadata.json`` — unless ``out_dir`` holds a sweep index,
+    which only a sweep writes and which therefore identifies the folder as
+    one this tool built as a set. Without that distinction, sweeping into
+    ``out/`` — where ``dsl run`` auto-names every run — deleted every other
+    scenario's dataset, because each of those also holds a metadata.json.
+
+    So a previous sweep's leftovers in its own folder are cleanable, while
+    unrelated runs sitting beside each other are not.
 
     Args:
         out_dir: The directory about to be cleaned.
@@ -211,14 +220,18 @@ def _foreign_entries(out_dir: Path, keep: set[str]) -> list[str]:
         Up to five foreign names (with a trailing "…" entry if there are
         more), or an empty list when the directory is safe to clean.
     """
+    # A sweep's own folder: its leftover run directories may be cleared.
+    # Any other folder's are someone else's results.
+    is_sweep_folder = (out_dir / _SWEEP_INDEX_NAME).is_file()
+
     foreign = sorted(
         entry.name
         for entry in out_dir.iterdir()
         if not (entry.name in keep and entry.is_dir())
         and entry.name not in _RUN_OUTPUT_NAMES
-        and entry.name not in _SET_INDEX_NAMES
+        and entry.name != _SWEEP_INDEX_NAME
         and entry.name != _STAGING_NAME
-        and not (entry / "metadata.json").is_file()
+        and not (is_sweep_folder and (entry / "metadata.json").is_file())
     )
     return foreign[:5] + ["…"] if len(foreign) > 5 else foreign
 
@@ -241,8 +254,8 @@ def _run_set(
     Returns:
         Exit code: 0 if every run succeeds, 1 on the first failure.
     """
-    # Checked before anything is written: refusing a folder the tool does
-    # not own has to happen while it is still untouched.
+    # Checked before anything is written — and before announcing the work,
+    # so a refusal is not printed under a line saying it had begun.
     keep = {label for label, _ in runs}
     if out_dir.is_dir():
         foreign = _foreign_entries(out_dir, keep)
@@ -262,6 +275,8 @@ def _run_set(
     # a failed run's first new directory sitting among an older set's
     # remaining ones, which still looks like one valid set from the
     # outside. Neither is a thing this tool should hand to someone.
+    if len(runs) > 1:
+        print(f"Sweeping {len(runs)} runs into {out_dir}/")
     staging = out_dir / _STAGING_NAME
     if staging.exists():
         shutil.rmtree(staging)
@@ -296,8 +311,15 @@ def _run_set(
                 shutil.rmtree(landing)
             fresh.rename(landing)
         written = {run_dir.name for run_dir in staged}
+        # Before the stale sweep, so the folder is already marked as a
+        # set's own if anything below fails partway.
+        (out_dir / _SWEEP_INDEX_NAME).write_text("{}\n")
         for stale in out_dir.iterdir():
-            if stale == staging or stale.name in written:
+            if (
+                stale == staging
+                or stale.name in written
+                or stale.name == _SWEEP_INDEX_NAME
+            ):
                 continue
             if stale.is_dir():
                 shutil.rmtree(stale)
@@ -573,5 +595,4 @@ def _run_sweep(args: argparse.Namespace, out_dir: Path) -> int:
         msg = _friendly_error(exc) if isinstance(exc, ValidationError) else exc
         print(f"error: {msg}", file=sys.stderr)
         return 1
-    print(f"Sweeping {len(runs)} runs into {out_dir}/")
     return _run_set(args, out_dir, runs)

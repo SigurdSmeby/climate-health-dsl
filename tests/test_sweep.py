@@ -223,7 +223,9 @@ def test_sweeping_the_seed_writes_one_run_per_seed(tmp_path):
     }
     out = tmp_path / "out"
     assert main(["run", _write(tmp_path, scenario), "-o", str(out)]) == 0
-    assert sorted(p.name for p in out.iterdir()) == ["seed_42", "seed_43", "seed_44"]
+    assert sorted(
+        p.name for p in out.iterdir() if p.is_dir()
+    ) == ["seed_42", "seed_43", "seed_44"]
     # Different seeds, different draws — what --replicates was for.
     data = [
         (out / f"seed_{s}" / "simulated_data.csv").read_text() for s in (42, 43, 44)
@@ -249,7 +251,9 @@ def test_a_stale_run_directory_is_cleared_by_the_next_sweep(tmp_path):
          "depends_on": [{"series": "rainfall", "lag": {SWEEP_KEY: [1]}}]},
     ]}
     main(["run", _write(tmp_path, narrower), "-o", str(out)])
-    assert sorted(p.name for p in out.iterdir()) == ["spike_height_10__lag_1"]
+    assert sorted(
+        p.name for p in out.iterdir() if p.is_dir()
+    ) == ["spike_height_10__lag_1"]
 
 
 def test_a_sweep_refuses_a_directory_holding_foreign_files(tmp_path):
