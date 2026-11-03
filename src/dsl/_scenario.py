@@ -90,6 +90,25 @@ def _resolve_from_csv_paths(scenario: dict, base_dir: Path) -> None:
                     fix(lparams)
 
 
+def _parse_dict(scenario: dict) -> ScenarioConfig:
+    """Validate an already-loaded scenario dict.
+
+    A swept scenario is loaded once and then parsed per combination, after
+    the sweep values have been substituted into the dict.
+
+    Args:
+        scenario: A scenario dict, with any sweeps already expanded away.
+
+    Returns:
+        A validated ScenarioConfig.
+
+    Errors Caught (raised to caller):
+        ValueError: If the scenario is invalid in a way pydantic doesn't catch.
+        ValidationError: If pydantic validation fails.
+    """
+    return parse_config(scenario)
+
+
 def _load_and_parse(scenario: str, seed_override: int | None = None) -> ScenarioConfig:
     """Load + validate a scenario file. Raises on any hard error.
 
