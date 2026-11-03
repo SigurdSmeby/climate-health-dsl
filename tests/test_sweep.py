@@ -16,31 +16,31 @@ from dsl.cli import main
 
 def test_no_sweep_is_one_unlabelled_run():
     scenario = {"n_total": 36, "seed": 42}
-    assert expand_sweeps(scenario) == [("", scenario)]
+    assert expand_sweeps(scenario) == [("", scenario, {})]
     assert has_sweep(scenario) is False
 
 
 def test_list_form_expands_to_one_run_per_value():
     runs = expand_sweeps({"n_total": {SWEEP_KEY: [10, 20, 30]}})
-    assert [label for label, _ in runs] == [
+    assert [label for label, _, _ in runs] == [
         "n_total_10", "n_total_20", "n_total_30",
     ]
-    assert [cfg["n_total"] for _, cfg in runs] == [10, 20, 30]
+    assert [cfg["n_total"] for _, cfg, _ in runs] == [10, 20, 30]
 
 
 def test_range_form_is_inclusive_of_the_end():
     runs = expand_sweeps({"n_total": {SWEEP_KEY: {"from": 10, "to": 50, "step": 10}}})
-    assert [cfg["n_total"] for _, cfg in runs] == [10, 20, 30, 40, 50]
+    assert [cfg["n_total"] for _, cfg, _ in runs] == [10, 20, 30, 40, 50]
 
 
 def test_range_form_stops_before_overshooting_the_end():
     runs = expand_sweeps({"n_total": {SWEEP_KEY: {"from": 1, "to": 10, "step": 4}}})
-    assert [cfg["n_total"] for _, cfg in runs] == [1, 5, 9]
+    assert [cfg["n_total"] for _, cfg, _ in runs] == [1, 5, 9]
 
 
 def test_range_form_step_defaults_to_one():
     runs = expand_sweeps({"n_total": {SWEEP_KEY: {"from": 3, "to": 6}}})
-    assert [cfg["n_total"] for _, cfg in runs] == [3, 4, 5, 6]
+    assert [cfg["n_total"] for _, cfg, _ in runs] == [3, 4, 5, 6]
 
 
 def test_two_sweeps_give_the_cartesian_product_in_document_order():
@@ -52,7 +52,7 @@ def test_two_sweeps_give_the_cartesian_product_in_document_order():
             ]},
         ],
     })
-    assert [label for label, _ in runs] == [
+    assert [label for label, _, _ in runs] == [
         "spike_height_10__lag_1",
         "spike_height_10__lag_2",
         "spike_height_30__lag_1",
@@ -71,8 +71,8 @@ def test_expansion_does_not_mutate_the_input():
 
 def test_sweeping_the_seed_replaces_replicates():
     runs = expand_sweeps({"seed": {SWEEP_KEY: [42, 43, 44]}})
-    assert [label for label, _ in runs] == ["seed_42", "seed_43", "seed_44"]
-    assert [cfg["seed"] for _, cfg in runs] == [42, 43, 44]
+    assert [label for label, _, _ in runs] == ["seed_42", "seed_43", "seed_44"]
+    assert [cfg["seed"] for _, cfg, _ in runs] == [42, 43, 44]
 
 
 def test_two_sweeps_on_the_same_field_name_are_qualified_by_their_parent():
@@ -84,7 +84,7 @@ def test_two_sweeps_on_the_same_field_name_are_qualified_by_their_parent():
             ]},
         ],
     })
-    assert [label for label, _ in runs] == [
+    assert [label for label, _, _ in runs] == [
         "rainfall_lag_1__temperature_lag_5",
         "rainfall_lag_2__temperature_lag_5",
     ]
@@ -96,8 +96,8 @@ def test_float_values_keep_their_dot_out_of_the_label():
     runs = expand_sweeps({"series": [
         {"name": "x", "params": {"weight": {SWEEP_KEY: [0.5, -1.5]}}},
     ]})
-    assert [label for label, _ in runs] == ["weight_0p5", "weight_m1p5"]
-    assert [cfg["series"][0]["params"]["weight"] for _, cfg in runs] == [0.5, -1.5]
+    assert [label for label, _, _ in runs] == ["weight_0p5", "weight_m1p5"]
+    assert [cfg["series"][0]["params"]["weight"] for _, cfg, _ in runs] == [0.5, -1.5]
 
 
 @pytest.mark.parametrize("bad,message", [
@@ -118,7 +118,7 @@ def test_a_sweep_alongside_other_keys_is_not_a_sweep():
     # {sweep: [...], other: 1} is a generator's param dict that happens to
     # hold a key called sweep, not a sweep spec. Left alone for the schema.
     scenario = {"params": {SWEEP_KEY: [1, 2], "other": 1}}
-    assert expand_sweeps(scenario) == [("", scenario)]
+    assert expand_sweeps(scenario) == [("", scenario, {})]
 
 
 def test_has_sweep_finds_a_nested_one():
@@ -271,22 +271,22 @@ def test_a_float_range_reaches_its_endpoint():
     # (0.3 - 0) / 0.1 is 2.9999… in binary floating point, so truncating
     # dropped the endpoint and a weight sweep silently lost its last value.
     runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0, "to": 0.3, "step": 0.1}}})
-    assert [round(cfg["w"], 10) for _, cfg in runs] == [0.0, 0.1, 0.2, 0.3]
+    assert [round(cfg["w"], 10) for _, cfg, _ in runs] == [0.0, 0.1, 0.2, 0.3]
 
 
 def test_a_float_range_is_inclusive_like_an_integer_one():
     runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0.5, "to": 2.0, "step": 0.5}}})
-    assert [round(cfg["w"], 10) for _, cfg in runs] == [0.5, 1.0, 1.5, 2.0]
+    assert [round(cfg["w"], 10) for _, cfg, _ in runs] == [0.5, 1.0, 1.5, 2.0]
 
 
 def test_a_float_range_still_stops_before_overshooting():
     runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0, "to": 1, "step": 0.3}}})
-    assert [round(cfg["w"], 10) for _, cfg in runs] == [0.0, 0.3, 0.6, 0.9]
+    assert [round(cfg["w"], 10) for _, cfg, _ in runs] == [0.0, 0.3, 0.6, 0.9]
 
 
 def test_a_negative_step_counts_down_inclusively():
     runs = expand_sweeps({"n": {SWEEP_KEY: {"from": 3, "to": 1, "step": -1}}})
-    assert [cfg["n"] for _, cfg in runs] == [3, 2, 1]
+    assert [cfg["n"] for _, cfg, _ in runs] == [3, 2, 1]
 
 
 @pytest.mark.parametrize("value", ["monthly", None, True, [1], {"a": 1}],
@@ -323,7 +323,7 @@ def test_every_combination_gets_its_own_directory_name():
             {"name": "b", "params": {"q": {SWEEP_KEY: [0.5, 1.5]}}},
         ],
     })
-    labels = [label for label, _ in runs]
+    labels = [label for label, _, _ in runs]
     assert len(set(labels)) == len(labels) == 4
 
 
@@ -331,5 +331,128 @@ def test_a_sweep_in_a_bare_list_element_is_expanded():
     # Found nothing here before, so the run silently became a single
     # unswept one — a no-op is the worst way to decline a sweep.
     runs = expand_sweeps({"xs": [{SWEEP_KEY: [1, 2]}]})
-    assert [cfg["xs"][0] for _, cfg in runs] == [1, 2]
-    assert [label for label, _ in runs] == ["xs_1", "xs_2"]
+    assert [cfg["xs"][0] for _, cfg, _ in runs] == [1, 2]
+    assert [label for label, _, _ in runs] == ["xs_1", "xs_2"]
+
+
+# --- What each run was, as data rather than as a directory name. ------------
+
+
+def test_expansion_reports_the_values_behind_each_label():
+    runs = expand_sweeps({
+        "series": [
+            {"name": "rainfall", "params": {"spike_height": {SWEEP_KEY: [10, 30]}}},
+            {"name": "disease_cases", "depends_on": [
+                {"series": "rainfall", "lag": {SWEEP_KEY: [1, 2]}},
+            ]},
+        ],
+    })
+    assert [(label, params) for label, _, params in runs] == [
+        ("spike_height_10__lag_1", {"spike_height": 10, "lag": 1}),
+        ("spike_height_10__lag_2", {"spike_height": 10, "lag": 2}),
+        ("spike_height_30__lag_1", {"spike_height": 30, "lag": 1}),
+        ("spike_height_30__lag_2", {"spike_height": 30, "lag": 2}),
+    ]
+
+
+def test_an_unswept_scenario_reports_no_values():
+    scenario = {"n_total": 36}
+    assert expand_sweeps(scenario) == [("", scenario, {})]
+
+
+def test_reported_values_use_the_qualified_name_when_one_repeats():
+    runs = expand_sweeps({
+        "series": [
+            {"name": "disease_cases", "depends_on": [
+                {"series": "rainfall", "lag": {SWEEP_KEY: [1]}},
+                {"series": "temperature", "lag": {SWEEP_KEY: [5]}},
+            ]},
+        ],
+    })
+    _, _, params = runs[0]
+    assert params == {"rainfall_lag": 1, "temperature_lag": 5}
+
+
+def test_reported_values_keep_their_real_type_not_the_slug():
+    runs = expand_sweeps({"w": {SWEEP_KEY: [0.5, -1.5]}})
+    assert [params["w"] for _, _, params in runs] == [0.5, -1.5]
+    assert [label for label, _, _ in runs] == ["w_0p5", "w_m1p5"]
+
+
+# --- The index has to describe every swept value, exactly. ------------------
+
+
+def test_two_unqualifiable_sweeps_on_one_field_are_rejected():
+    """The label shows both values (xs_1__xs_7) but a dict keyed by field
+    name can hold only one, so the index silently described a run by the
+    wrong parameters — a join built on it would be wrong rather than
+    broken. Neither sweep has a name/series sibling to qualify it, so
+    there is no name to tell them apart by."""
+    with pytest.raises(ValueError, match="cannot be told apart"):
+        expand_sweeps({"xs": [{SWEEP_KEY: [1, 2]}, {SWEEP_KEY: [7, 8]}]})
+
+
+def test_two_sweeps_on_one_field_are_fine_when_their_entries_are_named():
+    runs = expand_sweeps({
+        "series": [
+            {"name": "disease_cases", "depends_on": [
+                {"series": "rainfall", "lag": {SWEEP_KEY: [1, 2]}},
+                {"series": "temperature", "lag": {SWEEP_KEY: [5]}},
+            ]},
+        ],
+    })
+    assert [params for _, _, params in runs] == [
+        {"rainfall_lag": 1, "temperature_lag": 5},
+        {"rainfall_lag": 2, "temperature_lag": 5},
+    ]
+
+
+def test_every_swept_value_appears_in_the_report():
+    """One entry per sweep, always — the count is what makes the index
+    trustworthy."""
+    runs = expand_sweeps({
+        "a": {SWEEP_KEY: [1, 2]},
+        "b": {SWEEP_KEY: [3]},
+        "c": {SWEEP_KEY: [4, 5]},
+    })
+    for label, _, params in runs:
+        assert len(params) == 3, label
+        assert label.count("__") == 2
+
+
+@pytest.mark.parametrize("spec,expected", [
+    ({"from": 0, "to": 0.3, "step": 0.1}, [0.0, 0.1, 0.2, 0.3]),
+    ({"from": 0.1, "to": 0.7, "step": 0.2}, [0.1, 0.3, 0.5, 0.7]),
+    ({"from": 0.05, "to": 0.2, "step": 0.05}, [0.05, 0.1, 0.15, 0.2]),
+    ({"from": 1, "to": 3, "step": 1}, [1, 2, 3]),
+], ids=["tenths", "offset-tenths", "hundredths", "ints-untouched"])
+def test_a_float_range_gives_clean_values_not_binary_dust(spec, expected):
+    """start + i*step is exact enough to compare against 'to' but stored
+    0.30000000000000004, which then showed up in a directory name and in
+    sweep.json."""
+    runs = expand_sweeps({"w": {SWEEP_KEY: spec}})
+    assert [params["w"] for _, _, params in runs] == expected
+
+
+def test_a_drifting_float_does_not_reach_the_directory_name():
+    runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0, "to": 0.3, "step": 0.1}}})
+    assert [label for label, _, _ in runs] == ["w_0p0", "w_0p1", "w_0p2", "w_0p3"]
+
+
+def test_an_int_range_keeps_integer_values():
+    runs = expand_sweeps({"n": {SWEEP_KEY: {"from": 1, "to": 3}}})
+    assert [params["n"] for _, _, params in runs] == [1, 2, 3]
+    assert all(isinstance(params["n"], int) for _, _, params in runs)
+
+
+def test_a_listed_float_is_left_exactly_as_written():
+    # A value the author typed is theirs; only generated ones are rounded.
+    runs = expand_sweeps({"w": {SWEEP_KEY: [0.1234567890123, 2.5]}})
+    assert [params["w"] for _, _, params in runs] == [0.1234567890123, 2.5]
+
+
+def test_a_range_written_in_exponent_form_is_left_unrounded():
+    # repr(1e-05) has no literal decimals to count, so guessing a precision
+    # would be worse than leaving these alone.
+    runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0.0, "to": 2e-05, "step": 1e-05}}})
+    assert [params["w"] for _, _, params in runs] == [0.0, 1e-05, 2e-05]

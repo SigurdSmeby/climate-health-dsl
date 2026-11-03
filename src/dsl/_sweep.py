@@ -124,7 +124,29 @@ def _values(spec: Any, where: str) -> list:
     # truncating alone dropped the endpoint. Values are built by
     # multiplying rather than accumulating, so a float step does not drift.
     count = int((stop - start) / step + _TOLERANCE) + 1
-    return [start + i * step for i in range(count)]
+    values = [start + i * step for i in range(count)]
+
+    # 0 + 3 * 0.1 is 0.30000000000000004, which is exact enough to compare
+    # against 'to' but became a directory called w_0p30000000000000004 and
+    # an index entry to match. A generated value is rounded to the decimals
+    # its own inputs carry; a value the author typed is never touched.
+    decimals = max(_decimals(start), _decimals(step))
+    return [round(value, decimals) for value in values] if decimals else values
+
+
+def _decimals(value: float) -> int:
+    """How many decimal places ``value`` is written with.
+
+    Read from its shortest exact repr rather than computed, so 0.1 gives 1
+    and 0.05 gives 2 without inheriting the binary expansion.
+    """
+    text = repr(float(value))
+    if "e" in text or "E" in text:
+        # An exponent form (1e-05) has no literal decimals to count; leave
+        # such a range unrounded rather than guessing a precision.
+        return 0
+    _, _, fraction = text.partition(".")
+    return 0 if fraction == "0" else len(fraction)
 
 
 def _slug(value: Any) -> str:
@@ -206,12 +228,32 @@ def _label_parts(sweeps: list[tuple[tuple, str, list, str]]) -> list[str]:
     Two sweeps on the same field name (``lag`` under two different parents)
     would give one directory two meanings, so those — and only those — are
     prefixed with what their enclosing entry calls itself.
+
+    Errors Caught (raised to caller):
+        ValueError: If two sweeps end up with the same fragment, which no
+            owner could tell apart.
     """
     names = [name for _, name, _, _ in sweeps]
-    return [
+    parts = [
         f"{owner}_{name}" if names.count(name) > 1 and owner else name
         for _, name, _, owner in sweeps
     ]
+
+    # Each run's values are reported keyed by these fragments, so two
+    # sweeps sharing one would put a single entry in sweep.json where the
+    # directory name shows two values — describing the run by the wrong
+    # parameters instead of failing. Refused here, where the field can be
+    # named, rather than silently dropped.
+    duplicate = next(
+        (part for part in parts if parts.count(part) > 1), None
+    )
+    if duplicate is not None:
+        raise ValueError(
+            f"two sweeps on '{duplicate}' cannot be told apart: give their "
+            f"entries a 'name' (or a 'series'), or sweep one of them at a "
+            f"time."
+        )
+    return parts
 
 
 def has_sweep(scenario: dict) -> bool:
@@ -219,23 +261,28 @@ def has_sweep(scenario: dict) -> bool:
     return bool(_find(scenario, ()))
 
 
-def expand_sweeps(scenario: dict) -> list[tuple[str, dict]]:
-    """One (label, scenario) pair per combination of swept values.
+def expand_sweeps(scenario: dict) -> list[tuple[str, dict, dict]]:
+    """One (label, scenario, values) triple per combination of swept values.
+
+    ``values`` maps each swept field to what this combination set it to —
+    the real number, not the slug in the label — so a consumer can join a
+    run directory back to the parameters that produced it without parsing
+    its name.
 
     Args:
         scenario: The loaded scenario dict. Not mutated.
 
     Returns:
-        ``[("", scenario)]`` when nothing is swept — a plain run, so the
-        caller needs no special case. Otherwise one pair per combination in
-        document order, labelled ``spike_height_10__lag_1``.
+        ``[("", scenario, {})]`` when nothing is swept — a plain run, so the
+        caller needs no special case. Otherwise one triple per combination
+        in document order, labelled ``spike_height_10__lag_1``.
 
     Errors Caught (raised to caller):
         ValueError: If a sweep spec is malformed (see ``_values``).
     """
     sweeps = _find(scenario, ())
     if not sweeps:
-        return [("", scenario)]
+        return [("", scenario, {})]
 
     parts = _label_parts(sweeps)
     runs = []
@@ -246,7 +293,7 @@ def expand_sweeps(scenario: dict) -> list[tuple[str, dict]]:
         label = "__".join(
             f"{part}_{_slug(value)}" for part, value in zip(parts, combination)
         )
-        runs.append((label, variant))
+        runs.append((label, variant, dict(zip(parts, combination))))
     return runs
 
 
