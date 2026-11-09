@@ -1,0 +1,32 @@
+# An optimum response: transmission is best around 25 C and worse when it is
+# too cold or too hot.
+_expect:
+  exit_code: 0
+  files_exist:
+  - simulated_data.csv
+  - metadata.json
+  reproduce: true
+period: monthly
+n_total: 60
+seed: 0
+series:
+- name: mean_temperature
+  generate: seasonal_smooth
+  unit: "°C"
+  params:
+    mean: 25.0
+    amplitude: 8.0
+- name: disease_cases
+  depends_on:
+  - series: mean_temperature
+    lag: 1
+    weight: 1.0
+    transforms:
+    - name: threshold
+      params:
+        mode: peak
+        threshold: 25.0
+  counts: {}
+locations:
+  loc:
+    population: 300000

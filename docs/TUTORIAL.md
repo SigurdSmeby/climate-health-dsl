@@ -180,9 +180,22 @@ the `#` from the `transforms:` line under `depends_on`:
 ```
 
 `hinge` passes only what exceeds 20 mm, so the disease reacts to heavy rain
-alone and light months contribute nothing. `quadratic` instead rises either
-side of a value — a temperature optimum. The
-[reference](REFERENCE.md#transforms) lists every transform.
+alone and light months contribute nothing.
+
+Other shapes are available for the same driver. For a temperature optimum —
+transmission best around 25 °C and worse when it is too cold *or* too hot —
+use `peak`:
+
+```yaml
+        transforms: [{ name: threshold, params: { mode: peak, threshold: 25 } }]
+```
+
+`quadratic` is that curve upside down: it puts the *minimum* at the threshold,
+so the extremes contribute most. That is a real shape too ("extremes are bad"),
+just not the one temperature usually has. `log` gives diminishing returns — the
+first 100 mm of rain matters more than the second — and `power` sweeps the
+curve's shape with one exponent. The [reference](REFERENCE.md#transforms) lists
+every transform.
 
 **The threshold has to sit inside the driver's own range.** Set it below the
 series minimum and `hinge` becomes a constant subtraction, which standardizing
