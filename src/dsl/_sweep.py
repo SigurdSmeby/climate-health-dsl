@@ -19,6 +19,7 @@ A ``sweep:`` in the YAML is the trigger; there is no flag.
 """
 import copy
 import itertools
+import math
 from typing import Any
 
 SWEEP_KEY = "sweep"
@@ -47,8 +48,22 @@ def _number(value: Any, where: str, what: str) -> int | float:
         ``value`` unchanged, once it is known to be a number.
 
     Errors Caught (raised to caller):
-        ValueError: If value is not an int or float.
+        ValueError: If value is not an int or float, or is infinite/NaN.
     """
+    # Infinity and NaN are the only bad numbers that reach arithmetic:
+    # Python counts them as numbers, so the isinstance check below passes
+    # them, and `to: .inf` then surfaced as a raw "OverflowError: cannot
+    # convert float infinity to integer" from the count of values rather
+    # than as a message naming the field.
+    if (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and not math.isfinite(value)
+    ):
+        raise ValueError(
+            f"sweep on '{where}' needs {what} to be a finite number, "
+            f"got {value}."
+        )
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         shown = "null" if value is None else repr(value)
         # ValueError, not TypeError: bad scenario content, which the CLI

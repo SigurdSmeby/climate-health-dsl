@@ -1,0 +1,26 @@
+# A decimal spike_center used to run fine here and fail only once a
+# split: block asked where the peaks were. The split: is present so this
+# case covers the path that used to break.
+_expect:
+  exit_code: 1
+  stderr_contains: "whole period"
+  stderr_not_contains: "Traceback"
+period: monthly
+n_total: 24
+seed: 0
+series:
+- name: rainfall
+  generate: seasonal_spike
+  params:
+    spike_center: 7.5
+- name: disease_cases
+  depends_on:
+  - series: rainfall
+    weight: 1.0
+  counts: {}
+split:
+  kind: time
+  k: 2
+locations:
+  loc:
+    population: 100000

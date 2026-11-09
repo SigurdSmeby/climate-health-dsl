@@ -1,0 +1,22 @@
+# `to: .inf` reached the count of values as a raw OverflowError traceback.
+_expect:
+  exit_code: 1
+  stderr_contains: "finite number"
+  stderr_not_contains: "Traceback"
+period: monthly
+n_total: 24
+seed: 0
+series:
+- name: rainfall
+  generate: seasonal_spike
+- name: disease_cases
+  depends_on:
+  - series: rainfall
+    weight:
+      sweep:
+        from: 0
+        to: .inf
+  counts: {}
+locations:
+  loc:
+    population: 100000

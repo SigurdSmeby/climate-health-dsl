@@ -52,20 +52,44 @@ class SeasonalSpikeGenerator(VariableGenerator):
                 however far into a year the series starts.
 
         Errors Caught (raised to caller):
-            ValueError: If spike_width <= 0, noise < 0, or spike_center < 1.
+            ValueError: If spike_width <= 0, noise < 0, or spike_center
+                is not a whole period >= 1.
         """
         if spike_width <= 0:
             raise ValueError(f"spike_width must be > 0, got {spike_width}")
         if noise < 0:
             raise ValueError(f"noise must be >= 0, got {noise}")
-        if spike_center is not None and spike_center < 1:
-            # Counting from 1 means there is no period 0; a 0 here is a typo,
-            # and silently reading it as the last period of the year would
-            # put the season half a year from where it was asked for.
-            raise ValueError(
-                f"spike_center counts from 1 (1 is the year's first period, "
-                f"so 7 is July on monthly data), got {spike_center}"
-            )
+        if spike_center is not None:
+            # A whole period or nothing. A decimal used to pass here and
+            # reach range() in features(), so `spike_center: 7.5` ran fine
+            # until a split: block asked where the peaks were, and then
+            # failed with "'float' object cannot be interpreted as an
+            # integer" — naming neither the field nor the scenario.
+            if isinstance(spike_center, bool) or not isinstance(
+                spike_center, (int, float)
+            ):
+                raise ValueError(
+                    f"spike_center must be a whole period, got "
+                    f"{spike_center!r}"
+                )
+            if float(spike_center) != int(spike_center):
+                raise ValueError(
+                    f"spike_center must be a whole period, got "
+                    f"{spike_center}. A peak sits in one period, not "
+                    f"between two — use {int(spike_center)} or "
+                    f"{int(spike_center) + 1}."
+                )
+            spike_center = int(spike_center)
+            if spike_center < 1:
+                # Counting from 1 means there is no period 0; a 0 here is a
+                # typo, and silently reading it as the last period of the
+                # year would put the season half a year from where it was
+                # asked for.
+                raise ValueError(
+                    f"spike_center counts from 1 (1 is the year's first "
+                    f"period, so 7 is July on monthly data), got "
+                    f"{spike_center}"
+                )
         self.baseline = baseline
         self.spike_height = spike_height
         self.spike_center = spike_center

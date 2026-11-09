@@ -290,17 +290,27 @@ class FromCsvGenerator(VariableGenerator):
         available = list(df["location"].unique())
         if self.source_location is None:
             if len(available) > 1:
+                shown = sorted({str(value) for value in available})
                 raise ValueError(
                     f"from_csv: {self.path.name} contains several locations; "
-                    f"set source_location to one of {available}."
+                    f"set source_location to one of {shown}."
                 )
             return df
-        if self.source_location not in available:
+        # Compare as text. pandas reads a column of digits as int64, so a
+        # quoted "1" in the scenario missed an int 1 in the CSV and the
+        # error then listed the very id it had just refused, as
+        # "Available: [np.int64(1)]". YAML cannot say which type it meant,
+        # and a location id is a label rather than a quantity, so text is
+        # the comparison that matches what the author wrote.
+        wanted = str(self.source_location)
+        matches = df["location"].astype(str) == wanted
+        if not matches.any():
+            shown = sorted({str(value) for value in available})
             raise ValueError(
                 f"from_csv: source_location '{self.source_location}' not in "
-                f"{self.path.name}. Available: {available}"
+                f"{self.path.name}. Available: {shown}"
             )
-        return df[df["location"] == self.source_location]
+        return df[matches]
 
     def _check_resolution(self, df: pd.DataFrame, period: str) -> None:
         """Refuse a scenario resolution that doesn't match the source data.

@@ -171,3 +171,37 @@ def test_events_follow_start_period(rng):
     )
     gen.generate(24, "monthly", rng)
     assert [e["index"] for e in gen.events()] == [0, 12]
+
+
+@pytest.mark.parametrize("center", [7.5, 0.5, 12.25])
+def test_a_decimal_spike_center_is_rejected(center):
+    # A decimal used to pass construction and only fail later, inside
+    # features(), where range() refused it as "'float' object cannot be
+    # interpreted as an integer" — so the same scenario ran fine until a
+    # split: block was added. Rejected up front instead.
+    with pytest.raises(ValueError, match="whole period"):
+        SeasonalSpikeGenerator(spike_center=center)
+
+
+def test_the_decimal_message_suggests_both_neighbours():
+    # The point of the message is to make the fix obvious.
+    with pytest.raises(ValueError, match="use 7 or 8"):
+        SeasonalSpikeGenerator(spike_center=7.5)
+
+
+def test_a_whole_float_spike_center_is_accepted():
+    # YAML writes 7.0 for a whole number often enough; it is unambiguous.
+    gen = SeasonalSpikeGenerator(spike_center=7.0)
+    assert gen.spike_center == 7
+
+
+def test_a_non_numeric_spike_center_is_rejected():
+    with pytest.raises(ValueError, match="whole period"):
+        SeasonalSpikeGenerator(spike_center="7")
+
+
+def test_a_decimal_centre_fails_the_same_way_with_and_without_features():
+    # The bug was that these two paths disagreed: construction accepted
+    # what features() later refused. Both must now refuse it.
+    with pytest.raises(ValueError, match="whole period"):
+        SeasonalSpikeGenerator(spike_center=7.5).features()

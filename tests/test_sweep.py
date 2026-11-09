@@ -456,3 +456,29 @@ def test_a_range_written_in_exponent_form_is_left_unrounded():
     # would be worse than leaving these alone.
     runs = expand_sweeps({"w": {SWEEP_KEY: {"from": 0.0, "to": 2e-05, "step": 1e-05}}})
     assert [params["w"] for _, _, params in runs] == [0.0, 1e-05, 2e-05]
+
+
+@pytest.mark.parametrize("endpoint", [float("inf"), float("-inf"), float("nan")])
+def test_a_non_finite_range_endpoint_is_rejected(endpoint):
+    # Python counts inf and NaN as numbers, so they passed the isinstance
+    # gate and reached the count of values as a raw OverflowError
+    # ("cannot convert float infinity to integer") naming no field.
+    with pytest.raises(ValueError, match="finite number"):
+        expand_sweeps({"n_total": {SWEEP_KEY: {"from": 0, "to": endpoint}}})
+
+
+def test_a_non_finite_step_is_rejected():
+    with pytest.raises(ValueError, match="finite number"):
+        expand_sweeps(
+            {"n_total": {SWEEP_KEY: {"from": 0, "to": 10, "step": float("inf")}}}
+        )
+
+
+def test_a_non_finite_list_value_is_rejected():
+    with pytest.raises(ValueError, match="finite number"):
+        expand_sweeps({"n_total": {SWEEP_KEY: [1, float("nan"), 3]}})
+
+
+def test_the_non_finite_message_names_the_field():
+    with pytest.raises(ValueError, match="'weight'"):
+        expand_sweeps({"weight": {SWEEP_KEY: {"from": 0, "to": float("inf")}}})
