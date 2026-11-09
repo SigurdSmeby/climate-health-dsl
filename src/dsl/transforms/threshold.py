@@ -90,4 +90,9 @@ class ThresholdTransform(Transform):
             return out
         if self.mode == "quadratic":
             return (x - self.threshold) ** 2
-        return -((x - self.threshold) ** 2)  # peak: inverted U, optimum at threshold
+        if self.mode == "peak":
+            return -((x - self.threshold) ** 2)  # inverted U, optimum at threshold
+        # Unreachable from YAML: __init__ rejects any mode outside _MODES.
+        # Explicit anyway so a mode added to _MODES without a branch here
+        # fails loudly instead of silently returning the negated quadratic.
+        raise ValueError(f"unhandled mode {self.mode!r}")

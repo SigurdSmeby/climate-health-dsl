@@ -57,13 +57,17 @@ class PowerTransform(Transform):
 
         Errors Caught (raised to caller):
             ValueError: If the exponent is fractional and any non-NaN value
-                is negative. (-5) ** 0.5 is a complex number in Python and
-                NaN in numpy, so the alternative is silent NaN in the
-                disease signal. Erroring matches how `threshold` rejects
-                params it cannot honour.
+                is negative ((-5) ** 0.5 is complex in Python, NaN in
+                numpy), or if the result is not finite — a negative
+                exponent over a zero value (0.0 ** -1 is inf) or a large
+                exponent overflowing. An inf is worse than it looks:
+                _standardize divides by the series' spread, and the spread
+                of a series containing inf is NaN, so a single inf turns
+                the whole column into NaN. Erroring matches how
+                `threshold` rejects params it cannot honour.
         """
         x = series.astype(float)  # copy; NaN flows through
-        if self.exponent != int(self.exponent):
+        if not float(self.exponent).is_integer():
             bad = ~np.isnan(x) & (x < 0.0)
             if bad.any():
                 raise ValueError(
@@ -74,4 +78,20 @@ class PowerTransform(Transform):
                     f"real number. Shift the series first, or use a whole "
                     f"exponent."
                 )
-        return x**self.exponent
+        with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+            out = x**self.exponent
+        # NaN in means NaN out, which is fine; inf is not. Checked on the
+        # output rather than the input because whether a value overflows
+        # depends on both the value and the exponent.
+        blew_up = ~np.isnan(x) & ~np.isfinite(out)
+        if blew_up.any():
+            culprit = x[blew_up][0]
+            raise ValueError(
+                f"power with exponent {self.exponent:g} is not finite for "
+                f"{int(blew_up.sum())} of {blew_up.size} values (first: "
+                f"{culprit:g} ** {self.exponent:g}). A negative exponent "
+                f"over a zero value, or a large exponent, overflows — and "
+                f"one infinite value would turn this driver's whole column "
+                f"into NaN when it is standardized."
+            )
+        return out

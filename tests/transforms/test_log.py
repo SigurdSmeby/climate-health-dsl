@@ -78,3 +78,25 @@ def test_registered_and_reachable_from_scenario():
     from dsl.core.extension.transform_base import get_transform
 
     assert get_transform("log") is LogTransform
+
+
+def test_infinite_value_is_rejected(rng):
+    # +inf survives the `shifted <= 0` domain check and np.log(inf) is inf,
+    # so without its own guard it passes straight through. One inf makes
+    # _standardize return an all-NaN column, so this must not be silent.
+    with pytest.raises(ValueError, match="finite"):
+        LogTransform().apply(np.array([5.0, np.inf]), rng)
+
+
+def test_negative_infinity_is_rejected(rng):
+    with pytest.raises(ValueError, match="finite"):
+        LogTransform().apply(np.array([5.0, -np.inf]), rng)
+
+
+def test_domain_error_reports_the_original_value_exactly(rng):
+    # Reconstructing the original as (shifted - shift) reintroduces the
+    # rounding the addition caused: -0.3 would print as
+    # -0.30000000000000004. The message exists to be read, so it has to
+    # name the value the user actually wrote.
+    with pytest.raises(ValueError, match=r"-0\.3 \+ shift"):
+        LogTransform(shift=0.2).apply(np.array([0.1, -0.3]), rng)

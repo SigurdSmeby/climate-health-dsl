@@ -188,3 +188,13 @@ def test_quadratic_still_means_what_it_meant(rng):
     series = np.array([15.0, 25.0, 35.0])
     result = ThresholdTransform(mode="quadratic", threshold=25.0).apply(series, rng)
     assert np.allclose(result, np.array([100.0, 0.0, 100.0]))
+
+
+def test_an_unhandled_mode_raises_rather_than_falling_through(rng):
+    # __init__ makes this unreachable from YAML, so this guards maintenance:
+    # a mode added to _MODES without a branch in apply() must fail loudly
+    # instead of silently returning the negated quadratic.
+    transform = ThresholdTransform(mode="hinge", threshold=1.0)
+    transform.mode = "mode_added_without_a_branch"
+    with pytest.raises(ValueError, match="unhandled mode"):
+        transform.apply(np.array([5.0]), rng)

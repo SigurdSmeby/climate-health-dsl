@@ -73,3 +73,28 @@ def test_registered_and_reachable_from_scenario():
     from dsl.core.extension.transform_base import get_transform
 
     assert get_transform("power") is PowerTransform
+
+
+def test_negative_exponent_over_zero_is_rejected(rng):
+    # 0.0 ** -1 is inf. One inf makes _standardize return an all-NaN
+    # column, so a legitimate rainfall: 0 must not silently do that.
+    with pytest.raises(ValueError, match="not finite"):
+        PowerTransform(exponent=-1.0).apply(np.array([0.0, 2.0]), rng)
+
+
+def test_overflowing_exponent_is_rejected(rng):
+    with pytest.raises(ValueError, match="not finite"):
+        PowerTransform(exponent=400.0).apply(np.array([10.0]), rng)
+
+
+def test_a_negative_exponent_is_fine_away_from_zero(rng):
+    # Only the zero is the problem, so don't refuse the whole exponent.
+    result = PowerTransform(exponent=-1.0).apply(np.array([2.0, 4.0]), rng)
+    assert np.allclose(result, np.array([0.5, 0.25]))
+
+
+def test_nan_does_not_trip_the_finite_guard(rng):
+    # NaN in means NaN out; that is a reporting gap, not an overflow.
+    result = PowerTransform(exponent=2.0).apply(np.array([np.nan, 3.0]), rng)
+    assert np.isnan(result[0])
+    assert result[1] == 9.0
