@@ -482,3 +482,28 @@ def test_a_non_finite_list_value_is_rejected():
 def test_the_non_finite_message_names_the_field():
     with pytest.raises(ValueError, match="'weight'"):
         expand_sweeps({"weight": {SWEEP_KEY: {"from": 0, "to": float("inf")}}})
+
+
+def test_a_range_that_stops_short_warns(capsys):
+    # The values are correct and stay as they are — it works like range().
+    # The complaint was that it was silent, so a sweep written to end at
+    # 1.1 produced five runs ending at 1.0 with nothing said.
+    runs = expand_sweeps({"weight": {SWEEP_KEY: {"from": 0.2, "to": 1.1, "step": 0.2}}})
+    assert [cfg["weight"] for _, cfg, _ in runs] == [0.2, 0.4, 0.6, 0.8, 1.0]
+    warning = capsys.readouterr().err
+    assert "stops at 1.0" in warning
+    assert "1.1" in warning
+    assert "'weight'" in warning
+
+
+def test_a_range_that_lands_exactly_does_not_warn(capsys):
+    expand_sweeps({"n_total": {SWEEP_KEY: {"from": 10, "to": 50, "step": 10}}})
+    assert capsys.readouterr().err == ""
+
+
+def test_a_decimal_range_that_lands_exactly_does_not_warn(capsys):
+    # 0 + 3 * 0.1 is 0.30000000000000004, so an exact-equality check here
+    # would warn about a range that does reach its end.
+    runs = expand_sweeps({"weight": {SWEEP_KEY: {"from": 0.0, "to": 0.3, "step": 0.1}}})
+    assert len(runs) == 4
+    assert capsys.readouterr().err == ""

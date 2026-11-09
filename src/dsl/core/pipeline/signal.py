@@ -179,14 +179,33 @@ def _standardize(series: np.ndarray) -> np.ndarray:
 
     Returns:
         (series - mean) / std, ignoring NaN in mean/std. A constant series
-        (std == 0) returns zeros with its NaN positions preserved, so those
-        rows still get blanked instead of fabricated.
+        — including one that is constant in intent but not in bits —
+        returns zeros with its NaN positions preserved, so those rows still
+        get blanked instead of fabricated.
     """
     if np.all(np.isnan(series)):
         return series.astype(float)
     mean = np.nanmean(series)
     std = np.nanstd(series)
-    if std == 0:
+    # Guarding `std == 0` alone was not enough. A series flat in intent but
+    # not in bits — 25.0 next to 25.000000000000004, which a CSV or any
+    # arithmetic can produce — has a spread of a few float64 eps, missed
+    # that guard, and was then divided by it. Rounding dust came out as a
+    # full-size signal: measured, a visually flat rainfall column drove
+    # disease between 9 900 and 26 900, a 2.7x swing a declared-flat driver
+    # must never cause.
+    #
+    # The tolerance is relative, because "small" only means anything
+    # against the values' own magnitude: a spread of 1e-15 is rounding dust
+    # at rainfall's scale and real variation in a series that lives at
+    # 1e-18. So it is scaled by the values themselves, with no absolute
+    # floor — a floor of 1.0 zeroed a real series at 1e-18, which is the
+    # same bug pointing the other way. Measured against the generators, a
+    # genuinely varying series sits at 3.6e-4 of its scale or above (flat
+    # with noise: 0.01, the quietest), while the degenerate case sits at
+    # 1e-16, so a few eps leaves about twelve orders of margin.
+    scale = max(abs(mean), float(np.nanmax(np.abs(series))))
+    if std <= 8.0 * np.finfo(float).eps * scale:
         out = np.zeros_like(series, dtype=float)
         out[np.isnan(series)] = np.nan
         return out
