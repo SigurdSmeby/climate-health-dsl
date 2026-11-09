@@ -148,3 +148,43 @@ def test_an_ordinary_threshold_still_works():
         np.arange(5.0), np.random.default_rng(1)
     )
     assert list(out) == [0.0, 0.0, 0.0, 1.0, 2.0]
+
+
+def test_peak_is_an_inverted_u(rng):
+    # The shape Halvard asked for: the threshold is an OPTIMUM, so it
+    # contributes most and both sides contribute less. This is the opposite
+    # of quadratic, which is why it is a separate mode.
+    series = np.array([15.0, 20.0, 25.0, 30.0, 35.0])
+    result = ThresholdTransform(mode="peak", threshold=25.0).apply(series, rng)
+    assert result[2] == 0.0          # at the optimum: the maximum
+    assert result[2] > result[1] > result[0]  # falls off below
+    assert result[2] > result[3] > result[4]  # and above
+
+
+def test_peak_is_the_negation_of_quadratic(rng):
+    series = np.array([15.0, 20.0, 25.0, 30.0, 35.0])
+    u = ThresholdTransform(mode="quadratic", threshold=25.0).apply(series, rng)
+    inverted = ThresholdTransform(mode="peak", threshold=25.0).apply(series, rng)
+    assert np.allclose(inverted, -u)
+
+
+def test_peak_is_symmetric_around_the_optimum(rng):
+    series = np.array([22.0, 28.0])  # equidistant from 25
+    result = ThresholdTransform(mode="peak", threshold=25.0).apply(series, rng)
+    assert result[0] == result[1]
+
+
+def test_nan_preserved_peak(rng):
+    result = ThresholdTransform(mode="peak", threshold=10.0).apply(
+        np.array([10.0, np.nan]), rng
+    )
+    assert result[0] == 0.0
+    assert np.isnan(result[1])
+
+
+def test_quadratic_still_means_what_it_meant(rng):
+    # Guards the compatibility promise: adding `peak` must not change the
+    # numbers any existing scenario already generates.
+    series = np.array([15.0, 25.0, 35.0])
+    result = ThresholdTransform(mode="quadratic", threshold=25.0).apply(series, rng)
+    assert np.allclose(result, np.array([100.0, 0.0, 100.0]))

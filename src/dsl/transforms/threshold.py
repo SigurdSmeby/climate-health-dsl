@@ -9,7 +9,7 @@ import numpy as np
 
 from dsl.core.extension.transform_base import Transform, register_transform
 
-_MODES = ("hinge", "step", "quadratic")
+_MODES = ("hinge", "step", "quadratic", "peak")
 
 
 @register_transform("threshold")
@@ -22,8 +22,18 @@ class ThresholdTransform(Transform):
         Example: array([0.0, 0.0, 3.2, 7.8, ...]) for threshold=5.
       - ``step``: 1 where x >= threshold else 0 — a binary switch.
         Example: array([0.0, 0.0, 1.0, 1.0, ...]) for threshold=5.
-      - ``quadratic``: (x - threshold)**2 — U-shape around an optimum.
+      - ``quadratic``: (x - threshold)**2 — U-shape: the extremes
+        contribute most, the threshold itself contributes nothing.
         Example: array([25.0, 9.0, 4.9, 60.8, ...]) for threshold=5.
+      - ``peak``: -(x - threshold)**2 — inverted U: the threshold is an
+        optimum and both sides contribute less. This is the shape
+        temperature-driven transmission usually has.
+        Example: array([-25.0, -9.0, -4.9, -60.8, ...]) for threshold=5.
+
+    ``quadratic`` and ``peak`` are each other's negation, so a ``quadratic``
+    with a negative ``weight:`` on the dependency gives the same curve as
+    ``peak``. Both exist because a mode names the intent: "an optimum in the
+    middle" reads off the scenario, whereas a sign flip on a weight does not.
     """
 
     def __init__(self, mode: str = "hinge", threshold: float = 0.0):
@@ -31,7 +41,7 @@ class ThresholdTransform(Transform):
 
         Errors Caught (raised to caller):
             ValueError: If mode is not one of "hinge", "step", "quadratic",
-                or threshold is not a finite number.
+                "peak", or threshold is not a finite number.
         """
         if mode not in _MODES:
             raise ValueError(f"mode must be one of {_MODES}, got {mode!r}")
@@ -78,4 +88,6 @@ class ThresholdTransform(Transform):
             out = np.where(x >= self.threshold, 1.0, 0.0)
             out[np.isnan(x)] = np.nan
             return out
-        return (x - self.threshold) ** 2  # quadratic
+        if self.mode == "quadratic":
+            return (x - self.threshold) ** 2
+        return -((x - self.threshold) ** 2)  # peak: inverted U, optimum at threshold

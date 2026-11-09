@@ -270,12 +270,14 @@ depends_on:
 
 | Name | Effect | Params |
 |---|---|---|
-| `threshold` | Nonlinear response: `hinge` (effect only above the threshold), `step` (binary switch), `quadratic` (U-shape). | `mode`, `threshold` |
+| `threshold` | Nonlinear response: `hinge` (effect only above the threshold), `step` (binary switch), `quadratic` (U-shape: the extremes matter most), `peak` (inverted U: `threshold` is an optimum, both sides matter less — the usual shape for temperature). | `mode`, `threshold` |
 | `distributed_lag` | Spreads the effect across a kernel of lags instead of one delay. Index *i* weights lag *i*. | `weights` (list) |
 | `lag` | Delays by N periods. The warm-up becomes NaN. | `n` |
 | `missing` | Blanks values at random, imitating reporting gaps. | `rate` |
 | `block_missing` | Blanks contiguous runs — a reporting outage, versus `missing`'s scattered gaps. | `n_blocks`, `block_len` |
 | `heavy_tail` | Adds Student-t noise: fat tails and outliers, to stress a model that assumes Gaussian. | `scale`, `df` (low = heavier) |
+| `log` | Saturating response: `log(x + shift)`, so equal *ratios* matter equally and the first 100mm of rain counts for more than the second. `shift` keeps a legitimate zero finite. | `shift` (default 1.0) |
+| `power` | `x ** exponent`: `0.5` saturates mildly, `1.0` is linear (identity), `2.0` accelerates. Sweeping the exponent sweeps the curve's *shape*. | `exponent` (default 1.0) |
 
 ## Emitters
 
