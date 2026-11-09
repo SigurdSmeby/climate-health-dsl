@@ -349,3 +349,69 @@ def test_blank_location_cells_are_not_counted_as_locations(tmp_path):
     _locations_in_cached.cache_clear()
 
     assert FromCsvGenerator.locations_in(str(path)) == ["oslo"]
+
+
+@pytest.fixture
+def integer_location_csv(tmp_path):
+    """A long-format CSV whose location ids are bare digits.
+
+    pandas reads such a column as int64, which is what made a quoted "1"
+    in a scenario fail to match.
+    """
+    periods = [f"2010-{m + 1:02d}" for m in range(12)]
+    return write_csv(
+        tmp_path / "ints.csv", periods * 2,
+        rainfall=list(range(12)) + list(range(100, 112)),
+        location=[1] * 12 + [2] * 12,
+    )
+
+
+def test_a_quoted_location_matches_an_integer_id(integer_location_csv, rng):
+    # YAML cannot say whether 1 is text or a number, and the error used to
+    # refuse '1' while listing it as available.
+    gen = FromCsvGenerator(
+        file=str(integer_location_csv), column="rainfall", source_location="1"
+    )
+    series = gen.generate(12, "monthly", rng)
+    assert np.array_equal(series, np.arange(12, dtype=float))
+
+
+def test_an_unquoted_location_still_matches_an_integer_id(
+    integer_location_csv, rng
+):
+    gen = FromCsvGenerator(
+        file=str(integer_location_csv), column="rainfall", source_location=2
+    )
+    series = gen.generate(12, "monthly", rng)
+    assert np.array_equal(series, np.arange(100, 112, dtype=float))
+
+
+def test_a_quoted_location_still_matches_a_text_id(multi_location_csv, rng):
+    gen = FromCsvGenerator(
+        file=str(multi_location_csv), column="rainfall", source_location="south"
+    )
+    series = gen.generate(12, "monthly", rng)
+    assert np.array_equal(series, np.arange(100, 112, dtype=float))
+
+
+def test_an_absent_location_lists_readable_ids(integer_location_csv, rng):
+    # The old message printed "Available: [np.int64(1), np.int64(2)]".
+    with pytest.raises(ValueError) as caught:
+        FromCsvGenerator(
+            file=str(integer_location_csv),
+            column="rainfall",
+            source_location="99",
+        ).generate(12, "monthly", rng)
+    message = str(caught.value)
+    assert "np.int64" not in message
+    assert "'1', '2'" in message
+
+
+def test_the_several_locations_message_lists_readable_ids(
+    integer_location_csv, rng
+):
+    with pytest.raises(ValueError) as caught:
+        FromCsvGenerator(
+            file=str(integer_location_csv), column="rainfall"
+        ).generate(12, "monthly", rng)
+    assert "np.int64" not in str(caught.value)

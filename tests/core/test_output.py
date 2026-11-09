@@ -134,3 +134,34 @@ def test_a_previous_runs_folds_are_still_cleared(tmp_path):
     two = built(2)
     write_output(run(two), two, tmp_path)
     assert len(list((tmp_path / "folds").glob("fold_*"))) == 2
+
+
+def test_a_file_where_the_folds_directory_goes_is_explained(tmp_path):
+    """A plain file named `folds` reached _is_our_folds' iterdir() and came
+    back as "[Errno 20] Not a directory", which names the path but not the
+    problem and says nothing about what to do. Same family as the test
+    above, which already gets this right for a directory."""
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+    from dsl.core.pipeline.output import write_output
+    from tests.conftest import scenario_dict as make_config_dict
+    from tests.conftest import series_dict
+
+    blocker = tmp_path / "folds"
+    blocker.write_text("not a directory")
+
+    config = parse_config(
+        make_config_dict(
+            series=[
+                series_dict("r", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "disease_cases", counts={}, depends_on=[{"series": "r", "lag": 1}]
+                ),
+            ]
+        )
+    )
+    with pytest.raises(ValueError, match="is a file"):
+        write_output(run(config), config, tmp_path)
+
+    # Left alone, like a user's own folds/ directory is.
+    assert blocker.read_text() == "not a directory"

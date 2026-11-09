@@ -72,6 +72,16 @@ def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) 
     # that happens to hold a folds/ would otherwise delete it, with no
     # split: block anywhere in the scenario.
     if folds_dir.exists():
+        # A plain file at that name surfaced as "[Errno 20] Not a
+        # directory" from the iterdir() below — a message naming the path
+        # but not the problem, and silent on what to do about it. Checked
+        # before _is_our_folds for that reason.
+        if not folds_dir.is_dir():
+            raise ValueError(
+                f"{folds_dir} is a file, but the fold output needs a "
+                f"directory of that name. Point -o at a new or empty "
+                f"folder, or move that file aside."
+            )
         if not _is_our_folds(folds_dir):
             # Refuse rather than skip the delete and write anyway: mixing
             # fold_N dirs and report.md into someone's own folds/ is no
