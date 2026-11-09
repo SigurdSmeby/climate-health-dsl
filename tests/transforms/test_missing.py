@@ -53,3 +53,16 @@ def test_rate_out_of_range_rejected():
         MissingTransform(rate=1.5)
     with pytest.raises(ValueError, match="rate"):
         MissingTransform(rate=-0.1)
+
+
+@pytest.mark.parametrize("bad", [True, False, "0.5", None])
+def test_a_non_numeric_rate_is_rejected(bad):
+    # `rate: true` used to pass as 1.0 and blank the whole driver silently;
+    # a quoted number reached the range check as a raw TypeError.
+    with pytest.raises(ValueError, match="rate must be a number"):
+        MissingTransform(rate=bad)
+
+
+def test_a_nan_rate_is_rejected():
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        MissingTransform(rate=float("nan"))

@@ -57,7 +57,9 @@ def check_dataset(
             available otherwise, and a count column is indistinguishable
             from a driver by its name alone — so a second disease was
             checked against the driver rules, which forbid the NaN a masked
-            case count is allowed to have. Defaults to ("disease_cases",).
+            case count is allowed to have. None (not given) assumes
+            ("disease_cases",) and requires it; an empty list means the
+            scenario declares no disease, so none is required.
 
     Returns:
         A list of findings (empty if all checks pass).
@@ -65,13 +67,18 @@ def check_dataset(
     """
     findings: list[str] = []
 
-    counts = list(count_columns) if count_columns else ["disease_cases"]
+    # `is None`, not truthiness: an empty list is a climate-only scenario,
+    # which the CLI has already told the user has no disease signal. Read as
+    # falsy, it fell back to requiring disease_cases, and the very next line
+    # said that column was "required and missing" — contradicting the
+    # warning before it about a deliberate choice.
+    counts = list(count_columns) if count_columns is not None else ["disease_cases"]
 
     # Step 1: Check required columns. A consumer expects disease_cases, so
-    # its absence is still reported — but only when the scenario did not
-    # name its own count series.
+    # its absence is still reported — but only when the caller did not say
+    # which count series the scenario has.
     required = ("time_period", "location") + (
-        () if count_columns else ("disease_cases",)
+        () if count_columns is not None else ("disease_cases",)
     )
     for column in required:
         if column not in df.columns:

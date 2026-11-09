@@ -62,9 +62,6 @@ def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # index=False: a row-index column is not part of the format.
-    df.to_csv(out_dir / FULL_FILENAME, index=False)
-
     folds_dir = out_dir / FOLDS_DIRNAME
     # Clear first, so a rerun with fewer folds (or none) leaves nothing of the
     # previous run behind to be mistaken for part of this one — but only a
@@ -93,6 +90,13 @@ def write_output(df: pd.DataFrame, config: ScenarioConfig, out_dir: str | Path) 
                 f"or empty folder, or move that directory aside."
             )
         shutil.rmtree(folds_dir)
+
+    # Written only once nothing above can refuse the run. It used to come
+    # first, so a refused run still left a fresh simulated_data.csv and no
+    # fold reports — a folder that reads as a finished run of a scenario
+    # with no split: block.
+    # index=False: a row-index column is not part of the format.
+    df.to_csv(out_dir / FULL_FILENAME, index=False)
 
     folds = config.folds()
     if not folds:

@@ -345,3 +345,25 @@ def test_the_evaluation_preset_writes_folds_and_a_report(tmp_path):
     # The point of the preset: every fold's test half can actually measure
     # the storm the scenario plants.
     assert not report["warnings"], report["warnings"]
+
+
+@pytest.mark.parametrize("name", available())
+def test_every_shipped_preset_runs_as_is(tmp_path, name):
+    """A preset exists to be a working starting point, so each one has to
+    run with nothing added. This is the catch-all that would have caught
+    `evaluation` failing on its first ordinary use."""
+    path = tmp_path / "s.yaml"
+    path.write_text(f"preset: {name}\n")
+    assert main(["run", str(path), "-o", str(tmp_path / "out")]) == 0
+
+
+@pytest.mark.parametrize("k", [2, 3, 5])
+def test_the_evaluation_preset_follows_the_fold_count(tmp_path, k):
+    """`per_fold` was a five-entry list, so any k other than 5 failed with
+    an error naming `storm` — an event the user never wrote. The preset's
+    own comment promised the storms move with k; now they do."""
+    path = tmp_path / "s.yaml"
+    path.write_text(f"preset: evaluation\nsplit: {{ k: {k} }}\n")
+    out = tmp_path / "out"
+    assert main(["run", str(path), "-o", str(out)]) == 0
+    assert len(list((out / "folds").glob("fold_*"))) == k

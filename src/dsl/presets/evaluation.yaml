@@ -55,4 +55,4 @@ events:
   # One per fold's test half, placed from the split itself — so the periods
   # move on their own if you change k or n_total. Which series react, and
   # how, is declared per series above.
-  storm: { per_fold: [1, 1, 1, 1, 1] }
+  storm: { per_fold: 1 }

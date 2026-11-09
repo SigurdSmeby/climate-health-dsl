@@ -23,8 +23,18 @@ class MissingTransform(Transform):
         fraction of entries blanked, in [0, 1].
 
         Errors Caught (raised to caller):
-            ValueError: If rate is not in [0, 1].
+            ValueError: If rate is not a number in [0, 1].
         """
+        # isinstance rather than float(), as in threshold: bool is an int in
+        # Python, so `rate: true` passed the range check as 1.0 and blanked
+        # the whole driver without a word, and a quoted "0.5" reached the
+        # comparison as a raw "'<=' not supported" TypeError.
+        if isinstance(rate, bool) or not isinstance(rate, (int, float)):
+            # ValueError, not TypeError: _build_transform turns a
+            # transform's ValueError into a message naming the series.
+            raise ValueError(  # noqa: TRY004
+                f"rate must be a number in [0, 1], got {rate!r}"
+            )
         if not 0.0 <= rate <= 1.0:
             raise ValueError(f"rate must be in [0, 1], got {rate}")
         self.rate = rate
