@@ -415,3 +415,47 @@ def test_the_several_locations_message_lists_readable_ids(
             file=str(integer_location_csv), column="rainfall"
         ).generate(12, "monthly", rng)
     assert "np.int64" not in str(caught.value)
+
+
+@pytest.mark.parametrize("label", ["2021-W53", "2020-W00", "2020-W99"])
+def test_an_impossible_week_names_the_file_and_row(tmp_path, rng, label):
+    # The shape check (^\d{4}-W\d{2}$) matches all of these. parse_period
+    # holds the real rule and used to apply it later, from a place that no
+    # longer knew which file or row the label came from.
+    path = write_csv(
+        tmp_path / "weeks.csv",
+        ["2021-W01", "2021-W02", label],
+        rainfall=[1.0, 2.0, 3.0],
+    )
+    with pytest.raises(ValueError) as caught:
+        FromCsvGenerator(file=str(path), column="rainfall").generate(
+            3, "weekly", rng
+        )
+    message = str(caught.value)
+    assert "weeks.csv" in message
+    assert "row 3" in message
+    assert label in message
+
+
+def test_an_impossible_month_is_rejected(tmp_path, rng):
+    path = write_csv(
+        tmp_path / "months.csv",
+        ["2020-01", "2020-13"],
+        rainfall=[1.0, 2.0],
+    )
+    with pytest.raises(ValueError, match="row 2"):
+        FromCsvGenerator(file=str(path), column="rainfall").generate(
+            2, "monthly", rng
+        )
+
+
+def test_a_valid_weekly_file_still_works(tmp_path, rng):
+    path = write_csv(
+        tmp_path / "ok.csv",
+        ["2021-W01", "2021-W02", "2021-W03"],
+        rainfall=[1.0, 2.0, 3.0],
+    )
+    series = FromCsvGenerator(file=str(path), column="rainfall").generate(
+        3, "weekly", rng
+    )
+    assert np.array_equal(series, np.array([1.0, 2.0, 3.0]))

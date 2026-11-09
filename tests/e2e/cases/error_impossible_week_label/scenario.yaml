@@ -1,0 +1,23 @@
+# W53 has the right shape, so it passed from_csv's own check and was
+# rejected later from a place that no longer knew the file or the row.
+_expect:
+  exit_code: 1
+  stderr_contains: "row 3"
+  stderr_not_contains: "Traceback"
+period: weekly
+n_total: 3
+seed: 0
+series:
+- name: rainfall
+  generate: from_csv
+  params:
+    file: weeks.csv
+    column: rainfall
+- name: disease_cases
+  depends_on:
+  - series: rainfall
+    weight: 1.0
+  counts: {}
+locations:
+  loc:
+    population: 100000

@@ -321,15 +321,31 @@ class FromCsvGenerator(VariableGenerator):
 
         Errors Caught (raised to caller):
             ValueError: If any time_period label doesn't match period's
-                expected shape (checked against the first label's format).
+                expected shape, or has the right shape but names a period
+                that does not exist (W53 in a 52-week year, month 13).
         """
-        first_label = str(df["time_period"].iloc[0])
-        if not df["time_period"].astype(str).str.match(_LABEL_SHAPE[period]).all():
+        labels = df["time_period"].astype(str)
+        first_label = str(labels.iloc[0])
+        if not labels.str.match(_LABEL_SHAPE[period]).all():
             raise ValueError(
                 f"from_csv: the scenario is {period}, but {self.path.name} "
                 f"has time_period labels like '{first_label}', which do not "
                 f"match that resolution."
             )
+        # Shape is not validity: ^\d{4}-W\d{2}$ matches W00, W53 and W99,
+        # and whether a W53 exists depends on the year. parse_period holds
+        # the real rule, and used to apply it later, from a place that no
+        # longer knew which file or row the label came from. Ask it here,
+        # where both are still known.
+        for row, label in enumerate(labels, start=1):
+            try:
+                parse_period(label, period)
+            except ValueError as exc:
+                raise ValueError(
+                    f"from_csv: {self.path.name} row {row} has time_period "
+                    f"'{label}', which has the right shape but is not a "
+                    f"real {period} period."
+                ) from exc
 
     def _apply_start_period(self, df: pd.DataFrame) -> pd.DataFrame:
         """Drop rows before the configured start_period, if one is set.

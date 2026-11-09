@@ -20,6 +20,7 @@ A ``sweep:`` in the YAML is the trigger; there is no flag.
 import copy
 import itertools
 import math
+import sys
 from typing import Any
 
 SWEEP_KEY = "sweep"
@@ -140,6 +141,19 @@ def _values(spec: Any, where: str) -> list:
     # multiplying rather than accumulating, so a float step does not drift.
     count = int((stop - start) / step + _TOLERANCE) + 1
     values = [start + i * step for i in range(count)]
+
+    # Stopping below 'to' is correct and tested — it works like range() —
+    # but it was silent, so a sweep written to end at 1.1 by steps of 0.2
+    # quietly produced five runs ending at 1.0 and nothing said the sixth
+    # was never going to exist. Say so; the values themselves do not
+    # change.
+    last = values[-1]
+    if abs(stop - last) > _TOLERANCE * abs(step):
+        print(
+            f"warning: sweep range on '{where}' stops at {last}, not "
+            f"{stop} — {stop} is not reached by adding {step} to {start}.",
+            file=sys.stderr,
+        )
 
     # 0 + 3 * 0.1 is 0.30000000000000004, which is exact enough to compare
     # against 'to' but became a directory called w_0p30000000000000004 and
