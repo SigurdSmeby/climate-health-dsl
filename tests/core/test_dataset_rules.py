@@ -293,3 +293,19 @@ def test_disease_cases_is_still_required_when_no_counts_are_named():
         }
     )
     assert any("disease_cases" in f and "required" in f for f in check_dataset(df))
+
+
+def test_a_scenario_with_no_count_series_is_not_told_it_is_missing_one():
+    """An empty list means the scenario declares no disease. Read as falsy,
+    it fell back to requiring disease_cases, so a climate-only run was told
+    the column was "required and missing" right after being told, correctly,
+    that it had no disease signal. None still means "not said" and keeps
+    requiring it — see the test above."""
+    df = pd.DataFrame(
+        {
+            "time_period": ["2000-01", "2000-02"],
+            "location": ["a", "a"],
+            "rain": [1.0, 2.0],
+        }
+    )
+    assert not any("required" in f for f in check_dataset(df, []))

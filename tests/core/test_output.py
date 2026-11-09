@@ -165,3 +165,33 @@ def test_a_file_where_the_folds_directory_goes_is_explained(tmp_path):
 
     # Left alone, like a user's own folds/ directory is.
     assert blocker.read_text() == "not a directory"
+
+
+def test_a_refused_run_writes_no_dataset(tmp_path):
+    """The CSV used to be written before the folds/ check, so a run that
+    was correctly refused still left a fresh simulated_data.csv and no fold
+    reports — a folder that reads as a finished run."""
+    from dsl.core.config.schema import parse_config
+    from dsl.core.pipeline.engine import run
+    from dsl.core.pipeline.output import FULL_FILENAME, write_output
+    from tests.conftest import scenario_dict as make_config_dict
+    from tests.conftest import series_dict
+
+    mine = tmp_path / "folds"
+    mine.mkdir()
+    (mine / "important.txt").write_text("my work")
+
+    config = parse_config(
+        make_config_dict(
+            series=[
+                series_dict("r", generate="flat", params={"level": 5.0}),
+                series_dict(
+                    "disease_cases", counts={}, depends_on=[{"series": "r", "lag": 1}]
+                ),
+            ]
+        )
+    )
+    with pytest.raises(ValueError, match="did not write"):
+        write_output(run(config), config, tmp_path)
+
+    assert not (tmp_path / FULL_FILENAME).exists()

@@ -1,0 +1,17 @@
+# A climate-only run is told it has no disease signal. It used to be told,
+# on the very next line, that the disease column was required and missing.
+_expect:
+  exit_code: 0
+  files_exist:
+  - simulated_data.csv
+  stderr_contains: "no disease signal"
+  stderr_not_contains: "required and missing"
+period: monthly
+n_total: 12
+seed: 0
+series:
+- name: rainfall
+  generate: seasonal_spike
+locations:
+  loc:
+    population: 100000
